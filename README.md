@@ -25,6 +25,7 @@ license.
 | Package | Role |
 |---|---|
 | [`opc`](opc) | The zip container of Office documents: parts, content types, relationships. Untouched parts are copied without being decompressed. Guards against zip bombs, unsafe paths and forged sizes. |
+| `internal/xmltok` | An XML tokenizer that allocates nothing per token and keeps the exact bytes of every element, several times faster than `encoding/xml` and checked against it. |
 
 ## Tests
 
@@ -32,6 +33,7 @@ license.
 corpus/fetch.sh   # test files from Apache POI, python-docx and python-pptx
 go test -race ./...
 go test ./opc -run '^$' -fuzz FuzzOpen
+go test ./internal/xmltok -run '^$' -fuzz FuzzSameAsEncodingXML
 ```
 
 The corpus is downloaded from pinned commits and never committed.
