@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/citadellefr/bref/internal/xmlcanon"
 )
 
 // ooxmlExtensions are the files the corpus tests open.
@@ -88,4 +90,56 @@ func TestCorpusRoundTrip(t *testing.T) {
 		}
 	}
 	t.Logf("%d packages kept intact, %d rejected", opened, rejected)
+}
+
+// TestCorpusContentTypesRewrite adds and removes a part, which rewrites
+// [Content_Types].xml: the rewrite must mean what the original meant. When
+// BREF_OUT is set, the packages are written there for the validator.
+func TestCorpusContentTypesRewrite(t *testing.T) {
+	out := os.Getenv("BREF_OUT")
+	var rewrites, identical int
+	root := filepath.Join("..", "corpus", "files")
+	for _, path := range corpus(t) {
+		data, _ := os.ReadFile(path)
+		p, err := Open(data, Limits{})
+		if err != nil || readRelationships(p) != nil {
+			continue
+		}
+		original, err := p.Read(contentTypesName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Add("bref-probe.bin", "application/x-bref-probe", nil); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		if err := p.Remove("bref-probe.bin"); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		rewritten, err := p.Read(contentTypesName)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Equal(original, rewritten) {
+			identical++
+		}
+		rewrites++
+		if err := xmlcanon.Diff(original, rewritten); err != nil {
+			t.Errorf("%s: %v", path, err)
+		}
+		if out != "" {
+			written, err := p.Bytes()
+			if err != nil {
+				t.Fatal(err)
+			}
+			rel, _ := filepath.Rel(root, path)
+			dst := filepath.Join(out, rel)
+			if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(dst, written, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	t.Logf("%d rewritten, %d identical to the byte", rewrites, identical)
 }
