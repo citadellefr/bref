@@ -15,8 +15,11 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: test -z "$(gofmt -l .)"
+      - run: sudo apt-get install -y fonts-crosextra-carlito fonts-crosextra-caladea fonts-liberation2
       - run: corpus/fetch.sh
       - run: go test -race ./...
+        env:
+          BREF_FONTS: /usr/share/fonts/truetype
 
   # Every package the corpus tests rewrite must add no error to what the
   # Open XML SDK finds in the original.

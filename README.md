@@ -26,12 +26,13 @@ license.
 |---|---|
 | [`opc`](opc) | The zip container of Office documents: parts, content types, relationships. Untouched parts are copied without being decompressed. Guards against zip bombs, unsafe paths and forged sizes. |
 | `internal/xmltok` | An XML tokenizer that allocates nothing per token and keeps the exact bytes of every element, several times faster than `encoding/xml` and checked against it. |
+| `internal/prototype/pagination` | A measure, not a feature: how often a page laid out with metric-compatible free fonts ends where Word ended it. |
 | `internal/xmlcanon` | Whether two XML parts mean the same thing to Office, whatever their prefixes, quoting or layout: how rewritten parts are checked. |
 
 ## Tests
 
 ```sh
-corpus/fetch.sh   # test files from Apache POI, python-docx and python-pptx
+corpus/fetch.sh   # test files from Apache POI, LibreOffice, python-docx and python-pptx
 go test -race ./...
 go test ./opc -run '^$' -fuzz FuzzOpen
 go test ./internal/xmltok -run '^$' -fuzz FuzzSameAsEncodingXML
