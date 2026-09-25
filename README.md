@@ -38,3 +38,12 @@ go test ./internal/xmltok -run '^$' -fuzz FuzzSameAsEncodingXML
 ```
 
 The corpus is downloaded from pinned commits and never committed.
+
+The corpus tests write the packages they rewrite to `$BREF_OUT`, which CI then
+checks with the Open XML SDK: a rewrite must add no error to those of the
+original file.
+
+```sh
+BREF_OUT=/tmp/out go test ./... -run Corpus
+dotnet run --project tools/validate -- corpus/files /tmp/out
+```

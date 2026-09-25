@@ -126,6 +126,13 @@ func Open(data []byte, limits Limits) (*Package, error) {
 	if p.types, err = parseContentTypes(raw); err != nil {
 		return nil, err
 	}
+	// A renamed entry also takes the spelling of its override, for readers
+	// that compare part names case-sensitively.
+	for _, pt := range p.parts {
+		if i := p.types.find(pt.name); i >= 0 && pt.name != pt.file.Name {
+			pt.name = p.types.Rules[i].PartName[1:]
+		}
+	}
 	return p, nil
 }
 

@@ -253,7 +253,10 @@ func TestOpenRejects(t *testing.T) {
 }
 
 func TestBackslashesAreNormalized(t *testing.T) {
-	data := makeZip(t, entry{contentTypesName, minimalTypes}, entry{"xl\\styles.xml", "<a/>"})
+	types := strings.Replace(minimalTypes, "</Types>",
+		`<Override PartName="/xl/sharedStrings.xml" ContentType="s"/></Types>`, 1)
+	data := makeZip(t, entry{contentTypesName, types},
+		entry{"xl\\styles.xml", "<a/>"}, entry{"xl\\sharedstrings.xml", "<s/>"})
 	p, err := Open(data, Limits{})
 	if err != nil {
 		t.Fatal(err)
@@ -261,6 +264,9 @@ func TestBackslashesAreNormalized(t *testing.T) {
 	q := reopen(t, p)
 	if got, err := q.Read("xl/styles.xml"); err != nil || string(got) != "<a/>" {
 		t.Fatalf("xl/styles.xml = %q, %v", got, err)
+	}
+	if want := []string{contentTypesName, "xl/styles.xml", "xl/sharedStrings.xml"}; !slices.Equal(q.Names(), want) {
+		t.Fatalf("names %q, want %q", q.Names(), want)
 	}
 	if !slices.EqualFunc(rawEntries(t, data), rawEntries(t, mustBytes(t, q)), bytes.Equal) {
 		t.Error("compressed data changed")

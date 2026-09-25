@@ -17,3 +17,19 @@ jobs:
       - run: test -z "$(gofmt -l .)"
       - run: corpus/fetch.sh
       - run: go test -race ./...
+
+  # Every package the corpus tests rewrite must add no error to what the
+  # Open XML SDK finds in the original.
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: corpus/fetch.sh
+      - run: BREF_OUT=$RUNNER_TEMP/out go test ./... -run Corpus
+      - run: dotnet run --project tools/validate -c Release -- corpus/files $RUNNER_TEMP/out
