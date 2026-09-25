@@ -28,6 +28,10 @@ func TestSame(t *testing.T) {
 			`<d xmlns="` + w + `" xmlns:m="` + mcNamespace + `" xmlns:a="u15" xmlns:b="u14" m:Ignorable="a b"/>`,
 		},
 		{
+			`<a xmlns:mc="` + mcNamespace + `" mc:Ignorable="w14"/>`,
+			`<a xmlns:m="` + mcNamespace + `" m:Ignorable="w14"/>`,
+		},
+		{
 			`<mc:Choice xmlns:mc="` + mcNamespace + `" xmlns:wps="u" Requires="wps"/>`,
 			`<m:Choice xmlns:m="` + mcNamespace + `" xmlns:s="u" Requires="s"/>`,
 		},
@@ -63,7 +67,6 @@ func TestDifferent(t *testing.T) {
 func TestRefused(t *testing.T) {
 	for _, doc := range []string{
 		`<w:p/>`,
-		`<a xmlns:mc="` + mcNamespace + `" mc:Ignorable="w14"/>`,
 		`<a>`,
 	} {
 		if _, err := Canonical([]byte(doc)); err == nil {
@@ -79,8 +82,7 @@ func TestDiffShowsTheNode(t *testing.T) {
 	}
 }
 
-// TestCorpus canonicalizes every XML part of the corpus that xmltok reads:
-// real files must not trip on undeclared prefixes, including in mc:Ignorable.
+// TestCorpus canonicalizes every XML part of the corpus that xmltok reads.
 func TestCorpus(t *testing.T) {
 	paths, _ := filepath.Glob(filepath.Join("..", "..", "corpus", "files", "*", "*.*x"))
 	if len(paths) == 0 {

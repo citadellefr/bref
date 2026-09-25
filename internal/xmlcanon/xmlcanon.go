@@ -105,9 +105,7 @@ func element(s *xmltok.Scanner, tok xmltok.Token) ([]byte, error) {
 			return nil, err
 		}
 		if listsPrefixes(name, an) {
-			if value, err = resolvePrefixes(s, value); err != nil {
-				return nil, fmt.Errorf("xmlcanon: %s: %w", an, err)
-			}
+			value = resolvePrefixes(s, value)
 		}
 		attrs = append(attrs, an+"="+strconv.Quote(string(value)))
 	}
@@ -154,17 +152,20 @@ func listsPrefixes(element, attr string) bool {
 		element == mc+"Choice" && attr == "Requires"
 }
 
-func resolvePrefixes(s *xmltok.Scanner, value []byte) ([]byte, error) {
+// resolvePrefixes keeps a prefix that is not declared, which real files
+// have, as "?prefix".
+func resolvePrefixes(s *xmltok.Scanner, value []byte) []byte {
 	var uris []string
 	for _, p := range strings.Fields(string(value)) {
 		uri := s.Space([]byte(p))
 		if uri == nil {
-			return nil, fmt.Errorf("undeclared prefix %q", p)
+			uris = append(uris, "?"+p)
+			continue
 		}
 		uris = append(uris, string(uri))
 	}
 	slices.Sort(uris)
-	return []byte(strings.Join(uris, " ")), nil
+	return []byte(strings.Join(uris, " "))
 }
 
 // normalize applies XML attribute value normalization to a raw value: its

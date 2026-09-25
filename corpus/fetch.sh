@@ -18,8 +18,13 @@ fetch() { # name url commit paths...
 	git -C "$tmp/$name" fetch -q --depth 1 --filter=blob:none origin "$commit"
 	git -C "$tmp/$name" checkout -q FETCH_HEAD
 	mkdir -p "$dest/$name"
-	find "$tmp/$name" -path "$tmp/$name/.git" -prune -o -type f -print0 |
-		xargs -0 -I{} cp {} "$dest/$name/"
+	# flattened; a name met twice takes its directory as prefix
+	find "$tmp/$name" -path "$tmp/$name/.git" -prune -o -type f -print0 | sort -z |
+		while IFS= read -r -d '' f; do
+			out="$dest/$name/$(basename "$f")"
+			[ -e "$out" ] && out="$dest/$name/$(basename "$(dirname "$f")")-$(basename "$f")"
+			cp "$f" "$out"
+		done
 }
 
 rm -rf "$dest"
@@ -29,6 +34,9 @@ fetch poi https://github.com/apache/poi.git 942d95d85b15d0dfdb3bc9ba1b4f273f2777
 # MIT
 fetch python-docx https://github.com/python-openxml/python-docx.git e45454602b53e8e572b179ccf1c91093ec9f4ed7 \
 	'*.docx'
+# Mozilla Public License 2.0: documents from the bug reports of Writer
+fetch libreoffice https://github.com/LibreOffice/core.git 2a6ccbc40b060848a6eba2b2d27db43a625ded9a \
+	'/sw/qa/**/*.docx'
 # MIT
 fetch python-pptx https://github.com/scanny/python-pptx.git 278b47b1dedd5b46ee84c286e77cdfb0bf4594be \
 	'*.pptx' '*.pptm' '*.xlsx'
