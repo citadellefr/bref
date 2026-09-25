@@ -25,6 +25,7 @@ license.
 | Package | Role |
 |---|---|
 | [`bref`](.) | The hub: one room per open document, edits rebased and relayed to everyone connected, saves after a pause. Serves plain text files (`.txt`) for now. |
+| [`dart`](dart) | The Flutter package: the session with the hub, the same `ot` algorithms, and the editors. |
 | [`ot`](ot) | Edits and how concurrent edits are reconciled: text is a flow of characters and paragraph marks, changed by deltas. The Dart package runs the same algorithms, checked against shared vectors. |
 | [`opc`](opc) | The zip container of Office documents: parts, content types, relationships. Untouched parts are copied without being decompressed. Guards against zip bombs, unsafe paths and forged sizes. |
 | `internal/xmltok` | An XML tokenizer that allocates nothing per token and keeps the exact bytes of every element, several times faster than `encoding/xml` and checked against it. |
@@ -57,6 +58,7 @@ acknowledged.
 corpus/fetch.sh   # test files from Apache POI, LibreOffice, python-docx and python-pptx
 go test -race ./...
 go test ./ot -run Vectors -update   # after changing the ot algorithms
+(cd dart && flutter test)          # replays the same vectors
 go test ./opc -run '^$' -fuzz FuzzOpen
 go test ./internal/xmltok -run '^$' -fuzz FuzzSameAsEncodingXML
 ```

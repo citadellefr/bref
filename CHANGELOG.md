@@ -12,3 +12,4 @@
 - `internal/prototype/pagination`: measures how closely Word's page breaks are reproduced.
 - `ot`: text flows, deltas, composition and transformation, with vectors for the Dart package.
 - `bref`: the hub, which orders, rebases and relays edits, catches up reconnecting clients and saves plain text files.
+- `dart`: the Flutter package, with the session and a plain text editor.
