@@ -15,6 +15,9 @@ if (args.Length != 2)
 }
 
 var validator = new OpenXmlValidator(FileFormatVersions.Microsoft365);
+// Documents Bref edited may lose parts, a deleted slide; the parts it added
+// must be valid.
+var edited = Environment.GetEnvironmentVariable("BREF_EDITED") == "1";
 int files = 0, skipped = 0, failed = 0;
 foreach (var rewritten in Directory.EnumerateFiles(args[1], "*", SearchOption.AllDirectories).Order())
 {
@@ -29,10 +32,11 @@ foreach (var rewritten in Directory.EnumerateFiles(args[1], "*", SearchOption.Al
     var after = Check(rewritten);
     var added = after == null
         ? ["the rewritten package does not open"]
-        : before.Parts.Except(after.Parts).Select(p => $"{p} lost")
+        : before.Parts.Except(after.Parts).Where(_ => !edited).Select(p => $"{p} lost")
             // parts the SDK could not see in the original, under a name
             // Bref normalized, bring their own errors
             .Concat(after.Errors.Where(e => before.Parts.Contains(e.Part) && !before.Errors.Contains(e)).Select(e => e.Text))
+            .Concat(after.Errors.Where(e => edited && !before.Parts.Contains(e.Part)).Select(e => e.Text))
             .ToList();
     if (added.Count > 0)
     {

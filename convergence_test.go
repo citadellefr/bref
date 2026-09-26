@@ -28,11 +28,12 @@ func init() {
 	}
 }
 
-func (treeFile) check(ot.Edit) error { return nil }
+func (treeFile) check(*ot.Tree, ot.Edit) error { return nil }
 
-func (treeFile) encode(doc *ot.Tree) []byte {
-	data, _ := json.Marshal(doc.Edit())
-	return data
+func (treeFile) media(string) ([]byte, string, error) { return nil, "", ErrNoMedia }
+
+func (treeFile) encode(doc *ot.Tree) ([]byte, error) {
+	return json.Marshal(doc.Edit())
 }
 
 // simClient is the client side of the protocol, as the Dart session runs

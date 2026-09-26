@@ -24,10 +24,11 @@ license.
 
 | Package | Role |
 |---|---|
-| [`bref`](.) | The hub: one room per open document, edits rebased and relayed to everyone connected, saves after a pause. Serves plain text files (`.txt`) for now. |
+| [`bref`](.) | The hub: one room per open document, edits rebased and relayed to everyone connected, saves after a pause. Serves presentations (`.pptx`, `.pptm`, `.ppsx`) and plain text files (`.txt`), and the pictures of documents. |
 | [`dart`](dart) | The Flutter package: the session with the hub, the same `ot` algorithms, and the editors. |
 | [`ot`](ot) | Edits and how concurrent edits are reconciled. A document is a tree of nodes (slides, shapes, the body of a text file), each with a type, attributes and possibly text; text is a flow of characters and paragraph marks, changed by deltas. The Dart package runs the same algorithms, checked against shared vectors. |
 | [`drawingml`](drawingml) | The DrawingML of all three formats: colors, fills, lines, geometries, positions and text bodies, read as JSON and text flows, written back as patches of the XML they came from. |
+| [`pptx`](pptx) | Presentations as trees: masters, layouts, slides, shapes and notes. Only what changed is written back; a copied shape keeps its pictures and links. |
 | [`opc`](opc) | The zip container of Office documents: parts, content types, relationships. Untouched parts are copied without being decompressed. Guards against zip bombs, unsafe paths and forged sizes. |
 | `internal/xmltok` | An XML tokenizer that allocates nothing per token and keeps the exact bytes of every element, several times faster than `encoding/xml` and checked against it. |
 | `internal/prototype/pagination` | A measure, not a feature: how often a page laid out with metric-compatible free fonts ends where Word ended it. |
@@ -69,7 +70,8 @@ until it is acknowledged.
 
 ```sh
 corpus/fetch.sh   # test files from Apache POI, LibreOffice, python-docx and python-pptx
-go test -race ./...
+go test -race -short ./...        # without the corpus
+go test ./...
 go test ./ot -run Vectors -update   # after changing the ot algorithms
 (cd dart && flutter test)          # replays the same vectors
 go test ./opc -run '^$' -fuzz FuzzOpen
@@ -83,6 +85,8 @@ checks with the Open XML SDK: a rewrite must add no error to those of the
 original file.
 
 ```sh
-BREF_OUT=/tmp/out go test ./... -run Corpus
+BREF_OUT=/tmp/out go test ./pptx -run Corpus
 dotnet run --project tools/validate -- corpus/files /tmp/out
+BREF_EDITED=/tmp/edited go test ./pptx -run Edits   # a document edited
+BREF_EDITED=1 dotnet run --project tools/validate -- corpus/files /tmp/edited
 ```

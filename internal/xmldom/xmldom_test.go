@@ -51,6 +51,9 @@ func TestRefused(t *testing.T) {
 
 // Every XML part of the corpus is written back byte for byte.
 func TestCorpus(t *testing.T) {
+	if testing.Short() {
+		t.Skip("the corpus is not read in -short mode")
+	}
 	files, _ := filepath.Glob("../../corpus/files/*/*")
 	if len(files) == 0 {
 		t.Skip("no corpus: corpus/fetch.sh")

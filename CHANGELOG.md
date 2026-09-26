@@ -9,6 +9,11 @@
 - `drawingml`: colors, fills, lines, geometries, positions, paragraph, run
   and body properties as JSON; text bodies as flows and back.
 - `tools/presets`: the preset shapes of DrawingML, for Go and Dart.
+- `pptx`: presentations read into trees and written back, only the parts
+  that changed; slides added, copied, moved and deleted; notes.
+- `bref`: the hub serves presentations and their pictures (`Hub.Media`).
+- `tools/validate`: edited documents may lose parts, those added must be
+  valid.
 - corpus: Impress test documents from LibreOffice.
 
 ## 0.1.0 — 2026-09-26

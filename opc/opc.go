@@ -187,6 +187,16 @@ func (p *Package) Read(name string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// Checksum is the CRC-32 and size of a part as the archive records them,
+// known without reading the part; false for a part written since Open.
+func (p *Package) Checksum(name string) (crc uint32, size uint64, ok bool) {
+	pt := p.index[strings.ToLower(name)]
+	if pt == nil || pt.file == nil {
+		return 0, 0, false
+	}
+	return pt.file.CRC32, pt.file.UncompressedSize64, true
+}
+
 // ContentType is the media type of a part, "" when the package declares none.
 func (p *Package) ContentType(name string) string {
 	return p.types.lookup(name)

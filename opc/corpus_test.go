@@ -21,6 +21,9 @@ var ooxmlExtensions = []string{
 
 // corpus lists the OOXML files fetched by corpus/fetch.sh.
 func corpus(t *testing.T) []string {
+	if testing.Short() {
+		t.Skip("the corpus is not read in -short mode")
+	}
 	t.Helper()
 	root := filepath.Join("..", "corpus", "files")
 	if _, err := os.Stat(root); err != nil {

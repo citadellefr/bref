@@ -251,7 +251,7 @@ func (r *room) rebase(p *peer, in *inbound) (ot.Edit, error) {
 	if json.Unmarshal(in.D, &e) != nil || e.Check() != nil {
 		return nil, errMalformed
 	}
-	if err := r.file.check(e); err != nil {
+	if err := r.file.check(r.doc, e); err != nil {
 		return nil, err
 	}
 	first := r.version - uint64(len(r.history))
@@ -324,7 +324,10 @@ func (r *room) flush(ctx context.Context) error {
 	doc := r.doc.Clone()
 	r.mu.Unlock()
 
-	err := r.hub.store.Save(ctx, r.key, r.file.encode(doc))
+	data, err := r.file.encode(doc)
+	if err == nil {
+		err = r.hub.store.Save(ctx, r.key, data)
+	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()

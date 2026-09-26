@@ -84,6 +84,9 @@ func TestDiffShowsTheNode(t *testing.T) {
 
 // TestCorpus canonicalizes every XML part of the corpus that xmltok reads.
 func TestCorpus(t *testing.T) {
+	if testing.Short() {
+		t.Skip("the corpus is not read in -short mode")
+	}
 	paths, _ := filepath.Glob(filepath.Join("..", "..", "corpus", "files", "*", "*.*x"))
 	if len(paths) == 0 {
 		t.Skip("no corpus: run corpus/fetch.sh")

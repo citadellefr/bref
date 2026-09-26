@@ -15,6 +15,9 @@ import (
 // presentationParts are the parts of the corpus's presentations holding
 // text bodies, read.
 func presentationParts(t *testing.T, visit func(file, name string, doc *xmldom.Document, data []byte)) {
+	if testing.Short() {
+		t.Skip("the corpus is not read in -short mode")
+	}
 	files, _ := filepath.Glob("../corpus/files/*/*")
 	if len(files) == 0 {
 		t.Skip("no corpus: corpus/fetch.sh")

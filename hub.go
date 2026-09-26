@@ -57,6 +57,17 @@ func (h *Hub) Serve(ctx context.Context, conn Conn, key string, info Peer) error
 	return nil
 }
 
+// Media is a picture of a document, by the name its nodes give it, and its
+// content type. The document is read if nobody has it open.
+func (h *Hub) Media(ctx context.Context, key, name string) ([]byte, string, error) {
+	r, err := h.acquire(ctx, key)
+	if err != nil {
+		return nil, "", err
+	}
+	defer h.release(r)
+	return r.file.media(name)
+}
+
 // Disconnect ends every connection to a document, e.g. when the file behind
 // it is deleted or moved.
 func (h *Hub) Disconnect(key, reason string) {

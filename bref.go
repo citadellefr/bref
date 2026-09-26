@@ -72,7 +72,10 @@ const (
 	CloseShutdown   = 4003
 )
 
-var ErrClosed = errors.New("bref: hub closed")
+var (
+	ErrClosed  = errors.New("bref: hub closed")
+	ErrNoMedia = errors.New("bref: no such picture")
+)
 
 // ErrGone is returned (possibly wrapped) by Store.Save when the file no
 // longer exists, e.g. it was deleted: everyone connected to it is

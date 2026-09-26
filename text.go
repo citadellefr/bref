@@ -40,7 +40,7 @@ func openText(data []byte) (*ot.Tree, format, error) {
 	return doc, f, err
 }
 
-func (textFile) check(e ot.Edit) error {
+func (textFile) check(_ *ot.Tree, e ot.Edit) error {
 	for _, c := range e {
 		if c.Op != ot.OpTxt || c.ID != textBody {
 			return errTextNodes
@@ -49,7 +49,11 @@ func (textFile) check(e ot.Edit) error {
 	return nil
 }
 
-func (f textFile) encode(doc *ot.Tree) []byte {
+func (textFile) media(string) ([]byte, string, error) {
+	return nil, "", ErrNoMedia
+}
+
+func (f textFile) encode(doc *ot.Tree) ([]byte, error) {
 	var b bytes.Buffer
 	if f.bom {
 		b.Write(bom)
@@ -68,7 +72,7 @@ func (f textFile) encode(doc *ot.Tree) []byte {
 			b.WriteString(o.Insert)
 		}
 	}
-	return b.Bytes()
+	return b.Bytes(), nil
 }
 
 // windows1252 differs from Latin-1 in 0x80–0x9F.

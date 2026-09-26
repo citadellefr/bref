@@ -315,6 +315,9 @@ func TestSameAsEncodingXML(t *testing.T) {
 // TestCorpusSameAsEncodingXML reads every XML part of the corpus with both
 // parsers.
 func TestCorpusSameAsEncodingXML(t *testing.T) {
+	if testing.Short() {
+		t.Skip("the corpus is not read in -short mode")
+	}
 	root := filepath.Join("..", "..", "corpus", "files")
 	paths, _ := filepath.Glob(filepath.Join(root, "*", "*.*x"))
 	if len(paths) == 0 {

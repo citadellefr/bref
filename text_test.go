@@ -24,7 +24,7 @@ func TestTextFiles(t *testing.T) {
 		if got := doc.Node(textBody).Text.Delta(); len(got) != 1 || got[0].Insert != c.flow {
 			t.Errorf("%q read as %v, want %q", c.file, got, c.flow)
 		}
-		if got := string(f.encode(doc)); got != c.saved {
+		if got, _ := f.encode(doc); string(got) != c.saved {
 			t.Errorf("%q written back as %q, want %q", c.file, got, c.saved)
 		}
 	}
@@ -39,7 +39,7 @@ func TestTextFileKeepsParagraphsApart(t *testing.T) {
 	if err := doc.Apply(ot.Edit{{Op: ot.OpTxt, ID: textBody, Text: d}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := string(f.encode(doc)); got != "a\n\n\nb" {
+	if got, _ := f.encode(doc); string(got) != "a\n\n\nb" {
 		t.Fatalf("saved %q", got)
 	}
 }
@@ -55,7 +55,7 @@ func TestTextFileOnlyEditsItsText(t *testing.T) {
 		{{Op: ot.OpSet, ID: textBody, Key: "V"}},
 		{{Op: ot.OpDel, ID: textBody}},
 	} {
-		if f.check(e) == nil {
+		if f.check(nil, e) == nil {
 			t.Errorf("%v passes", e)
 		}
 	}
