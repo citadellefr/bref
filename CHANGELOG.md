@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-09-26
 
 - `ot`: documents are trees of nodes with attributes and text, changed by
   edits; the hub, its protocol and plain text files use them.

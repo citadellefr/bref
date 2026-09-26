@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-09-26
 
 - `Tree` and `Edit`: documents as trees of nodes, as the Go package `ot` has
   them; `DocSession` edits trees, selections name the node they are in.
