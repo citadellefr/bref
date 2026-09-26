@@ -7,18 +7,19 @@ import 'package:bref/bref.dart';
 /// applied and relayed. Frames wait in both directions until delivered, so
 /// tests choose the order things cross the network in.
 class FakeHub {
-  FakeHub(String text) : doc = Delta([Op.insert('$text\n')]);
+  FakeHub(String text)
+    : doc = Tree.fromEdit(Edit([Change.create(Node(id: 'body', type: 'text', key: 'V', text: Delta([Op.insert('$text\n')])))]))!;
 
-  Delta doc;
+  Tree doc;
   var version = 0;
   var epoch = 'e0';
-  final history = <({Delta delta, int sid, String client, int n})>[];
+  final history = <({Edit edit, int sid, String client, int n})>[];
   final acks = <String, int>{};
   final links = <FakeLink>[];
   var _sid = 0;
   var refuse = '';
 
-  String get text => doc.text.substring(0, doc.text.length - 1);
+  String get text => doc.text;
 
   Future<DocTransport> connect(String clientId) async {
     final link = FakeLink(this, clientId, ++_sid);
@@ -55,14 +56,14 @@ class FakeHub {
         final v = msg['v'] as int? ?? -1;
         final first = version - history.length;
         if (msg['epoch'] != epoch || v < first || v > version) {
-          link.frame({'t': 'doc', 'v': version, 'ack': acks[link.client] ?? 0, 'd': doc.toJson()});
+          link.frame({'t': 'doc', 'v': version, 'ack': acks[link.client] ?? 0, 'd': doc.toEdit().toJson()});
           return;
         }
         for (var i = v - first; i < history.length; i++) {
           final e = history[i];
           link.frame(e.client == link.client
               ? {'t': 'ack', 'n': e.n, 'v': first + i + 1}
-              : {'t': 'op', 'sid': e.sid, 'v': first + i + 1, 'd': e.delta.toJson()});
+              : {'t': 'op', 'sid': e.sid, 'v': first + i + 1, 'd': e.edit.toJson()});
         }
         link.frame({'t': 'ready', 'v': version});
       case 'op':
@@ -71,13 +72,13 @@ class FakeHub {
           link.frame({'t': 'nack', 'n': n, 'error': refuse});
           return;
         }
-        var d = Delta.fromJson(msg['d'])!;
+        var d = Edit.fromJson(msg['d'])!;
         final base = msg['v']! as int;
         for (final e in history.sublist(base - (version - history.length))) {
-          d = e.delta.transform(d, thisFirst: true);
+          d = e.edit.transform(d, thisFirst: true);
         }
-        doc = doc.compose(d);
-        history.add((delta: d, sid: link.sid, client: link.client, n: n));
+        if (doc.apply(d) == null) throw StateError('$d does not apply');
+        history.add((edit: d, sid: link.sid, client: link.client, n: n));
         acks[link.client] = n;
         version++;
         for (final other in links) {
@@ -164,4 +165,18 @@ class FakeLink implements DocTransport {
     hub.links.remove(this);
     await _incoming.close();
   }
+}
+
+/// The plain text file of these tests: the text of its node "body".
+extension PlainText on Tree {
+  String get text {
+    final flow = this['body']!.text!.text;
+    return flow.substring(0, flow.length - 1);
+  }
+}
+
+extension PlainTextSession on DocSession {
+  String get text => document.text;
+
+  bool replace(int start, int end, String text) => replaceText('body', start, end, text);
 }

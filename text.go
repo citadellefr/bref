@@ -2,23 +2,30 @@ package bref
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/citadellefr/bref/ot"
 )
 
-// textFile is a plain text file, one paragraph per line. It is written back
-// with the byte order mark and the line endings it was read with, in UTF-8:
-// a file that was not UTF-8 is read as Windows-1252, as Notepad does.
+// textFile is a plain text file: a single node, "body", whose text has one
+// paragraph per line. It is written back with the byte order mark and the
+// line endings it was read with, in UTF-8: a file that was not UTF-8 is read
+// as Windows-1252, as Notepad does.
 type textFile struct {
 	bom  bool
 	crlf bool
 }
 
-var bom = []byte{0xEF, 0xBB, 0xBF}
+const textBody = "body"
 
-func openText(data []byte) (*ot.Doc, format, error) {
+var (
+	bom          = []byte{0xEF, 0xBB, 0xBF}
+	errTextNodes = errors.New("a text file only has its text")
+)
+
+func openText(data []byte) (*ot.Tree, format, error) {
 	var f textFile
 	data, f.bom = bytes.CutPrefix(data, bom)
 	text := string(data)
@@ -29,16 +36,25 @@ func openText(data []byte) (*ot.Doc, format, error) {
 		f.crlf = true
 		text = strings.ReplaceAll(text, "\r\n", "\n")
 	}
-	doc, err := ot.NewDoc(ot.Delta{{Insert: text + "\n"}})
+	doc, err := ot.NewTree(ot.Edit{{Op: ot.OpNew, ID: textBody, Type: "text", Key: "V", Text: ot.Delta{{Insert: text + "\n"}}}})
 	return doc, f, err
 }
 
-func (f textFile) encode(doc *ot.Doc) []byte {
+func (textFile) check(e ot.Edit) error {
+	for _, c := range e {
+		if c.Op != ot.OpTxt || c.ID != textBody {
+			return errTextNodes
+		}
+	}
+	return nil
+}
+
+func (f textFile) encode(doc *ot.Tree) []byte {
 	var b bytes.Buffer
 	if f.bom {
 		b.Write(bom)
 	}
-	for i, p := range doc.Paragraphs() {
+	for i, p := range doc.Node(textBody).Text.Paragraphs() {
 		if i > 0 {
 			if f.crlf {
 				b.WriteByte('\r')

@@ -46,7 +46,7 @@ void main() {
     await pumpEditor(tester);
     final controller = tester.widget<TextField>(find.byType(TextField)).controller!;
     controller.selection = const TextSelection.collapsed(offset: 7);
-    theirs.replaceText(0, 0, '>> ');
+    theirs.replace(0, 0, '>> ');
     await settle(tester);
     expect(field(tester), '>> one\ntwo');
     expect(controller.selection, const TextSelection.collapsed(offset: 10));
@@ -57,7 +57,7 @@ void main() {
     await pumpEditor(tester);
     await tester.enterText(find.byType(TextField), 'one!\ntwo');
     await settle(tester);
-    theirs.replaceText(0, 0, 'A');
+    theirs.replace(0, 0, 'A');
     await settle(tester);
     mine.undo();
     await settle(tester);

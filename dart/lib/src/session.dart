@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'ot/delta.dart';
-import 'ot/diff.dart';
+import 'ot/tree.dart';
 
 /// The text link to the server, behind an interface so that sessions can be
 /// tested without one.
@@ -66,6 +66,53 @@ class DocClosed implements Exception {
   String toString() => reason;
 }
 
+/// Where someone's selection is: a range of the text of a node, base then
+/// extent.
+@immutable
+class DocSelection {
+  const DocSelection(this.node, this.base, this.extent);
+
+  const DocSelection.collapsed(this.node, int offset) : base = offset, extent = offset;
+
+  final String node;
+  final int base;
+  final int extent;
+
+  int get start => math.min(base, extent);
+
+  int get end => math.max(base, extent);
+
+  static DocSelection? fromJson(Object? json) {
+    if (json is! Map<String, Object?>) return null;
+    final node = json['n'], base = json['b'], extent = json['e'];
+    return node is String && base is int && extent is int ? DocSelection(node, base, extent) : null;
+  }
+
+  Map<String, Object?> toJson() => {'n': node, 'b': base, 'e': extent};
+
+  /// This selection once [edit] is made; null when its node went away.
+  DocSelection? moved(Edit edit, Tree after, {required bool own}) {
+    if (after[node] == null) return null;
+    var (b, e) = (base, extent);
+    for (final c in edit.changes) {
+      if (c.kind != ChangeKind.text || c.id != node) continue;
+      b = c.text!.transformPosition(b, thisFirst: own);
+      e = c.text!.transformPosition(e, thisFirst: own);
+    }
+    return b == base && e == extent ? this : DocSelection(node, b, e);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is DocSelection && other.node == node && other.base == base && other.extent == extent;
+
+  @override
+  int get hashCode => Object.hash(node, base, extent);
+
+  @override
+  String toString() => '$node[$base, $extent]';
+}
+
 class DocPeer {
   DocPeer._(this.sid, this.id, this.name, this.readOnly);
 
@@ -74,11 +121,10 @@ class DocPeer {
   final String name;
   final bool readOnly;
 
-  (int, int)? _selection;
+  DocSelection? _selection;
 
-  /// Where the peer's selection is, base then extent, if it is in the
-  /// document.
-  (int, int)? get selection => _selection;
+  /// Where the peer's selection is, if it is in the document.
+  DocSelection? get selection => _selection;
 }
 
 /// One person's connection to a document: keeps [document] in step with the
@@ -86,7 +132,7 @@ class DocPeer {
 /// history [undo] and [redo] walk through.
 ///
 /// Local edits show at once. One is in flight to the server at a time; the
-/// next ones wait composed, offline included, and all of them are rebased
+/// next ones wait behind it, offline included, and all of them are rebased
 /// over the edits of others as those arrive.
 class DocSession extends ChangeNotifier {
   DocSession(this._connect, {String? clientId}) : clientId = clientId ?? randomId();
@@ -103,9 +149,9 @@ class DocSession extends ChangeNotifier {
   final Listenable presence = _Presence();
 
   final _peers = <int, DocPeer>{};
-  final _undo = <Delta>[];
-  final _redo = <Delta>[];
-  final _changes = StreamController<Delta>.broadcast(sync: true);
+  final _undo = <Edit>[];
+  final _redo = <Edit>[];
+  final _changes = StreamController<Edit>.broadcast(sync: true);
   final _rejections = StreamController<String>.broadcast();
 
   DocStatus _status = DocStatus.connecting;
@@ -121,21 +167,20 @@ class DocSession extends ChangeNotifier {
   StreamSubscription<String>? _subscription;
   Timer? _retry;
 
-  Delta? _doc;
-  Delta _confirmed = Delta();
-  String? _text;
+  Tree? _doc;
+  Tree _confirmed = Tree();
   var _rev = 0;
   String? _epoch;
   String? _joined;
   var _synced = false;
   var _n = 0;
-  Delta? _inflight;
+  Edit? _inflight;
   var _pending = 0;
   var _sent = false;
-  Delta? _buffer;
+  Edit? _buffer;
   DateTime? _lastTyping;
 
-  (int, int)? _selection;
+  DocSelection? _selection;
   var _selectionDirty = false;
   Timer? _presenceTimer;
 
@@ -154,16 +199,9 @@ class DocSession extends ChangeNotifier {
   /// Whether the document arrived: nothing can be edited before.
   bool get loaded => _doc != null;
 
-  /// The document as shown, local edits included.
-  Delta get document => _doc ?? Delta();
-
-  /// The text of the document, one line per paragraph.
-  String get text {
-    final doc = _doc;
-    if (doc == null) return '';
-    final full = _text ??= doc.text;
-    return full.substring(0, full.length - 1);
-  }
+  /// The document as shown, local edits included. It changes in place:
+  /// [changes] tells how.
+  Tree get document => _doc ?? Tree();
 
   /// Whether every local edit reached the file.
   bool get saved => _pending == 0 && _buffer == null && _savedVersion >= _ackVersion && _saveError == null;
@@ -172,8 +210,8 @@ class DocSession extends ChangeNotifier {
 
   bool get canRedo => _redo.isNotEmpty;
 
-  /// Every change made to [document], local or not, as it is made.
-  Stream<Delta> get changes => _changes.stream;
+  /// Every change made to [document], local or not, once it is made.
+  Stream<Edit> get changes => _changes.stream;
 
   /// Why the server refused a local edit, which has been rolled back.
   Stream<String> get rejections => _rejections.stream;
@@ -216,23 +254,25 @@ class DocSession extends ChangeNotifier {
     super.dispose();
   }
 
-  /// Replaces the text between [start] and [end]; each "\n" in [text]
-  /// starts a paragraph.
-  bool replaceText(int start, int end, String text) => edit(
-    Delta()
-      ..retain(start)
-      ..delete(end - start)
-      ..insert(text),
-  );
+  /// Replaces the text of [node] between [start] and [end]; each "\n" in
+  /// [text] starts a paragraph.
+  bool replaceText(String node, int start, int end, String text) => edit(Edit([
+    Change.text(
+      node,
+      Delta()
+        ..retain(start)
+        ..delete(end - start)
+        ..insert(text),
+    ),
+  ]));
 
   /// Makes a local edit, which [undo] reverts. Typing is undone in bursts,
   /// as Office does.
-  bool edit(Delta delta) {
+  bool edit(Edit edit) {
     final doc = _doc;
-    if (doc == null || _readOnly || delta.chop().isEmpty || delta.baseLength > doc.length) return false;
-    final result = doc.compose(delta);
-    if (!(result.ops.lastOrNull?.insert?.endsWith('\n') ?? false)) return false;
-    final inverse = delta.invert(doc);
+    if (doc == null || _readOnly || edit.isEmpty) return false;
+    final inverse = doc.apply(edit);
+    if (inverse == null) return false;
     final now = DateTime.now();
     final typing = _lastTyping != null && now.difference(_lastTyping!) < _typingPause && _undo.isNotEmpty;
     if (typing) {
@@ -243,7 +283,7 @@ class DocSession extends ChangeNotifier {
     }
     _lastTyping = now;
     _redo.clear();
-    _commit(delta, result);
+    _commit(edit);
     return true;
   }
 
@@ -251,38 +291,54 @@ class DocSession extends ChangeNotifier {
 
   void redo() => _travel(_redo, _undo);
 
-  /// Applies the top of [from], skipping what the edits of others emptied,
-  /// and keeps its inverse on [to].
-  void _travel(List<Delta> from, List<Delta> to) {
+  /// Applies the top of [from], skipping what the edits of others emptied
+  /// or made impossible, and keeps its inverse on [to].
+  void _travel(List<Edit> from, List<Edit> to) {
     final doc = _doc;
     if (doc == null || _readOnly) return;
     _lastTyping = null;
     while (from.isNotEmpty) {
-      final delta = from.removeLast();
-      if (delta.chop().isEmpty) continue;
-      to.add(delta.invert(doc));
-      _commit(delta);
+      final edit = _renewed(from.removeLast());
+      if (edit.isEmpty) continue;
+      final inverse = doc.apply(edit);
+      if (inverse == null) continue;
+      to.add(inverse);
+      _commit(edit);
       return;
     }
     notifyListeners();
   }
 
-  void _commit(Delta delta, [Delta? result]) {
-    _show(delta, author: null, result: result);
+  /// [edit] with the nodes it creates given new ids, and the rest of the
+  /// history following: undoing a deletion must not bring an id back, or
+  /// what others did meanwhile to the deleted node would apply to the new.
+  Edit _renewed(Edit edit) {
+    final names = {
+      for (final c in edit.changes)
+        if (c.kind == ChangeKind.create) c.id: randomId(),
+    };
+    if (names.isEmpty) return edit;
+    for (final stack in [_undo, _redo]) {
+      for (var i = 0; i < stack.length; i++) {
+        stack[i] = stack[i].renamed(names);
+      }
+    }
+    return edit.renamed(names);
+  }
+
+  /// Sends a local edit already applied to the document.
+  void _commit(Edit edit) {
+    _moved(edit, author: null);
     if (_pending == 0 && _synced) {
-      _send(delta);
+      _send(edit);
     } else {
-      _buffer = _buffer?.compose(delta) ?? delta;
+      _buffer = _buffer?.compose(edit) ?? edit;
     }
     notifyListeners();
   }
 
   /// Where this person's selection is, null once it left the document.
-  void select(int base, int extent) => _setSelection((base, extent));
-
-  void unselect() => _setSelection(null);
-
-  void _setSelection((int, int)? selection) {
+  void select(DocSelection? selection) {
     if (selection == _selection) return;
     _selection = selection;
     _selectionDirty = true;
@@ -294,36 +350,30 @@ class DocSession extends ChangeNotifier {
     final transport = _transport;
     if (transport == null || !_synced || !_selectionDirty) return;
     _selectionDirty = false;
-    final s = _selection;
     transport.send(jsonEncode({
       't': 'eph',
-      'd': {'s': s == null ? null : [s.$1, s.$2]},
+      'd': {'s': _selection?.toJson()},
     }));
   }
 
-  /// Applies a change to the document shown, and moves everything that
-  /// points into it. [author] is the peer who made it, null for this one.
-  void _show(Delta delta, {required int? author, Delta? result}) {
-    _doc = result ?? _doc!.compose(delta);
-    _text = null;
-    _moved(delta, author: author);
+  /// Applies a change others made to the document shown.
+  void _show(Edit edit, {required int author}) {
+    _doc!.apply(edit);
+    _moved(edit, author: author);
   }
 
-  void _moved(Delta delta, {required int? author}) {
+  /// Moves everything that points into the document over [edit], made by
+  /// [author], null for this one.
+  void _moved(Edit edit, {required int? author}) {
+    final doc = _doc!;
     for (final peer in _peers.values) {
-      final s = peer._selection;
-      if (s == null) continue;
-      final own = peer.sid == author;
-      peer._selection = (
-        delta.transformPosition(s.$1, thisFirst: own),
-        delta.transformPosition(s.$2, thisFirst: own),
-      );
+      peer._selection = peer._selection?.moved(edit, doc, own: peer.sid == author);
     }
-    _changes.add(delta);
+    _changes.add(edit);
   }
 
   /// Rebases the undo and redo stacks over a change others made.
-  void _rebaseHistory(Delta change) {
+  void _rebaseHistory(Edit change) {
     for (final stack in [_undo, _redo]) {
       var c = change;
       for (var i = stack.length - 1; i >= 0; i--) {
@@ -335,9 +385,9 @@ class DocSession extends ChangeNotifier {
     _lastTyping = null;
   }
 
-  void _send(Delta delta) {
+  void _send(Edit edit) {
     _pending = ++_n;
-    _inflight = delta;
+    _inflight = edit;
     _transmit();
   }
 
@@ -472,37 +522,38 @@ class DocSession extends ChangeNotifier {
 
   /// The whole document: the first one, or one this client could not catch
   /// up with edit by edit. Its own edits the hub has not applied are rebased
-  /// over what changed, found by comparing texts.
+  /// over what changed, found by comparing the two documents.
   void _whole(Map<String, Object?> frame) {
-    final flow = Delta.fromJson(frame['d']);
-    if (flow == null) return;
+    final nodes = Edit.fromJson(frame['d']);
+    final tree = nodes == null ? null : Tree.fromEdit(nodes);
+    if (tree == null) return;
     if (_doc == null) {
-      _doc = flow;
-      _text = null;
-      _changes.add(flow);
+      _doc = tree.copy();
+      _changes.add(nodes!);
     } else {
       final applied = _pending != 0 && _int(frame['ack']) >= _pending;
-      var base = _confirmed;
-      var mine = _buffer ?? Delta();
+      final base = _confirmed.copy();
+      var mine = _buffer ?? Edit();
       if (_pending != 0) {
         if (applied) {
-          base = base.compose(_inflight!);
+          base.apply(_inflight!);
         } else {
           mine = _inflight!.compose(mine);
         }
       }
-      final theirs = diff(base.text, flow.text);
-      final rebased = theirs.transform(mine, thisFirst: true);
+      final theirs = diffTrees(base, tree);
+      var rebased = theirs.transform(mine, thisFirst: true);
       final shown = mine.transform(theirs, thisFirst: false);
       _pending = 0;
       _inflight = null;
+      final doc = tree.copy();
+      if (doc.apply(rebased) == null) rebased = Edit();
       _buffer = rebased.isEmpty ? null : rebased;
-      _doc = flow.compose(rebased);
-      _text = null;
+      _doc = doc;
       _rebaseHistory(shown);
       _moved(shown, author: -1);
     }
-    _confirmed = flow;
+    _confirmed = tree;
     _rev = _int(frame['v']);
     _ready();
   }
@@ -521,29 +572,29 @@ class DocSession extends ChangeNotifier {
   }
 
   void _remote(Map<String, Object?> frame) {
-    var delta = Delta.fromJson(frame['d']);
-    if (delta == null || _doc == null) return;
-    _confirmed = _confirmed.compose(delta);
+    var edit = Edit.fromJson(frame['d']);
+    if (edit == null || _doc == null) return;
+    _confirmed.apply(edit);
     final inflight = _inflight;
     if (inflight != null) {
-      _inflight = delta.transform(inflight, thisFirst: true);
-      delta = inflight.transform(delta, thisFirst: false);
+      _inflight = edit.transform(inflight, thisFirst: true);
+      edit = inflight.transform(edit, thisFirst: false);
     }
     final buffer = _buffer;
     if (buffer != null) {
-      _buffer = delta.transform(buffer, thisFirst: true);
-      delta = buffer.transform(delta, thisFirst: false);
+      _buffer = edit.transform(buffer, thisFirst: true);
+      edit = buffer.transform(edit, thisFirst: false);
     }
     _rev = _int(frame['v']);
-    _rebaseHistory(delta);
-    _show(delta, author: _int(frame['sid']));
+    _rebaseHistory(edit);
+    _show(edit, author: _int(frame['sid']));
     notifyListeners();
     (presence as _Presence).changed();
   }
 
   void _acknowledged(int n, int version) {
     if (n != _pending) return;
-    _confirmed = _confirmed.compose(_inflight!);
+    _confirmed.apply(_inflight!);
     _rev = version;
     _ackVersion = math.max(_ackVersion, version);
     _pending = 0;
@@ -555,7 +606,7 @@ class DocSession extends ChangeNotifier {
   /// Rolls back the edit in flight, keeping the ones made after it.
   void _refused(int n, String reason) {
     if (n != _pending) return;
-    final undo = _inflight!.invert(_confirmed);
+    final undo = _confirmed.copy().apply(_inflight!) ?? Edit();
     var shown = undo;
     final buffer = _buffer;
     if (buffer != null) {
@@ -575,8 +626,7 @@ class DocSession extends ChangeNotifier {
     final peer = _peers[_int(frame['sid'])];
     final data = frame['d'];
     if (peer == null || data is! Map<String, Object?> || !data.containsKey('s')) return;
-    final s = _list(data['s']);
-    peer._selection = s.length == 2 && s[0] is int && s[1] is int ? (s[0]! as int, s[1]! as int) : null;
+    peer._selection = DocSelection.fromJson(data['s']);
     (presence as _Presence).changed();
   }
 

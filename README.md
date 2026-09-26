@@ -26,7 +26,7 @@ license.
 |---|---|
 | [`bref`](.) | The hub: one room per open document, edits rebased and relayed to everyone connected, saves after a pause. Serves plain text files (`.txt`) for now. |
 | [`dart`](dart) | The Flutter package: the session with the hub, the same `ot` algorithms, and the editors. |
-| [`ot`](ot) | Edits and how concurrent edits are reconciled: text is a flow of characters and paragraph marks, changed by deltas. The Dart package runs the same algorithms, checked against shared vectors. |
+| [`ot`](ot) | Edits and how concurrent edits are reconciled. A document is a tree of nodes (slides, shapes, the body of a text file), each with a type, attributes and possibly text; text is a flow of characters and paragraph marks, changed by deltas. The Dart package runs the same algorithms, checked against shared vectors. |
 | [`opc`](opc) | The zip container of Office documents: parts, content types, relationships. Untouched parts are copied without being decompressed. Guards against zip bombs, unsafe paths and forged sizes. |
 | `internal/xmltok` | An XML tokenizer that allocates nothing per token and keeps the exact bytes of every element, several times faster than `encoding/xml` and checked against it. |
 | `internal/prototype/pagination` | A measure, not a feature: how often a page laid out with metric-compatible free fonts ends where Word ended it. |
@@ -41,7 +41,7 @@ exchanges JSON frames with the hub:
 |---|---|---|
 | hub | `hello` | who the client is (`sid`), who else is there, which stay in memory of the document (`epoch`) |
 | client | `sync` | the `epoch` and revision `v` of the document it holds, if any |
-| hub | `doc` | the whole document at revision `v`, and `ack`, the last edit of this client applied |
+| hub | `doc` | the whole document at revision `v`, as the edit `d` that creates its nodes, and `ack`, the last edit of this client applied |
 | hub | `op`, `ack` … `ready` | or else the edits it missed since `v`, its own acknowledged |
 | client | `op` | an edit `d`, numbered `n`, made on revision `v` |
 | hub | `op` | someone's edit, rebased, with the revision `v` it made |
@@ -49,8 +49,19 @@ exchanges JSON frames with the hub:
 | both | `eph` | cursors and selections, relayed as they are |
 | hub | `join`, `leave`, `saved`, `error` | people coming and going, saves and why one failed |
 
-A client keeps one edit in flight and composes the next ones until it is
-acknowledged.
+An edit is a list of changes applied together:
+
+```json
+[{"o":"new","id":"s2","t":"slide","k":"V","a":{"hidden":true}},
+ {"o":"set","id":"s1","k":"F","a":{"hidden":null}},
+ {"o":"txt","id":"title","x":[{"r":5},{"i":"!"}]},
+ {"o":"del","id":"s3"}]
+```
+
+Nodes are ordered among their siblings by key (`k`), then id. A change to a
+node that no longer exists does nothing, and an id is never used again once
+its node is deleted. A client keeps one edit in flight and holds the next ones
+until it is acknowledged.
 
 ## Tests
 

@@ -21,7 +21,7 @@ func TestTextFiles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := doc.Delta(); len(got) != 1 || got[0].Insert != c.flow {
+		if got := doc.Node(textBody).Text.Delta(); len(got) != 1 || got[0].Insert != c.flow {
 			t.Errorf("%q read as %v, want %q", c.file, got, c.flow)
 		}
 		if got := string(f.encode(doc)); got != c.saved {
@@ -35,10 +35,28 @@ func TestTextFileKeepsParagraphsApart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := doc.Apply(ot.Delta{{Retain: 1}, {Insert: "\n\n"}, {Retain: 2, Attrs: ot.Attrs{"b": "1"}}}); err != nil {
+	d := ot.Delta{{Retain: 1}, {Insert: "\n\n"}, {Retain: 2, Attrs: ot.Attrs{"b": "1"}}}
+	if err := doc.Apply(ot.Edit{{Op: ot.OpTxt, ID: textBody, Text: d}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := string(f.encode(doc)); got != "a\n\n\nb" {
 		t.Fatalf("saved %q", got)
+	}
+}
+
+func TestTextFileOnlyEditsItsText(t *testing.T) {
+	_, f, err := openText([]byte("a"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range []ot.Edit{
+		{{Op: ot.OpNew, ID: "x", Type: "text"}},
+		{{Op: ot.OpTxt, ID: "x", Text: ot.Delta{{Insert: "a"}}}},
+		{{Op: ot.OpSet, ID: textBody, Key: "V"}},
+		{{Op: ot.OpDel, ID: textBody}},
+	} {
+		if f.check(e) == nil {
+			t.Errorf("%v passes", e)
+		}
 	}
 }

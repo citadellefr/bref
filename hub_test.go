@@ -217,7 +217,7 @@ func TestEditsAreRebasedAndSaved(t *testing.T) {
 	if hello.SID != 1 || len(hello.Peers) != 0 || hello.Epoch == "" {
 		t.Fatalf("hello = %+v", hello)
 	}
-	if string(doc.D) != `[{"i":"one\ntwo\n"}]` || doc.V != 0 {
+	if string(doc.D) != `[{"o":"new","id":"body","t":"text","k":"V","x":[{"i":"one\ntwo\n"}]}]` || doc.V != 0 {
 		t.Fatalf("doc = %+v", doc)
 	}
 	bob, hello, _ := join(t, h, "a.txt", Peer{ID: "2", Name: "Bob"})
@@ -229,18 +229,18 @@ func TestEditsAreRebasedAndSaved(t *testing.T) {
 	}
 
 	// both typed on revision 0: Bob's edit comes second and is rebased
-	alice.send(`{"t":"op","n":1,"v":0,"d":[{"i":"X"}]}`)
+	alice.send(`{"t":"op","n":1,"v":0,"d":[{"o":"txt","id":"body","x":[{"i":"X"}]}]}`)
 	if f := alice.expect("ack"); f.N != 1 || f.V != 1 {
 		t.Fatalf("ack = %+v", f)
 	}
-	bob.send(`{"t":"op","n":1,"v":0,"d":[{"r":3},{"i":"Y"}]}`)
-	if f := bob.expect("op"); f.SID != 1 || f.V != 1 || string(f.D) != `[{"i":"X"}]` {
+	bob.send(`{"t":"op","n":1,"v":0,"d":[{"o":"txt","id":"body","x":[{"r":3},{"i":"Y"}]}]}`)
+	if f := bob.expect("op"); f.SID != 1 || f.V != 1 || string(f.D) != `[{"o":"txt","id":"body","x":[{"i":"X"}]}]` {
 		t.Fatalf("op = %+v", f)
 	}
 	if f := bob.expect("ack"); f.V != 2 {
 		t.Fatalf("ack = %+v", f)
 	}
-	if f := alice.expect("op"); f.SID != 2 || f.V != 2 || string(f.D) != `[{"r":4},{"i":"Y"}]` {
+	if f := alice.expect("op"); f.SID != 2 || f.V != 2 || string(f.D) != `[{"o":"txt","id":"body","x":[{"r":4},{"i":"Y"}]}]` {
 		t.Fatalf("op = %+v", f)
 	}
 
@@ -264,15 +264,15 @@ func TestReconnectCatchesUp(t *testing.T) {
 
 	first, _, _ := join(t, h, "a.txt", Peer{ID: "1", Client: "c1"})
 	keeper.expect("join")
-	keeper.send(`{"t":"op","n":1,"v":0,"d":[{"i":"k"}]}`)
+	keeper.send(`{"t":"op","n":1,"v":0,"d":[{"o":"txt","id":"body","x":[{"i":"k"}]}]}`)
 	keeper.expect("ack")
 	first.expect("op")
-	first.send(`{"t":"op","n":1,"v":1,"d":[{"i":"a"}]}`)
+	first.send(`{"t":"op","n":1,"v":1,"d":[{"o":"txt","id":"body","x":[{"i":"a"}]}]}`)
 	first.expect("ack")
 	first.leave()
 	keeper.expect("op")
 	keeper.expect("leave")
-	keeper.send(`{"t":"op","n":2,"v":2,"d":[{"i":"b"}]}`)
+	keeper.send(`{"t":"op","n":2,"v":2,"d":[{"o":"txt","id":"body","x":[{"i":"b"}]}]}`)
 	keeper.expect("ack")
 
 	// back from revision 1: its own edit is acknowledged, the other replayed
@@ -284,14 +284,14 @@ func TestReconnectCatchesUp(t *testing.T) {
 	if f := again.expect("ack"); f.N != 1 || f.V != 2 {
 		t.Fatalf("ack = %+v", f)
 	}
-	if f := again.expect("op"); f.V != 3 || string(f.D) != `[{"i":"b"}]` {
+	if f := again.expect("op"); f.V != 3 || string(f.D) != `[{"o":"txt","id":"body","x":[{"i":"b"}]}]` {
 		t.Fatalf("op = %+v", f)
 	}
 	if f := again.expect("ready"); f.V != 3 {
 		t.Fatalf("ready = %+v", f)
 	}
-	again.send(`{"t":"op","n":1,"v":1,"d":[{"i":"z"}]}`)
-	again.send(`{"t":"op","n":2,"v":3,"d":[{"r":3},{"i":"c"}]}`)
+	again.send(`{"t":"op","n":1,"v":1,"d":[{"o":"txt","id":"body","x":[{"i":"z"}]}]}`)
+	again.send(`{"t":"op","n":2,"v":3,"d":[{"o":"txt","id":"body","x":[{"r":3},{"i":"c"}]}]}`)
 	if f := again.expect("ack"); f.N != 2 || f.V != 4 {
 		t.Fatalf("ack = %+v", f)
 	}
@@ -301,7 +301,7 @@ func TestReconnectCatchesUp(t *testing.T) {
 		c := connect(t, h, context.Background(), "a.txt", Peer{ID: "1", Client: "c1"})
 		c.expect("hello")
 		c.send(sync)
-		if f := c.expect("doc"); f.V != 4 || f.Ack != 2 || string(f.D) != `[{"i":"bakc\n"}]` {
+		if f := c.expect("doc"); f.V != 4 || f.Ack != 2 || string(f.D) != `[{"o":"new","id":"body","t":"text","k":"V","x":[{"i":"bakc\n"}]}]` {
 			t.Fatalf("doc = %+v", f)
 		}
 		c.leave()
@@ -314,7 +314,7 @@ func TestRefusedOperations(t *testing.T) {
 	h := NewHub(store, Options{MaxLength: 8, History: 2})
 
 	reader, _, _ := join(t, h, "a.txt", Peer{ID: "1", ReadOnly: true})
-	reader.send(`{"t":"op","n":1,"v":0,"d":[{"i":"x"}]}`)
+	reader.send(`{"t":"op","n":1,"v":0,"d":[{"o":"txt","id":"body","x":[{"i":"x"}]}]}`)
 	if f := reader.expect("nack"); f.N != 1 || f.Error != errReadOnly.Error() {
 		t.Fatalf("nack = %+v", f)
 	}
@@ -322,13 +322,13 @@ func TestRefusedOperations(t *testing.T) {
 	writer, _, _ := join(t, h, "a.txt", Peer{ID: "2"})
 	reader.expect("join")
 	for _, c := range []struct{ op, err string }{
-		{`{"t":"op","n":1,"v":0,"d":[{"i":"x","r":1}]}`, errMalformed.Error()},
-		{`{"t":"op","n":2,"v":0,"d":[{"d":-1}]}`, errMalformed.Error()},
+		{`{"t":"op","n":1,"v":0,"d":[{"o":"txt","id":"body","x":[{"i":"x","r":1}]}]}`, errMalformed.Error()},
+		{`{"t":"op","n":2,"v":0,"d":[{"o":"txt","id":"body","x":[{"d":-1}]}]}`, errMalformed.Error()},
 		{`{"t":"op","n":3,"v":0,"d":{"i":"x"}}`, errMalformed.Error()},
-		{`{"t":"op","n":4,"v":0,"d":[{"r":4},{"i":"x"}]}`, ot.ErrNoMark.Error()},
-		{`{"t":"op","n":5,"v":0,"d":[{"r":9}]}`, ot.ErrLength.Error()},
-		{`{"t":"op","n":6,"v":1,"d":[{"i":"x"}]}`, errStale.Error()},
-		{`{"t":"op","n":7,"v":0,"d":[{"i":"12345"}]}`, errTooLong.Error()},
+		{`{"t":"op","n":4,"v":0,"d":[{"o":"txt","id":"body","x":[{"r":4},{"i":"x"}]}]}`, ot.ErrNoMark.Error()},
+		{`{"t":"op","n":5,"v":0,"d":[{"o":"txt","id":"body","x":[{"r":9}]}]}`, ot.ErrLength.Error()},
+		{`{"t":"op","n":6,"v":1,"d":[{"o":"txt","id":"body","x":[{"i":"x"}]}]}`, errStale.Error()},
+		{`{"t":"op","n":7,"v":0,"d":[{"o":"txt","id":"body","x":[{"i":"12345"}]}]}`, errTooLong.Error()},
 	} {
 		writer.send(c.op)
 		if f := writer.expect("nack"); f.Error != c.err {
@@ -338,10 +338,10 @@ func TestRefusedOperations(t *testing.T) {
 	reader.quiet()
 
 	for n := range 3 {
-		writer.send(`{"t":"op","n":` + strconv.Itoa(8+n) + `,"v":` + strconv.Itoa(n) + `,"d":[{"d":1}]}`)
+		writer.send(`{"t":"op","n":` + strconv.Itoa(8+n) + `,"v":` + strconv.Itoa(n) + `,"d":[{"o":"txt","id":"body","x":[{"d":1}]}]}`)
 		writer.expect("ack")
 	}
-	writer.send(`{"t":"op","n":11,"v":0,"d":[{"i":"x"}]}`)
+	writer.send(`{"t":"op","n":11,"v":0,"d":[{"o":"txt","id":"body","x":[{"i":"x"}]}]}`)
 	if f := writer.expect("nack"); f.Error != errStale.Error() {
 		t.Fatalf("an edit older than the history: %+v", f)
 	}
@@ -351,9 +351,9 @@ func TestEditsBeforeSyncAreIgnored(t *testing.T) {
 	h := NewHub(newMemStore(), Options{})
 	c := connect(t, h, context.Background(), "a.txt", Peer{ID: "1"})
 	c.expect("hello")
-	c.send(`{"t":"op","n":1,"v":0,"d":[{"i":"x"}]}`)
+	c.send(`{"t":"op","n":1,"v":0,"d":[{"o":"txt","id":"body","x":[{"i":"x"}]}]}`)
 	c.send(`{"t":"sync"}`)
-	if f := c.expect("doc"); string(f.D) != `[{"i":"\n"}]` {
+	if f := c.expect("doc"); string(f.D) != `[{"o":"new","id":"body","t":"text","k":"V","x":[{"i":"\n"}]}]` {
 		t.Fatalf("doc = %+v", f)
 	}
 	c.quiet()
@@ -444,7 +444,7 @@ func TestSaveFailureIsReportedAndRetried(t *testing.T) {
 	a, _, _ := join(t, h, "a.txt", Peer{ID: "1"})
 
 	store.setFail(errors.New("disk full"))
-	a.send(`{"t":"op","n":1,"v":0,"d":[{"i":"a"}]}`)
+	a.send(`{"t":"op","n":1,"v":0,"d":[{"o":"txt","id":"body","x":[{"i":"a"}]}]}`)
 	a.expect("ack")
 	<-store.saves
 	if f := a.expect("error"); f.Error != "disk full" {
@@ -470,7 +470,7 @@ func TestLastLeaveSavesAndUnloads(t *testing.T) {
 	store := newMemStore()
 	h := NewHub(store, Options{SaveDelay: time.Hour, SaveMaxDelay: time.Hour})
 	a, _, _ := join(t, h, "a.txt", Peer{ID: "1"})
-	a.send(`{"t":"op","n":1,"v":0,"d":[{"i":"a"}]}`)
+	a.send(`{"t":"op","n":1,"v":0,"d":[{"o":"txt","id":"body","x":[{"i":"a"}]}]}`)
 	a.expect("ack")
 	a.leave()
 
@@ -527,7 +527,7 @@ func TestCloseSavesEverything(t *testing.T) {
 	store := newMemStore()
 	h := NewHub(store, Options{SaveDelay: time.Hour, SaveMaxDelay: time.Hour})
 	a, _, _ := join(t, h, "a.txt", Peer{ID: "1"})
-	a.send(`{"t":"op","n":1,"v":0,"d":[{"i":"a"}]}`)
+	a.send(`{"t":"op","n":1,"v":0,"d":[{"o":"txt","id":"body","x":[{"i":"a"}]}]}`)
 	a.expect("ack")
 
 	if err := h.Close(context.Background()); err != nil {
@@ -558,7 +558,7 @@ func TestGoneDocumentDisconnectsAndUnloads(t *testing.T) {
 	a, _, _ := join(t, h, "a.txt", Peer{ID: "1"})
 
 	store.setFail(fmt.Errorf("file deleted: %w", ErrGone))
-	a.send(`{"t":"op","n":1,"v":0,"d":[{"i":"a"}]}`)
+	a.send(`{"t":"op","n":1,"v":0,"d":[{"o":"txt","id":"body","x":[{"i":"a"}]}]}`)
 	a.expect("ack")
 	select {
 	case <-a.done:

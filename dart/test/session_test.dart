@@ -37,18 +37,18 @@ void main() {
   test('sends one edit at a time and composes the next ones', () async {
     final s = await open();
     final link = hub.links.single;
-    s.replaceText(0, 0, 'a');
-    s.replaceText(1, 1, 'b');
-    s.replaceText(2, 2, 'c');
+    s.replace(0, 0, 'a');
+    s.replace(1, 1, 'b');
+    s.replace(2, 2, 'c');
     expect(s.text, 'abcone\ntwo');
     expect(link.up.map((m) => m['d']), [
-      [{'i': 'a'}],
+      [_txt([{'i': 'a'}])],
     ]);
     expect(s.saved, isFalse);
     await hub.settle();
     expect(link.sent.where((m) => m['t'] == 'op').map((m) => m['d']), [
-      [{'i': 'a'}],
-      [{'r': 1}, {'i': 'bc'}],
+      [_txt([{'i': 'a'}])],
+      [_txt([{'r': 1}, {'i': 'bc'}])],
     ]);
     expect(hub.text, 'abcone\ntwo');
   });
@@ -62,9 +62,9 @@ void main() {
       final at = random.nextInt(length + 1);
       switch (random.nextInt(3)) {
         case 0 when at < length:
-          s.replaceText(at, min(length, at + 1 + random.nextInt(3)), '');
+          s.replace(at, min(length, at + 1 + random.nextInt(3)), '');
         default:
-          s.replaceText(at, at, ['x', 'yz', '\n', 'é'][random.nextInt(4)]);
+          s.replace(at, at, ['x', 'yz', '\n', 'é'][random.nextInt(4)]);
       }
       final link = hub.links[random.nextInt(hub.links.length)];
       if (random.nextBool()) {
@@ -81,6 +81,10 @@ void main() {
     }
   });
 
+  for (var seed = 0; seed < 10; seed++) {
+    test('concurrent editors of nodes converge, $seed', () => _nodesConverge(seed, open, () => hub));
+  }
+
   test('edits made offline reach the document on reconnection', () async {
     final a = await open('a');
     final b = await open('b');
@@ -88,8 +92,8 @@ void main() {
     await pumpEventQueue();
     expect(a.status, DocStatus.offline);
 
-    a.replaceText(3, 3, ' (a)');
-    b.replaceText(0, 0, 'B: ');
+    a.replace(3, 3, ' (a)');
+    b.replace(0, 0, 'B: ');
     await hub.settle();
     a.retry();
     await pumpEventQueue();
@@ -102,11 +106,11 @@ void main() {
   test('an edit whose acknowledgement was lost is not applied twice', () async {
     final a = await open('a');
     final b = await open('b');
-    a.replaceText(0, 0, 'x');
+    a.replace(0, 0, 'x');
     hub.links.first.deliverUp();
     await hub.links.first.drop();
     await pumpEventQueue();
-    b.replaceText(7, 7, '!');
+    b.replace(7, 7, '!');
     await hub.settle();
     a.retry();
     await pumpEventQueue();
@@ -120,8 +124,8 @@ void main() {
     final b = await open('b');
     await hub.links.first.drop();
     await pumpEventQueue();
-    a.replaceText(7, 7, ' (a)');
-    b.replaceText(0, 3, 'ONE');
+    a.replace(7, 7, ' (a)');
+    b.replace(0, 3, 'ONE');
     await hub.settle();
     await hub.restart();
     await pumpEventQueue();
@@ -137,9 +141,9 @@ void main() {
   test('undo reverts only its own edits', () async {
     final a = await open();
     final b = await open();
-    a.replaceText(0, 0, 'A');
+    a.replace(0, 0, 'A');
     await hub.settle();
-    b.replaceText(4, 4, 'B');
+    b.replace(4, 4, 'B');
     await hub.settle();
     expect(a.text, 'AoneB\ntwo');
     a.undo();
@@ -154,7 +158,7 @@ void main() {
   test('typing is undone in one step', () async {
     final s = await open();
     for (final c in 'hello'.split('')) {
-      s.replaceText(s.text.length, s.text.length, c);
+      s.replace(s.text.length, s.text.length, c);
     }
     s.undo();
     expect(s.text, 'one\ntwo');
@@ -165,8 +169,8 @@ void main() {
     final reasons = <String>[];
     s.rejections.listen(reasons.add);
     hub.refuse = 'read-only access';
-    s.replaceText(0, 0, 'x');
-    s.replaceText(1, 1, 'y');
+    s.replace(0, 0, 'x');
+    s.replace(1, 1, 'y');
     hub.links.single.deliverUp();
     hub.refuse = '';
     await hub.settle();
@@ -177,21 +181,57 @@ void main() {
 
   test('never deletes the last paragraph mark', () async {
     final s = await open();
-    expect(s.edit(Delta()..retain(7)..delete(1)), isFalse);
-    expect(s.edit(Delta()..retain(8)..insert('x')), isFalse);
-    expect(s.replaceText(0, 7, ''), isTrue);
+    bool edit(Delta d) => s.edit(Edit([Change.text('body', d)]));
+    expect(edit(Delta()..retain(7)..delete(1)), isFalse);
+    expect(edit(Delta()..retain(8)..insert('x')), isFalse);
+    expect(edit(Delta()..retain(7)..delete(1)..insert('\n')), isFalse);
+    expect(s.replace(0, 7, ''), isTrue);
     expect(s.text, '');
   });
 
   test('shows where others are, following the text', () async {
     final a = await open();
     final b = await open();
-    b.select(4, 7);
+    b.select(const DocSelection('body', 4, 7));
     await Future<void>.delayed(const Duration(milliseconds: 60));
     await hub.settle();
-    expect(a.peers.single.selection, (4, 7));
-    a.replaceText(0, 0, '>> ');
-    expect(a.peers.single.selection, (7, 10));
+    expect(a.peers.single.selection, const DocSelection('body', 4, 7));
+    a.replace(0, 0, '>> ');
+    expect(a.peers.single.selection, const DocSelection('body', 7, 10));
     unawaited(b.stop());
   });
+}
+
+Map<String, Object?> _txt(List<Object?> delta) => {'o': 'txt', 'id': 'body', 'x': delta};
+
+Future<void> _nodesConverge(int seed, Future<DocSession> Function() open, FakeHub Function() hub) async {
+  final random = Random(seed);
+  final editors = [for (var i = 0; i < 3; i++) await open()];
+  var next = 0;
+  for (var step = 0; step < 400; step++) {
+    final s = editors[random.nextInt(editors.length)];
+    final nodes = s.document.nodes.toList();
+    final node = nodes[random.nextInt(nodes.length)];
+    s.edit(Edit([
+      switch (random.nextInt(6)) {
+        0 => Change.create(Node(id: 'n${next++}', type: 't', parent: node.id, key: 'V', text: Delta([const Op.insert('x\n')]))),
+        1 when node.id != 'body' => Change.delete(node.id),
+        2 => Change.set(node.id, key: keyBetween('', node.key), attributes: {'x': random.nextInt(3)}),
+        _ when node.text != null => Change.text(node.id, Delta()..insert('ab')),
+        _ => Change.set(node.id, attributes: {'y': null}),
+      },
+    ]));
+    if (random.nextInt(4) == 0) s.undo();
+    final link = hub().links[random.nextInt(hub().links.length)];
+    if (random.nextBool()) {
+      link.deliverUp();
+    } else {
+      link.deliverDown();
+    }
+    await Future<void>.delayed(Duration.zero);
+  }
+  await hub().settle();
+  for (final s in editors) {
+    expect(s.document.toEdit(), hub().doc.toEdit());
+  }
 }

@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-var update = flag.Bool("update", false, "rewrite testdata/ot/vectors.json")
+var update = flag.Bool("update", false, "rewrite the vectors in testdata/ot")
 
 func ins(s string, attrs ...string) Op {
 	return Op{Insert: s, Attrs: attrsOf(attrs)}
@@ -296,7 +296,8 @@ func TestRandom(t *testing.T) {
 		}
 		want := compose(t, doc, a)
 		err = d.Apply(a)
-		switch ends := len(want) > 0 && strings.HasSuffix(want[len(want)-1].Insert, "\n"); {
+		ends := len(want) > 0 && strings.HasSuffix(want[len(want)-1].Insert, "\n") && !deletesLast(a, doc.Change())
+		switch {
 		case !ends && !errors.Is(err, ErrNoMark):
 			t.Fatalf("doc %v, a %v: applied to %v without its mark (%v)", doc, a, d.Delta(), err)
 		case ends && err != nil:
@@ -334,6 +335,13 @@ func TestVectors(t *testing.T) {
 		pos := g.IntN(doc.Change() + 1)
 		vectors = append(vectors, vector{Kind: "position", A: a, Pos: pos, First: first, Out: TransformPosition(a, pos, first)})
 	}
+	writeVectors(t, "../testdata/ot/vectors.json", vectors)
+}
+
+// writeVectors checks path holds vectors, one per line, or writes it with
+// -update.
+func writeVectors[V any](t *testing.T, path string, vectors []V) {
+	t.Helper()
 	data := []byte("[")
 	for i, v := range vectors {
 		line, err := json.Marshal(v)
@@ -346,7 +354,6 @@ func TestVectors(t *testing.T) {
 		data = append(append(data, '\n'), line...)
 	}
 	data = append(data, "\n]\n"...)
-	const path = "../testdata/ot/vectors.json"
 	if *update {
 		if err := os.WriteFile(path, data, 0o644); err != nil {
 			t.Fatal(err)

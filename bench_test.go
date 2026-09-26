@@ -36,13 +36,13 @@ func BenchmarkRelay(b *testing.B) {
 			}
 		}()
 	}
-	middle := strconv.Itoa(r.doc.Len() / 2)
+	middle := strconv.Itoa(r.doc.Node(textBody).Text.Len() / 2)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := range b.N {
 		v := strconv.FormatUint(r.version, 10)
 		n := strconv.Itoa(i + 1)
-		r.handle(peers[0], []byte(`{"t":"op","n":`+n+`,"v":`+v+`,"d":[{"r":`+middle+`},{"i":"a"}]}`))
+		r.handle(peers[0], []byte(`{"t":"op","n":`+n+`,"v":`+v+`,"d":[{"o":"txt","id":"body","x":[{"r":`+middle+`},{"i":"a"}]}]}`))
 	}
 	b.StopTimer()
 	for _, p := range peers {

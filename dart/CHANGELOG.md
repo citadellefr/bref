@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `Tree` and `Edit`: documents as trees of nodes, as the Go package `ot` has
+  them; `DocSession` edits trees, selections name the node they are in.
+- Undoing a deletion brings the nodes back under new ids.
+
 ## 0.1.0 — 2026-09-26
 
 - `Delta`: text flows and their edits, the algorithms of the Go package `ot`,

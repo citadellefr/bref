@@ -53,7 +53,8 @@ type Options struct {
 	// SaveMaxDelay bounds how long an edit stays unsaved while edits keep
 	// coming, and spaces the retries of a failed save.
 	SaveMaxDelay time.Duration
-	// MaxLength bounds a document, in UTF-16 code units.
+	// MaxLength bounds a document: its nodes and the UTF-16 code units of
+	// their text.
 	MaxLength       int
 	MaxMessageBytes int64
 	// History is how many past edits are kept to rebase late ones and to

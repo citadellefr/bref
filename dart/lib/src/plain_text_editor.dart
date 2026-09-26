@@ -3,17 +3,18 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'ot/delta.dart';
+import 'ot/tree.dart';
 import 'session.dart';
 
-/// A plain text editor on a [DocSession], one line per paragraph, where the
-/// selections of others show in the theme's accent.
+/// A plain text editor of the text of [node] in a [DocSession], one line per
+/// paragraph, where the selections of others show in the theme's accent.
 ///
 /// Undo and redo are the session's: they revert this person's edits only.
 class PlainTextEditor extends StatefulWidget {
   const PlainTextEditor({
     super.key,
     required this.session,
+    this.node = 'body',
     this.style,
     this.padding = const EdgeInsets.all(16),
     this.focusNode,
@@ -21,6 +22,7 @@ class PlainTextEditor extends StatefulWidget {
   });
 
   final DocSession session;
+  final String node;
   final TextStyle? style;
   final EdgeInsetsGeometry padding;
   final FocusNode? focusNode;
@@ -32,7 +34,7 @@ class PlainTextEditor extends StatefulWidget {
 
 class _PlainTextEditorState extends State<PlainTextEditor> {
   late final _PresenceController _controller;
-  StreamSubscription<Delta>? _changes;
+  StreamSubscription<Edit>? _changes;
   var _updating = false;
   var _selection = const TextSelection.collapsed(offset: 0);
 
@@ -41,7 +43,7 @@ class _PlainTextEditorState extends State<PlainTextEditor> {
   @override
   void initState() {
     super.initState();
-    _controller = _PresenceController(_session)..text = _session.text;
+    _controller = _PresenceController(_session, widget.node)..text = _text;
     _controller.addListener(_edited);
     _changes = _session.changes.listen(_changed);
     _session.addListener(_rebuild);
@@ -51,7 +53,7 @@ class _PlainTextEditorState extends State<PlainTextEditor> {
   void dispose() {
     unawaited(_changes?.cancel());
     _session.removeListener(_rebuild);
-    _session.unselect();
+    _session.select(null);
     _controller.dispose();
     super.dispose();
   }
@@ -60,28 +62,42 @@ class _PlainTextEditorState extends State<PlainTextEditor> {
     if (mounted) setState(() {});
   }
 
+  /// The text of the node, one line per paragraph.
+  String get _text {
+    final flow = _session.document[widget.node]?.text?.text ?? '\n';
+    return flow.substring(0, flow.length - 1);
+  }
+
   /// Turns what the field did into an edit of the document.
   void _edited() {
     if (_updating) return;
     final value = _controller.value;
-    final old = _session.text;
+    final old = _text;
     if (value.text != old) {
       final (start, end, inserted) = _replaced(old, value.text, _selection, value.selection);
-      if (!_session.replaceText(start, end, inserted)) {
+      if (!_session.replaceText(widget.node, start, end, inserted)) {
         _set(TextEditingValue(text: old, selection: _selection));
         return;
       }
     }
     _selection = value.selection;
     if (value.selection.isValid) {
-      _session.select(value.selection.baseOffset, value.selection.extentOffset);
+      _session.select(DocSelection(widget.node, value.selection.baseOffset, value.selection.extentOffset));
     }
   }
 
   /// Follows a change of the document the field did not make.
-  void _changed(Delta change) {
-    if (_controller.text == _session.text) return;
-    int move(int offset) => offset < 0 ? offset : change.transformPosition(offset, thisFirst: false);
+  void _changed(Edit change) {
+    final text = _text;
+    if (_controller.text == text) return;
+    int move(int offset) {
+      if (offset < 0) return offset;
+      for (final c in change.changes) {
+        if (c.kind == ChangeKind.text && c.id == widget.node) offset = c.text!.transformPosition(offset, thisFirst: false);
+      }
+      return offset;
+    }
+
     final value = _controller.value;
     final selection = value.selection.copyWith(
       baseOffset: move(value.selection.baseOffset),
@@ -90,7 +106,7 @@ class _PlainTextEditorState extends State<PlainTextEditor> {
     final composing = value.composing.isValid
         ? TextRange(start: move(value.composing.start), end: move(value.composing.end))
         : TextRange.empty;
-    _set(TextEditingValue(text: _session.text, selection: selection, composing: composing));
+    _set(TextEditingValue(text: text, selection: selection, composing: composing));
   }
 
   void _set(TextEditingValue value) {
@@ -148,11 +164,12 @@ bool _isHigh(int unit) => unit >= 0xD800 && unit < 0xDC00;
 
 /// Paints the selections of others behind the text.
 class _PresenceController extends TextEditingController {
-  _PresenceController(this.session) {
+  _PresenceController(this.session, this.node) {
     session.presence.addListener(notifyListeners);
   }
 
   final DocSession session;
+  final String node;
 
   @override
   void dispose() {
@@ -165,9 +182,9 @@ class _PresenceController extends TextEditingController {
     final marks = <(int, int)>[];
     for (final peer in session.peers) {
       final s = peer.selection;
-      if (s == null) continue;
-      var start = math.min(s.$1, s.$2).clamp(0, text.length);
-      var end = math.max(s.$1, s.$2).clamp(0, text.length);
+      if (s == null || s.node != node) continue;
+      var start = s.start.clamp(0, text.length);
+      var end = s.end.clamp(0, text.length);
       if (start == end) {
         // a caret: the character it stands before, or after at the end
         if (text.isEmpty) continue;

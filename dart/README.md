@@ -11,7 +11,7 @@ final session = DocSession(
   webSocketConnector((clientId) async => Uri.parse('wss://example.com/doc?client=$clientId')),
 )..start();
 
-PlainTextEditor(session: session);
+PlainTextEditor(session: session, node: 'body');
 ```
 
 A session shows local edits at once and rebases them over those of others;

@@ -28,7 +28,7 @@ type room struct {
 	refs  int
 
 	mu   sync.Mutex
-	doc  *ot.Doc
+	doc  *ot.Tree
 	file format
 	// epoch names this stay in memory: revisions count from its start.
 	epoch   string
@@ -49,8 +49,8 @@ type room struct {
 // edit is an applied edit, kept to rebase late edits over it and to replay
 // it to a client that missed it.
 type edit struct {
-	delta  []byte
-	ops    ot.Delta
+	raw    []byte
+	ops    ot.Edit
 	sid    uint32
 	client string
 	n      uint64
@@ -183,8 +183,8 @@ func (r *room) sync(p *peer, in *inbound) {
 	p.synced = true
 	first := r.version - uint64(len(r.history))
 	if in.Epoch != r.epoch || in.V < first || in.V > r.version {
-		flow, _ := json.Marshal(r.doc.Delta())
-		p.send(docFrame(r.version, r.acks[p.info.Client], flow))
+		nodes, _ := json.Marshal(r.doc.Edit())
+		p.send(docFrame(r.version, r.acks[p.info.Client], nodes))
 		return
 	}
 	for i, e := range r.history[in.V-first:] {
@@ -192,7 +192,7 @@ func (r *room) sync(p *peer, in *inbound) {
 		if e.client != "" && e.client == p.info.Client {
 			p.send(ackFrame(e.n, v))
 		} else {
-			p.send(opFrame(e.sid, v, e.delta))
+			p.send(opFrame(e.sid, v, e.raw))
 		}
 	}
 	p.send(readyFrame(r.version))
@@ -208,22 +208,22 @@ func (r *room) apply(p *peer, in *inbound) {
 	if client != "" && in.N <= r.acks[client] {
 		return
 	}
-	d, err := r.rebase(p, in)
-	if err == nil && d.Change() > 0 && r.doc.Len()+d.Change() > r.hub.opt.MaxLength {
+	e, err := r.rebase(p, in)
+	if err == nil && e.Growth() > 0 && r.doc.Len()+e.Growth() > r.hub.opt.MaxLength {
 		err = errTooLong
 	}
 	if err == nil {
-		err = r.doc.Apply(d)
+		err = r.doc.Apply(e)
 	}
 	if err != nil {
 		p.send(messageFrame("nack", in.N, err.Error()))
 		return
 	}
-	if d == nil {
-		d = ot.Delta{}
+	if e == nil {
+		e = ot.Edit{}
 	}
-	raw, _ := json.Marshal(d)
-	r.history = append(r.history, edit{delta: raw, ops: d, sid: p.sid, client: client, n: in.N})
+	raw, _ := json.Marshal(e)
+	r.history = append(r.history, edit{raw: raw, ops: e, sid: p.sid, client: client, n: in.N})
 	if len(r.history) > r.hub.opt.History {
 		r.history = slices.Clone(r.history[len(r.history)-r.hub.opt.History/2:])
 	}
@@ -243,22 +243,25 @@ func (r *room) apply(p *peer, in *inbound) {
 
 // rebase turns an edit made on an earlier revision into one on the current
 // document. Callers hold r.mu.
-func (r *room) rebase(p *peer, in *inbound) (ot.Delta, error) {
+func (r *room) rebase(p *peer, in *inbound) (ot.Edit, error) {
 	if p.info.ReadOnly {
 		return nil, errReadOnly
 	}
-	var d ot.Delta
-	if json.Unmarshal(in.D, &d) != nil || d.Check() != nil {
+	var e ot.Edit
+	if json.Unmarshal(in.D, &e) != nil || e.Check() != nil {
 		return nil, errMalformed
+	}
+	if err := r.file.check(e); err != nil {
+		return nil, err
 	}
 	first := r.version - uint64(len(r.history))
 	if in.V < first || in.V > r.version {
 		return nil, errStale
 	}
-	for _, e := range r.history[in.V-first:] {
-		d = ot.Transform(e.ops, d, true)
+	for _, h := range r.history[in.V-first:] {
+		e = ot.TransformEdit(h.ops, e, true)
 	}
-	return d, nil
+	return e, nil
 }
 
 func (r *room) requestSave() {

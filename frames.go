@@ -18,7 +18,7 @@ const (
 // inbound is any frame a client sends:
 //
 //	{"t":"sync","epoch":"…","v":41}
-//	{"t":"op","n":7,"v":41,"d":[{"r":3},{"i":"a"}]}
+//	{"t":"op","n":7,"v":41,"d":[{"o":"txt","id":"body","x":[{"r":3},{"i":"a"}]}]}
 //	{"t":"eph","d":{...}}
 //
 // A client sends sync first, with the revision it last saw, if any, and
@@ -56,14 +56,14 @@ func presenceFrame(sid uint32, d []byte) []byte {
 
 // opFrame hands out an edit, as the hub applied it, with the revision it
 // made.
-func opFrame(sid uint32, version uint64, delta []byte) []byte {
-	b := make([]byte, 0, len(delta)+48)
+func opFrame(sid uint32, version uint64, edit []byte) []byte {
+	b := make([]byte, 0, len(edit)+48)
 	b = append(b, `{"t":"op","sid":`...)
 	b = strconv.AppendUint(b, uint64(sid), 10)
 	b = append(b, `,"v":`...)
 	b = strconv.AppendUint(b, version, 10)
 	b = append(b, `,"d":`...)
-	b = append(b, delta...)
+	b = append(b, edit...)
 	return append(b, '}')
 }
 
@@ -84,14 +84,14 @@ func readyFrame(version uint64) []byte {
 
 // docFrame is the whole document, for a client that cannot catch up edit by
 // edit, with the last edit of its client the hub applied.
-func docFrame(version, ack uint64, flow []byte) []byte {
-	b := make([]byte, 0, len(flow)+64)
+func docFrame(version, ack uint64, nodes []byte) []byte {
+	b := make([]byte, 0, len(nodes)+64)
 	b = append(b, `{"t":"doc","v":`...)
 	b = strconv.AppendUint(b, version, 10)
 	b = append(b, `,"ack":`...)
 	b = strconv.AppendUint(b, ack, 10)
 	b = append(b, `,"d":`...)
-	b = append(b, flow...)
+	b = append(b, nodes...)
 	return append(b, '}')
 }
 

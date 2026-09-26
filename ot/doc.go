@@ -102,6 +102,9 @@ func (d *Doc) Apply(delta Delta) error {
 	if delta.BaseLen() > d.size {
 		return ErrLength
 	}
+	if deletesLast(delta, d.size) {
+		return ErrNoMark
+	}
 	delta = delta.chop()
 	if len(delta) == 0 {
 		return nil
@@ -159,6 +162,20 @@ func (d *Doc) Apply(delta Delta) error {
 	}
 	d.size -= size
 	return nil
+}
+
+// deletesLast tells whether delta deletes the last unit of a flow of size
+// units, its final mark: no edit may, or an insertion made at the same time
+// before it would end the flow.
+func deletesLast(delta Delta, size int) bool {
+	at := 0
+	for _, o := range delta {
+		if o.Delete > 0 && at+o.Delete == size {
+			return true
+		}
+		at += o.Delete + o.Retain
+	}
+	return false
 }
 
 // paragraphs splits a flow after each mark, the last one included.

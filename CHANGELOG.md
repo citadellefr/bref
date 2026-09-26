@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- `ot`: documents are trees of nodes with attributes and text, changed by
+  edits; the hub, its protocol and plain text files use them.
+- `ot`: no edit deletes the final paragraph mark of a flow.
+
 ## 0.1.0 — 2026-09-26
 
 - `opc`: read and write OPC packages, keeping untouched parts byte for byte.
