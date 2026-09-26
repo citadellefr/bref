@@ -7,6 +7,7 @@ import 'package:flutter/painting.dart';
 import '../drawing/color.dart';
 import '../drawing/geometry.dart';
 import '../drawing/paint.dart';
+import '../ot/delta.dart';
 import '../ot/tree.dart';
 import '../text/text_frame.dart';
 import 'deck.dart';
@@ -79,7 +80,7 @@ class SlidePainter {
     canvas.restore();
   }
 
-  void _background(Canvas canvas, Node slide, Size size, ColorContext colors, Theme theme) {
+  void _background(Canvas canvas, Node slide, Size size, ColorContext colors, DeckTheme theme) {
     final rect = Offset.zero & size;
     canvas.drawRect(rect, Paint()..color = const Color(0xFFFFFFFF));
     final bg = deck.backgroundOf(slide);
@@ -135,7 +136,7 @@ class SlidePainter {
         .multiply(Matrix4Like.translation(-c.dx, -c.dy));
   }
 
-  void _shape(Canvas canvas, Node shape, ColorContext colors, Theme theme, Map<String, Object?>? groupFill) {
+  void _shape(Canvas canvas, Node shape, ColorContext colors, DeckTheme theme, Map<String, Object?>? groupFill) {
     if (shape.attributes['hidden'] == true) return;
     final style = deck.styleOf(shape);
     switch (shape.type) {
@@ -225,7 +226,7 @@ class SlidePainter {
 
   /// The fill of a shape: its own, or the theme's its style points to, with
   /// the colors "phClr" resolves in.
-  (Map<String, Object?>?, ColorContext) _fill(ShapeStyle style, ColorContext colors, Theme theme) {
+  (Map<String, Object?>?, ColorContext) _fill(ShapeStyle style, ColorContext colors, DeckTheme theme) {
     final ref = style.style?['fill'];
     final refColors = ref is Map<String, Object?> ? colors.withPlaceholder(colors.resolve(ref['color'])) : colors;
     if (style.fill != null) return (style.fill, refColors);
@@ -239,7 +240,7 @@ class SlidePainter {
 
   /// The line of a shape: the theme's its style points to, with its own
   /// properties over it.
-  (Map<String, Object?>?, ColorContext) _line(ShapeStyle style, ColorContext colors, Theme theme) {
+  (Map<String, Object?>?, ColorContext) _line(ShapeStyle style, ColorContext colors, DeckTheme theme) {
     final ref = style.style?['ln'];
     var ctx = colors;
     Map<String, Object?>? line;
@@ -256,26 +257,36 @@ class SlidePainter {
   TextFrame? textOf(Node shape) {
     final text = shape.text;
     if (shape.type != 'sp' || text == null) return null;
-    final cached = _frames[shape];
-    if (cached != null) return cached;
+    return _frames[shape] ??= layout(shape, text);
+  }
+
+  /// Whether a shape is a placeholder with no text, which the editor shows
+  /// with its prompt.
+  bool isEmptyPlaceholder(Node shape) =>
+      shape.type == 'sp' && shape.attributes['ph'] != null && (shape.text?.length ?? 1) <= 1;
+
+  /// A text laid out as the shape would lay out its own, in [color] when
+  /// given.
+  TextFrame? layout(Node shape, Delta text, {Color? color}) {
     final style = deck.styleOf(shape);
     final box = style.bounds;
     if (box == null) return null;
     final page = deck.pageOf(shape);
     final colors = page == null ? const ColorContext() : deck.colorsOf(page);
-    final theme = page == null ? Theme(null) : deck.themeOf(page);
+    final theme = page == null ? DeckTheme(null) : deck.themeOf(page);
     final fontRef = style.style?['font'];
-    final frame = TextFrame.layout(
+    Props levels(int lvl) => color == null
+        ? style.level(lvl)
+        : {...style.level(lvl), 'fill': '{"solid":{"rgb":"${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0')}"}}'};
+    return TextFrame.layout(
       text,
       box: _geometry(style).textRect(box.size, _adjust(style)),
       body: style.body,
-      levels: style.level,
+      levels: levels,
       colors: colors,
       fonts: Fonts(theme: theme.typeface, package: fonts),
-      defaultColor: fontRef is Map<String, Object?> ? colors.resolve(fontRef['color']) : null,
+      defaultColor: color ?? (fontRef is Map<String, Object?> ? colors.resolve(fontRef['color']) : null),
     );
-    _frames[shape] = frame;
-    return frame;
   }
 }
 

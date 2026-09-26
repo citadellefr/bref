@@ -86,6 +86,8 @@ class FlowEditing {
 
   /// Deletes a range; when it takes paragraph marks, the paragraph left
   /// keeps the formatting of the first one.
+  Delta delete(int start, int end) => _delete(start, end);
+
   Delta _delete(int start, int end) {
     end = end.clamp(start, text.length - 1);
     final d = Delta()

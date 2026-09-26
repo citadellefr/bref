@@ -10,6 +10,9 @@ class FakeHub {
   FakeHub(String text)
     : doc = Tree.fromEdit(Edit([Change.create(Node(id: 'body', type: 'text', key: 'V', text: Delta([Op.insert('$text\n')])))]))!;
 
+  /// A hub holding the document these nodes make.
+  FakeHub.tree(Edit nodes) : doc = Tree.fromEdit(nodes)!;
+
   Tree doc;
   var version = 0;
   var epoch = 'e0';

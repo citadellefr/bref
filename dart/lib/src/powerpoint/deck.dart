@@ -43,7 +43,7 @@ class Deck {
   }
 
   /// The theme of a slide, layout or master.
-  Theme themeOf(Node node) => Theme(_map((node.type == 'master' ? node : masterOf(node))?.attributes['theme']));
+  DeckTheme themeOf(Node node) => DeckTheme(_map((node.type == 'master' ? node : masterOf(node))?.attributes['theme']));
 
   /// The colors of a slide, layout or master: its theme's, through the
   /// color map of the master and the overrides of the layout and slide.
@@ -223,8 +223,8 @@ class ShapeStyle {
 
 /// A master's theme: its colors, fonts and the fills and lines its styles
 /// refer to.
-class Theme {
-  Theme(Map<String, Object?>? json)
+class DeckTheme {
+  DeckTheme(Map<String, Object?>? json)
     : colors = {
         for (final e in (_map(json?['colors']) ?? const {}).entries)
           e.key: ?const ColorContext().resolve(e.value),

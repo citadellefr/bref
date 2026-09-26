@@ -10,6 +10,11 @@
 - Presentations: slides drawn as PowerPoint does, what they inherit from
   their layout and master included; text laid out paragraph by paragraph
   with bullets, numbering, spacing and autofit, in metric-compatible fonts.
+- `PresentationEditor`: PowerPoint in French: the ribbon (Home, Insert,
+  Slide Show, View), slides at the left, reordered by dragging, shapes
+  selected, moved, resized and rotated, text typed with its formatting,
+  bullets and levels, colors of the theme, notes, slide sorter, slide show
+  (F5) with fades, the state of saving always in sight.
 
 ## 0.1.0 — 2026-09-26
 

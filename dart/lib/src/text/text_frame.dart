@@ -183,6 +183,23 @@ class TextFrame {
     return p.caretAt(offset - p.start).shift(Offset(box.left, _top + p.top));
   }
 
+  /// The start and end of the line holding an offset of the flow.
+  (int, int) lineAt(int offset) {
+    final p = paragraphAt(offset);
+    final (start, end) = p.lineAt(offset - p.start);
+    return (p.start + start, p.start + end);
+  }
+
+  /// The offset a line above (negative [lines]) or below the one at
+  /// [offset], at the same distance from the left, or [x] when given.
+  int verticalMove(int offset, int lines, {double? x}) {
+    final caret = caretAt(offset);
+    final target = Offset(x ?? caret.left, caret.center.dy + lines * caret.height);
+    if (target.dy < _top) return 0;
+    if (target.dy > _top + height) return length - 1;
+    return offsetAt(target);
+  }
+
   /// The boxes of a range of the flow.
   List<Rect> selection(int start, int end) {
     final out = <Rect>[];
@@ -443,6 +460,11 @@ class ParagraphLayout {
     final o = _painter.getOffsetForCaret(at, Rect.zero);
     final h = _painter.getFullHeightForCaret(at, Rect.zero);
     return Rect.fromLTWH(_x + o.dx, o.dy, 0, h);
+  }
+
+  (int, int) lineAt(int offset) {
+    final range = _painter.getLineBoundary(TextPosition(offset: offset.clamp(0, length)));
+    return (range.start.clamp(0, length), range.end.clamp(0, length));
   }
 
   List<Rect> selection(int from, int to) {

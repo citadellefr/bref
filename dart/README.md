@@ -12,6 +12,8 @@ final session = DocSession(
 )..start();
 
 PlainTextEditor(session: session, node: 'body');
+// or, for a presentation, with its pictures fetched from the host
+PresentationEditor(session: session, media: (name) => fetchPicture(name));
 ```
 
 A session shows local edits at once and rebases them over those of others;
