@@ -7,7 +7,7 @@ import 'ot/delta.dart';
 import 'session.dart';
 
 /// A plain text editor on a [DocSession], one line per paragraph, where the
-/// selections of others show in their colour.
+/// selections of others show in the theme's accent.
 ///
 /// Undo and redo are the session's: they revert this person's edits only.
 class PlainTextEditor extends StatefulWidget {
@@ -25,20 +25,6 @@ class PlainTextEditor extends StatefulWidget {
   final EdgeInsetsGeometry padding;
   final FocusNode? focusNode;
   final bool autofocus;
-
-  /// The colour a peer is shown in, the same on every screen.
-  static Color colorOf(DocPeer peer) => _palette[peer.sid % _palette.length];
-
-  static const _palette = [
-    Color(0xFFE8710A),
-    Color(0xFF1A73E8),
-    Color(0xFF188038),
-    Color(0xFFD01884),
-    Color(0xFF9334E6),
-    Color(0xFF12B5CB),
-    Color(0xFFB06000),
-    Color(0xFFD93025),
-  ];
 
   @override
   State<PlainTextEditor> createState() => _PlainTextEditorState();
@@ -176,7 +162,7 @@ class _PresenceController extends TextEditingController {
 
   @override
   TextSpan buildTextSpan({required BuildContext context, TextStyle? style, required bool withComposing}) {
-    final marks = <(int, int, Color)>[];
+    final marks = <(int, int)>[];
     for (final peer in session.peers) {
       final s = peer.selection;
       if (s == null) continue;
@@ -191,11 +177,12 @@ class _PresenceController extends TextEditingController {
           start--;
         }
       }
-      marks.add((start, end, PlainTextEditor.colorOf(peer)));
+      marks.add((start, end));
     }
     if (marks.isEmpty || (withComposing && value.composing.isValid && !value.composing.isCollapsed)) {
       return super.buildTextSpan(context: context, style: style, withComposing: withComposing);
     }
+    final marked = TextStyle(backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2));
     final cuts = {0, text.length, for (final m in marks) ...[m.$1, m.$2]}.toList()..sort();
     return TextSpan(
       style: style,
@@ -204,16 +191,9 @@ class _PresenceController extends TextEditingController {
           if (cuts[i] < cuts[i + 1])
             TextSpan(
               text: text.substring(cuts[i], cuts[i + 1]),
-              style: _markAt(marks, cuts[i], cuts[i + 1]),
+              style: marks.any((m) => m.$1 <= cuts[i] && cuts[i + 1] <= m.$2) ? marked : null,
             ),
       ],
     );
-  }
-
-  static TextStyle? _markAt(List<(int, int, Color)> marks, int start, int end) {
-    for (final (from, to, color) in marks.reversed) {
-      if (from <= start && end <= to) return TextStyle(backgroundColor: color.withValues(alpha: 0.25));
-    }
-    return null;
   }
 }
