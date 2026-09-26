@@ -108,6 +108,19 @@ func TestEdits(t *testing.T) {
 	}, Text: ot.Delta{{Insert: "Nouveau", Attrs: ot.Attrs{"b": "1", "sz": "2400"}}, {Insert: "\n", Attrs: ot.Attrs{"algn": "ctr"}}}})
 	apply(t, d, tree, copyEdit)
 
+	// a new slide from a layout, with its placeholders, and a shape with the
+	// theme's style
+	apply(t, d, tree, ot.Edit{
+		{Op: ot.OpNew, ID: "fresh", Type: "slide", Parent: "deck", Key: ot.KeyBetween(slides[8].Key, ""), Attrs: ot.Values{"layout": json.RawMessage(`"L2"`)}},
+		{Op: ot.OpNew, ID: "fresh-title", Type: "sp", Parent: "fresh", Key: "V", Attrs: ot.Values{"ph": json.RawMessage(`{"type":"title"}`), "name": json.RawMessage(`"Titre 1"`)}, Text: ot.Delta{{Insert: "Titre neuf\n"}}},
+		{Op: ot.OpNew, ID: "fresh-body", Type: "sp", Parent: "fresh", Key: "k", Attrs: ot.Values{"ph": json.RawMessage(`{"idx":"1"}`), "name": json.RawMessage(`"Espace réservé du contenu 2"`)}, Text: ot.Delta{{Insert: "Un\nDeux\n"}}},
+		{Op: ot.OpNew, ID: "fresh-shape", Type: "sp", Parent: "fresh", Key: "z", Attrs: ot.Values{
+			"xfrm":  json.RawMessage(`{"x":914400,"y":914400,"w":914400,"h":914400}`),
+			"geom":  json.RawMessage(`{"prst":"ellipse"}`),
+			"style": json.RawMessage(`{"ln":{"idx":"2","color":{"scheme":"accent1","mods":[["shade",50000]]}},"fill":{"idx":"1","color":{"scheme":"accent1"}},"effect":{"idx":"0","color":{"scheme":"accent1"}},"font":{"idx":"minor","color":{"scheme":"lt1"}}}`),
+		}, Text: ot.Delta{{Insert: "\n"}}},
+	})
+
 	// the last slide deleted, the second moved to the end
 	apply(t, d, tree, ot.Edit{{Op: ot.OpDel, ID: slides[8].ID}})
 	apply(t, d, tree, ot.Edit{{Op: ot.OpSet, ID: slides[1].ID, Key: ot.KeyBetween(slides[7].Key, "")}})
@@ -141,9 +154,26 @@ func TestEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := slidesOf(again)
-	if len(got) != 9 {
+	if len(got) != 10 {
 		t.Fatalf("%d slides after saving", len(got))
 	}
+	fresh := got[9]
+	if str(fresh, "layout") != "L2" {
+		t.Fatalf("new slide on layout %q", str(fresh, "layout"))
+	}
+	var titled, styled bool
+	for _, c := range again.Children(fresh.ID) {
+		if string(c.Attrs["ph"]) == `{"type":"title"}` && text(c) == "Titre neuf\n" {
+			titled = true
+		}
+		if c.Attrs["style"] != nil && string(c.Attrs["geom"]) == `{"prst":"ellipse"}` {
+			styled = true
+		}
+	}
+	if !titled || !styled {
+		t.Fatalf("new slide shapes: %v", again.Children(fresh.ID))
+	}
+	got = got[:9]
 	want := []string{"copy", slides[0].ID}
 	for _, s := range slides[2:8] {
 		want = append(want, s.ID)

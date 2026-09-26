@@ -357,6 +357,8 @@ func (w *writer) element(n *ot.Node) *xmldom.Element {
 	}
 	if base == nil || base.Space != pNS {
 		base = skeleton(n.Type)
+		setPlaceholder(base, n.Attrs["ph"])
+		setStyle(base, n.Attrs["style"])
 	}
 	old := nvAttrs(base)
 	w.setNames(base, old, n.Attrs)
@@ -465,6 +467,84 @@ func (w *writer) setText(e *xmldom.Element, n *ot.Node) {
 		drawingml.SetBodyProps(bodyPr, old, props)
 	}
 	drawingml.SetFlow(body, flow, w.d.fragment)
+}
+
+// setPlaceholder makes a new shape the placeholder ph describes, as a
+// slide made from a layout has them.
+func setPlaceholder(e *xmldom.Element, value json.RawMessage) {
+	var ph map[string]string
+	if value == nil || json.Unmarshal(value, &ph) != nil {
+		return
+	}
+	var nvPr *xmldom.Element
+	for _, c := range e.Elements() {
+		if strings.HasPrefix(c.Local, "nv") {
+			nvPr = c.Child(pNS, "nvPr")
+			if locks := c.Child(pNS, "cNvSpPr"); locks != nil && e.Local == "sp" {
+				locks.Append(xmldom.New(aNS, "a:spLocks", "noGrp", "1"))
+			}
+		}
+	}
+	if nvPr == nil {
+		return
+	}
+	el := xmldom.New(pNS, "p:ph")
+	for _, a := range []struct {
+		name   string
+		values []string
+	}{
+		{"type", []string{"title", "body", "ctrTitle", "subTitle", "dt", "sldNum", "ftr", "hdr", "obj", "chart", "tbl", "clipArt", "dgm", "media", "sldImg", "pic"}},
+		{"orient", []string{"horz", "vert"}},
+		{"sz", []string{"full", "half", "quarter"}},
+	} {
+		if slices.Contains(a.values, ph[a.name]) {
+			el.Set(a.name, ph[a.name])
+		}
+	}
+	if validNumber(ph["idx"]) {
+		el.Set("idx", ph["idx"])
+	}
+	nvPr.Content = append([]xmldom.Node{el}, nvPr.Content...)
+}
+
+// setStyle gives a new shape the references to the theme style describes.
+func setStyle(e *xmldom.Element, value json.RawMessage) {
+	var st Style
+	if value == nil || json.Unmarshal(value, &st) != nil || e.Local == "grp" || e.Local == "pic" {
+		return
+	}
+	style := xmldom.New(pNS, "p:style")
+	for _, r := range []struct {
+		local string
+		ref   *StyleRef
+	}{{"lnRef", st.Line}, {"fillRef", st.Fill}, {"effectRef", st.Effect}, {"fontRef", st.Font}} {
+		idx := "0"
+		if r.local == "fontRef" {
+			idx = "minor"
+		}
+		if r.ref != nil {
+			if r.local == "fontRef" && slices.Contains([]string{"major", "minor", "none"}, r.ref.Idx) || r.local != "fontRef" && validIndex(r.ref.Idx) {
+				idx = r.ref.Idx
+			}
+		}
+		ref := xmldom.New(aNS, "a:"+r.local, "idx", idx)
+		if r.ref != nil && r.ref.Color != nil {
+			ref.Append(r.ref.Color.Element())
+		}
+		style.Append(ref)
+	}
+	var at int
+	for i, c := range e.Content {
+		if c, ok := c.(*xmldom.Element); ok && c.Local == "spPr" {
+			at = i + 1
+		}
+	}
+	e.Content = append(e.Content[:at:at], append([]xmldom.Node{style}, e.Content[at:]...)...)
+}
+
+func validIndex(s string) bool {
+	n, err := strconv.ParseUint(s, 10, 32)
+	return err == nil && n <= 1003
 }
 
 // skeleton is a new shape of that type, before its attributes.
