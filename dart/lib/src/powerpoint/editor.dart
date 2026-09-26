@@ -76,7 +76,7 @@ class _PresentationEditorState extends State<PresentationEditor> {
     _changes = _session.changes.listen(_changed);
     _rejections = _session.rejections.listen((reason) {
       if (!mounted) return;
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text('${_s.refused} : $reason')));
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(_s.refused(reason))));
     });
   }
 

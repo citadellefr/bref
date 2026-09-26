@@ -86,7 +86,7 @@ class BrefStrings {
   String get readOnly => 'Lecture seule';
   String get retry => 'Réessayer';
   String get notesPrompt => 'Cliquez pour ajouter des commentaires';
-  String get refused => 'Modification refusée';
+  String refused(String reason) => 'Modification refusée : $reason';
 
   // placeholders
   String prompt(String kind) => switch (kind) {
