@@ -27,9 +27,11 @@ license.
 | [`bref`](.) | The hub: one room per open document, edits rebased and relayed to everyone connected, saves after a pause. Serves plain text files (`.txt`) for now. |
 | [`dart`](dart) | The Flutter package: the session with the hub, the same `ot` algorithms, and the editors. |
 | [`ot`](ot) | Edits and how concurrent edits are reconciled. A document is a tree of nodes (slides, shapes, the body of a text file), each with a type, attributes and possibly text; text is a flow of characters and paragraph marks, changed by deltas. The Dart package runs the same algorithms, checked against shared vectors. |
+| [`drawingml`](drawingml) | The DrawingML of all three formats: colors, fills, lines, geometries, positions and text bodies, read as JSON and text flows, written back as patches of the XML they came from. |
 | [`opc`](opc) | The zip container of Office documents: parts, content types, relationships. Untouched parts are copied without being decompressed. Guards against zip bombs, unsafe paths and forged sizes. |
 | `internal/xmltok` | An XML tokenizer that allocates nothing per token and keeps the exact bytes of every element, several times faster than `encoding/xml` and checked against it. |
 | `internal/prototype/pagination` | A measure, not a feature: how often a page laid out with metric-compatible free fonts ends where Word ended it. |
+| `internal/xmldom` | A tree of XML elements that keep the bytes they were read from: only what changed is written anew. |
 | `internal/xmlcanon` | Whether two XML parts mean the same thing to Office, whatever their prefixes, quoting or layout: how rewritten parts are checked. |
 
 ## Protocol

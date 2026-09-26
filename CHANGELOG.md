@@ -5,6 +5,11 @@
 - `ot`: documents are trees of nodes with attributes and text, changed by
   edits; the hub, its protocol and plain text files use them.
 - `ot`: no edit deletes the final paragraph mark of a flow.
+- `internal/xmldom`: elements that keep their bytes, patched rather than rebuilt.
+- `drawingml`: colors, fills, lines, geometries, positions, paragraph, run
+  and body properties as JSON; text bodies as flows and back.
+- `tools/presets`: the preset shapes of DrawingML, for Go and Dart.
+- corpus: Impress test documents from LibreOffice.
 
 ## 0.1.0 — 2026-09-26
 
