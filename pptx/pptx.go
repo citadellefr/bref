@@ -263,14 +263,14 @@ func (r *reader) master(name, id, key string, layoutCount *int) error {
 	attrs := ot.Values{}
 	if theme := rels.ofType(name, relTheme); theme != "" {
 		if t, _, _, err := r.part(theme); err == nil {
-			putJSON(attrs, "theme", readTheme(t))
+			putJSON(attrs, "theme", readTheme(t, r.d.media))
 		}
 	}
 	if clrMap := m.Child(pNS, "clrMap"); clrMap != nil {
 		putJSON(attrs, "clrMap", attrMap(clrMap))
 	}
 	cSld := m.Child(pNS, "cSld")
-	putJSON(attrs, "bg", background(cSld))
+	putJSON(attrs, "bg", background(cSld, r.d.media))
 	if styles := m.Child(pNS, "txStyles"); styles != nil {
 		for _, s := range []string{"title", "body", "other"} {
 			putJSON(attrs, s, drawingml.ListStyle(styles.Child(pNS, s+"Style")))
@@ -303,7 +303,7 @@ func (r *reader) layout(name, id, master, key string) error {
 	attrs := ot.Values{}
 	putString(attrs, "name", cSld.Get("name"))
 	putString(attrs, "type", l.Get("type"))
-	putJSON(attrs, "bg", background(cSld))
+	putJSON(attrs, "bg", background(cSld, r.d.media))
 	putJSON(attrs, "clrMapOvr", colorMapOverride(l))
 	if v, ok := l.Attr("showMasterSp"); ok {
 		attrs["showMasterSp"] = json.RawMessage(strconv.FormatBool(v != "0" && v != "false"))
@@ -334,7 +334,7 @@ func (r *reader) slide(name string, sldID int64, key string) error {
 	if v, ok := s.Attr("show"); ok && (v == "0" || v == "false") {
 		attrs["hidden"] = json.RawMessage("true")
 	}
-	putJSON(attrs, "bg", background(cSld))
+	putJSON(attrs, "bg", background(cSld, r.d.media))
 	putJSON(attrs, "clrMapOvr", colorMapOverride(s))
 	if v, ok := s.Attr("showMasterSp"); ok {
 		attrs["showMasterSp"] = json.RawMessage(strconv.FormatBool(v != "0" && v != "false"))
@@ -674,13 +674,13 @@ type Background struct {
 	Color *drawingml.Color `json:"color,omitempty"`
 }
 
-func background(cSld *xmldom.Element) *Background {
+func background(cSld *xmldom.Element, media func(rid string) string) *Background {
 	bg := cSld.Child(pNS, "bg")
 	if bg == nil {
 		return nil
 	}
 	if pr := bg.Child(pNS, "bgPr"); pr != nil {
-		if f := drawingml.FillIn(pr, nil); f != nil {
+		if f := drawingml.FillIn(pr, media); f != nil {
 			return &Background{Fill: f}
 		}
 	}
@@ -741,7 +741,7 @@ type Theme struct {
 	BgFills []*drawingml.Fill            `json:"bgFills,omitempty"`
 }
 
-func readTheme(t *xmldom.Element) *Theme {
+func readTheme(t *xmldom.Element, media func(rid string) string) *Theme {
 	els := t.Child(aNS, "themeElements")
 	if els == nil {
 		return nil
@@ -776,10 +776,10 @@ func readTheme(t *xmldom.Element) *Theme {
 	}
 	if fmt := els.Child(aNS, "fmtScheme"); fmt != nil {
 		if l := fmt.Child(aNS, "fillStyleLst"); l != nil {
-			th.Fills = fills(l)
+			th.Fills = fills(l, media)
 		}
 		if l := fmt.Child(aNS, "bgFillStyleLst"); l != nil {
-			th.BgFills = fills(l)
+			th.BgFills = fills(l, media)
 		}
 		if l := fmt.Child(aNS, "lnStyleLst"); l != nil {
 			for _, ln := range l.Elements() {
@@ -792,12 +792,12 @@ func readTheme(t *xmldom.Element) *Theme {
 
 // fills are the fills of a list of styles, one for each, nil where one is
 // not understood.
-func fills(list *xmldom.Element) []*drawingml.Fill {
+func fills(list *xmldom.Element, media func(rid string) string) []*drawingml.Fill {
 	var out []*drawingml.Fill
 	for _, c := range list.Elements() {
 		wrapper := xmldom.New(aNS, "a:w")
 		wrapper.Append(c)
-		out = append(out, drawingml.FillIn(wrapper, nil))
+		out = append(out, drawingml.FillIn(wrapper, media))
 	}
 	return out
 }

@@ -226,7 +226,7 @@ func (w *writer) slide(n *ot.Node, name string, rels *partRels, isNew bool) erro
 	if v, ok := root.Attr("show"); ok && (v == "0" || v == "false") {
 		old["hidden"] = json.RawMessage("true")
 	}
-	putJSON(old, "bg", background(cSld))
+	putJSON(old, "bg", background(cSld, w.d.media))
 	if changed(old, n.Attrs, "name") {
 		if s := str(n, "name"); s != "" {
 			cSld.Set("name", s)
@@ -242,7 +242,7 @@ func (w *writer) slide(n *ot.Node, name string, rels *partRels, isNew bool) erro
 		}
 	}
 	if changed(old, n.Attrs, "bg") {
-		setBackground(cSld, n.Attrs["bg"])
+		setBackground(cSld, n.Attrs["bg"], w.embed)
 	}
 
 	spTree := cSld.Child(pNS, "spTree")
@@ -291,7 +291,7 @@ func declare(root *xmldom.Element) {
 	}
 }
 
-func setBackground(cSld *xmldom.Element, value json.RawMessage) {
+func setBackground(cSld *xmldom.Element, value json.RawMessage, embed func(string) string) {
 	if old := cSld.Child(pNS, "bg"); old != nil {
 		cSld.Remove(old)
 	}
@@ -302,7 +302,7 @@ func setBackground(cSld *xmldom.Element, value json.RawMessage) {
 	e := xmldom.New(pNS, "p:bg")
 	switch {
 	case bg.Fill != nil:
-		fill := bg.Fill.Element(nil)
+		fill := bg.Fill.Element(embed)
 		if fill == nil {
 			return
 		}

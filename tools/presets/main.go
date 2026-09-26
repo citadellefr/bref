@@ -48,6 +48,11 @@ func main() {
 		if g == nil || g.Custom == nil {
 			log.Fatalf("%s: no geometry", shape.Local)
 		}
+		// an erratum of ECMA-376: the text rectangle of pie has its top and
+		// right swapped
+		if shape.Local == "pie" && slices.Equal(g.Custom.Rect, []string{"il", "ir", "it", "ib"}) {
+			g.Custom.Rect = []string{"il", "it", "ir", "ib"}
+		}
 		def, err := json.Marshal(g.Custom)
 		if err != nil {
 			log.Fatal(err)
