@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0
+## 0.1.0 — 2026-09-26
 
 - `Delta`: text flows and their edits, the algorithms of the Go package `ot`,
   checked against its vectors.
