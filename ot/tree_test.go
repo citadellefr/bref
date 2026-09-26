@@ -148,7 +148,10 @@ func (g *treeGen) node(parent string) Change {
 	if g.IntN(2) == 0 {
 		c.Attrs = Values{"x": g.value()}
 	}
-	if g.IntN(3) > 0 {
+	switch g.IntN(4) {
+	case 0:
+		c.Cells = g.cells(false)
+	case 1, 2:
 		c.Text = g.flow()
 	}
 	return c
@@ -198,6 +201,17 @@ func (g *treeGen) edit(tree *Tree) Edit {
 			if len(c.Attrs) == 0 {
 				c.Attrs = nil
 			}
+		case n < 7:
+			var grids []Change
+			for _, n := range nodes {
+				if n.Cells != nil {
+					grids = append(grids, n)
+				}
+			}
+			if len(grids) == 0 {
+				continue
+			}
+			c = g.gridChange(grids[g.IntN(len(grids))].ID)
 		default:
 			var texts []Change
 			for _, n := range nodes {

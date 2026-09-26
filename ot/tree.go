@@ -9,8 +9,8 @@ import (
 )
 
 // A Tree is a document made of nodes: slides and the shapes on them, the
-// cells of a table. A node has a type, attributes and possibly a flow of
-// text, and sits under its parent, ordered among its siblings by key then
+// sheets of a workbook. A node has a type, attributes and possibly a flow of
+// text or a grid of cells, and sits under its parent, ordered among its siblings by key then
 // id. Nodes never change parent: moving one among its siblings changes its
 // key, and nodes inserted at the same place by two people both stay.
 //
@@ -32,6 +32,7 @@ type Node struct {
 	Key    string
 	Attrs  Values
 	Text   *Doc
+	Grid   *Grid
 }
 
 // Values are attributes, each a JSON value.
@@ -43,6 +44,11 @@ type Values map[string]json.RawMessage
 //	{"o":"del","id":"…"}                  the node and everything under it
 //	{"o":"set","id":"…","k":"…","a":{…}}  a null value removes the attribute
 //	{"o":"txt","id":"…","x":[delta]}
+//	{"o":"cel","id":"…","c":[[row,col,{fields}],…]}  a null value removes the field
+//	{"o":"ins","id":"…","dim":"r","at":5,"n":2}    rows or columns (dim "c")
+//	{"o":"rem","id":"…","dim":"r","at":5,"n":2}
+//
+// A node created with cells, possibly none ("c":[]), holds a grid.
 type Change struct {
 	Op     string `json:"o"`
 	ID     string `json:"id"`
@@ -51,6 +57,10 @@ type Change struct {
 	Key    string `json:"k,omitempty"`
 	Attrs  Values `json:"a,omitempty"`
 	Text   Delta  `json:"x,omitempty"`
+	Cells  []Cell `json:"c,omitzero"`
+	Dim    string `json:"dim,omitempty"`
+	At     int    `json:"at,omitempty"`
+	N      int    `json:"n,omitempty"`
 }
 
 const (
@@ -59,6 +69,10 @@ const (
 	OpSet = "set"
 	OpTxt = "txt"
 )
+
+func grid(op string) bool {
+	return op == OpCel || op == OpIns || op == OpRem
+}
 
 // Edit is what one person does at once, applied whole or not at all.
 type Edit []Change
@@ -80,16 +94,28 @@ func (e Edit) Check() error {
 				return ErrInvalid
 			}
 		}
+		bare := c.Type == "" && c.Parent == "" && c.Key == "" && c.Attrs == nil && c.Text == nil
+		noGrid := c.Cells == nil && c.Dim == "" && c.At == 0 && c.N == 0
 		var ok bool
 		switch c.Op {
 		case OpNew:
-			ok = name(c.Type) && c.Key != "" && (c.Parent == "" || name(c.Parent)) && (c.Text == nil || flow(c.Text))
+			ok = name(c.Type) && c.Key != "" && (c.Parent == "" || name(c.Parent)) && (c.Text == nil || flow(c.Text)) &&
+				c.Dim == "" && c.At == 0 && c.N == 0 && (c.Cells == nil || c.Text == nil && checkCells(c.Cells, false))
 		case OpDel:
-			ok = c.Type == "" && c.Parent == "" && c.Key == "" && c.Attrs == nil && c.Text == nil
+			ok = bare && noGrid
 		case OpSet:
-			ok = c.Type == "" && c.Parent == "" && c.Text == nil && (c.Key != "" || len(c.Attrs) > 0)
+			ok = c.Type == "" && c.Parent == "" && c.Text == nil && (c.Key != "" || len(c.Attrs) > 0) && noGrid
 		case OpTxt:
-			ok = c.Type == "" && c.Parent == "" && c.Key == "" && c.Attrs == nil && c.Text.Check() == nil
+			ok = c.Type == "" && c.Parent == "" && c.Key == "" && c.Attrs == nil && c.Text.Check() == nil && noGrid
+		case OpCel:
+			ok = bare && len(c.Cells) > 0 && checkCells(c.Cells, true) && c.Dim == "" && c.At == 0 && c.N == 0
+		case OpIns, OpRem:
+			limit := MaxRows
+			if c.Dim == DimCols {
+				limit = MaxCols
+			}
+			ok = bare && c.Cells == nil && (c.Dim == DimRows || c.Dim == DimCols) &&
+				1 <= c.At && c.At <= limit && 1 <= c.N && c.N <= limit
 		}
 		if !ok {
 			return ErrInvalid
@@ -173,6 +199,9 @@ func (t *Tree) Edit() Edit {
 			if n.Text != nil {
 				c.Text = n.Text.Delta()
 			}
+			if n.Grid != nil {
+				c.Cells = n.Grid.Cells()
+			}
 			out = append(out, c)
 			walk(n.ID)
 		}
@@ -185,9 +214,14 @@ func (t *Tree) Edit() Edit {
 func (t *Tree) Clone() *Tree {
 	c := &Tree{nodes: make(map[string]*Node, len(t.nodes)), kids: make(map[string][]string, len(t.kids)), size: t.size}
 	for id, n := range t.nodes {
-		if n.Text != nil {
+		if n.Text != nil || n.Grid != nil {
 			m := *n
-			m.Text = n.Text.Clone()
+			if n.Text != nil {
+				m.Text = n.Text.Clone()
+			}
+			if n.Grid != nil {
+				m.Grid = n.Grid.Clone()
+			}
 			n = &m
 		}
 		c.nodes[id] = n
@@ -239,6 +273,13 @@ func (t *Tree) apply(c Change, log func(id string)) error {
 				return err
 			}
 			n.Text = doc
+		}
+		if c.Cells != nil {
+			g, err := NewGrid(c.Cells)
+			if err != nil {
+				return err
+			}
+			n.Grid = g
 		}
 		if log != nil {
 			log(c.ID)
@@ -292,6 +333,28 @@ func (t *Tree) apply(c Change, log func(id string)) error {
 		}
 		log(c.ID)
 		t.put(c.ID, &m)
+	case OpCel, OpIns, OpRem:
+		if n.Grid == nil {
+			return ErrInvalid
+		}
+		g := n.Grid
+		if log != nil {
+			m := *n
+			m.Grid = n.Grid.Clone()
+			g = m.Grid
+			log(c.ID)
+			t.put(c.ID, &m)
+		}
+		size := g.Len()
+		switch c.Op {
+		case OpCel:
+			g.set(c.Cells)
+		case OpIns:
+			g.shift(c.Dim, c.At, c.N)
+		case OpRem:
+			g.shift(c.Dim, c.At, -c.N)
+		}
+		t.size += g.Len() - size
 	}
 	return nil
 }
@@ -339,10 +402,14 @@ func (t *Tree) put(id string, n *Node) {
 }
 
 func (n *Node) len() int {
-	if n.Text == nil {
-		return 1
+	size := 1
+	if n.Text != nil {
+		size += n.Text.Len()
 	}
-	return 1 + n.Text.Len()
+	if n.Grid != nil {
+		size += n.Grid.Len()
+	}
+	return size
 }
 
 // TransformEdit rebases b, made concurrently with a, to apply after a. Text
@@ -368,6 +435,9 @@ func TransformEdit(a, b Edit, aFirst bool) Edit {
 // transformChange rebases a and b over each other; a change left with
 // nothing to do has no Op.
 func transformChange(a, b Change, aFirst bool) (Change, Change) {
+	if a.ID == b.ID && grid(a.Op) && grid(b.Op) {
+		return transformGrid(a, b, aFirst)
+	}
 	if a.ID != b.ID || a.Op != b.Op {
 		return a, b
 	}
@@ -417,7 +487,9 @@ func (e Edit) Growth() int {
 	for _, c := range e {
 		switch c.Op {
 		case OpNew:
-			n += 1 + max(0, c.Text.Change())
+			n += 1 + max(0, c.Text.Change()) + len(c.Cells)
+		case OpCel:
+			n += len(c.Cells)
 		case OpTxt:
 			n += max(0, c.Text.Change())
 		}

@@ -1,11 +1,15 @@
 import 'dart:collection';
 
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 
 import 'delta.dart';
 import 'diff.dart';
+import 'grid.dart';
 
-/// One element of a [Tree]: a slide, a shape, the body of a text file.
+/// One element of a [Tree]: a slide, a shape, the body of a text file, a
+/// sheet.
 @immutable
 class Node {
   const Node({
@@ -15,6 +19,7 @@ class Node {
     required this.key,
     this.attributes = const {},
     this.text,
+    this.grid,
   });
 
   final String id;
@@ -32,13 +37,17 @@ class Node {
   /// The node's flow of text, if it holds one.
   final Delta? text;
 
-  Node _with({String? key, Map<String, Object?>? attributes, Delta? text}) => Node(
+  /// The node's cells, if it holds some.
+  final Grid? grid;
+
+  Node _with({String? key, Map<String, Object?>? attributes, Delta? text, Grid? grid}) => Node(
     id: id,
     type: type,
     parent: parent,
     key: key ?? this.key,
     attributes: attributes ?? this.attributes,
     text: text ?? this.text,
+    grid: grid ?? this.grid,
   );
 
   @override
@@ -49,25 +58,37 @@ enum ChangeKind {
   create('new'),
   delete('del'),
   set('set'),
-  text('txt');
+  text('txt'),
+  cells('cel'),
+  insert('ins'),
+  remove('rem');
 
   const ChangeKind(this.code);
 
   final String code;
+
+  bool get isGrid => this == cells || this == insert || this == remove;
 }
 
 /// One step of an [Edit]: a node created, deleted, given attributes or a
-/// new key, or its text changed.
+/// new key, its text changed, cells set, or rows or columns inserted or
+/// removed in its grid.
 @immutable
 class Change {
-  Change.create(Node node)
+  Change.create(Node node) : this._create(node, node.grid?.cells.toList());
+
+  /// Creates [node] with its [cells] in the order given.
+  Change._create(Node node, this.cells)
     : kind = ChangeKind.create,
       id = node.id,
       type = node.type,
       parent = node.parent,
       key = node.key,
       attributes = node.attributes,
-      text = node.text;
+      text = node.text,
+      dim = '',
+      at = 0,
+      n = 0;
 
   const Change.delete(this.id)
     : kind = ChangeKind.delete,
@@ -75,21 +96,65 @@ class Change {
       parent = '',
       key = '',
       attributes = const {},
-      text = null;
+      text = null,
+      cells = null,
+      dim = '',
+      at = 0,
+      n = 0;
 
   /// A null value removes the attribute; an empty [key] leaves the key.
   const Change.set(this.id, {this.key = '', this.attributes = const {}})
     : kind = ChangeKind.set,
       type = '',
       parent = '',
-      text = null;
+      text = null,
+      cells = null,
+      dim = '',
+      at = 0,
+      n = 0;
 
   const Change.text(this.id, Delta this.text)
     : kind = ChangeKind.text,
       type = '',
       parent = '',
       key = '',
-      attributes = const {};
+      attributes = const {},
+      cells = null,
+      dim = '',
+      at = 0,
+      n = 0;
+
+  /// Sets fields of [cells]; a null value removes the field.
+  const Change.cells(this.id, List<Cell> this.cells)
+    : kind = ChangeKind.cells,
+      type = '',
+      parent = '',
+      key = '',
+      attributes = const {},
+      text = null,
+      dim = '',
+      at = 0,
+      n = 0;
+
+  /// Inserts [n] rows ([dimRows]) or columns ([dimCols]) at [at].
+  const Change.insert(this.id, this.dim, this.at, this.n)
+    : kind = ChangeKind.insert,
+      type = '',
+      parent = '',
+      key = '',
+      attributes = const {},
+      text = null,
+      cells = null;
+
+  /// Removes [n] rows or columns from [at].
+  const Change.remove(this.id, this.dim, this.at, this.n)
+    : kind = ChangeKind.remove,
+      type = '',
+      parent = '',
+      key = '',
+      attributes = const {},
+      text = null,
+      cells = null;
 
   final ChangeKind kind;
   final String id;
@@ -98,8 +163,20 @@ class Change {
   final String key;
   final Map<String, Object?> attributes;
   final Delta? text;
+  final List<Cell>? cells;
+  final String dim;
+  final int at;
+  final int n;
 
-  Node get node => Node(id: id, type: type, parent: parent, key: key, attributes: attributes, text: text);
+  Node get node => Node(
+    id: id,
+    type: type,
+    parent: parent,
+    key: key,
+    attributes: attributes,
+    text: text,
+    grid: cells == null ? null : Grid(cells!),
+  );
 
   static Change? fromJson(Object? json) {
     if (json is! Map<String, Object?>) return null;
@@ -110,20 +187,58 @@ class Change {
     if (attributes.keys.any((k) => k.isEmpty)) return null;
     final text = json.containsKey('x') ? Delta.fromJson(json['x']) : null;
     if (json.containsKey('x') && text == null) return null;
+    final op = json['o'];
+    final cells = json.containsKey('c') ? _cells(json['c'], set: op == 'cel') : null;
+    if (json.containsKey('c') && cells == null) return null;
+    final dim = json['dim'] ?? '', at = json['at'] ?? 0, n = json['n'] ?? 0;
+    if (dim is! String || at is! int || n is! int) return null;
     final bare = type.isEmpty && parent.isEmpty;
-    switch (json['o']) {
+    final noGrid = cells == null && dim.isEmpty && at == 0 && n == 0;
+    final plain = bare && key.isEmpty && attributes.isEmpty && text == null;
+    switch (op) {
       case 'new':
         if (!_isName(type) || !_isName(key) || parent.isNotEmpty && !_isName(parent)) return null;
         if (attributes.values.contains(null) || text != null && !_isFlow(text)) return null;
-        return Change.create(Node(id: id, type: type, parent: parent, key: key, attributes: attributes, text: text));
-      case 'del' when bare && key.isEmpty && attributes.isEmpty && text == null:
+        if (dim.isNotEmpty || at != 0 || n != 0 || cells != null && text != null) return null;
+        return Change._create(
+          Node(
+            id: id,
+            type: type,
+            parent: parent,
+            key: key,
+            attributes: attributes,
+            text: text,
+            grid: cells == null ? null : Grid(cells),
+          ),
+          cells,
+        );
+      case 'del' when plain && noGrid:
         return Change.delete(id);
-      case 'set' when bare && text == null && (key.isNotEmpty || attributes.isNotEmpty):
+      case 'set' when bare && text == null && (key.isNotEmpty || attributes.isNotEmpty) && noGrid:
         return Change.set(id, key: key, attributes: attributes);
-      case 'txt' when bare && key.isEmpty && attributes.isEmpty:
+      case 'txt' when bare && key.isEmpty && attributes.isEmpty && noGrid:
         return Change.text(id, text ?? Delta());
+      case 'cel' when plain && cells != null && cells.isNotEmpty && dim.isEmpty && at == 0 && n == 0:
+        if (cells.any((c) => c.fields.isEmpty)) return null;
+        return Change.cells(id, cells);
+      case 'ins' || 'rem' when plain && cells == null && (dim == dimRows || dim == dimCols):
+        final limit = dim == dimRows ? maxRows : maxCols;
+        if (at < 1 || at > limit || n < 1 || n > limit) return null;
+        return op == 'ins' ? Change.insert(id, dim, at, n) : Change.remove(id, dim, at, n);
     }
     return null;
+  }
+
+  static List<Cell>? _cells(Object? json, {required bool set}) {
+    if (json is! List<Object?>) return null;
+    final cells = <Cell>[];
+    final seen = <(int, int)>{};
+    for (final raw in json) {
+      final cell = Cell.fromJson(raw, set: set);
+      if (cell == null || !seen.add((cell.row, cell.col))) return null;
+      cells.add(cell);
+    }
+    return cells;
   }
 
   Map<String, Object?> toJson() => {
@@ -134,6 +249,10 @@ class Change {
     if (key.isNotEmpty) 'k': key,
     if (attributes.isNotEmpty) 'a': attributes,
     if (text != null && !text!.isEmpty) 'x': text!.toJson(),
+    if (cells != null) 'c': [for (final c in cells!) c.toJson()],
+    if (dim.isNotEmpty) 'dim': dim,
+    if (at != 0) 'at': at,
+    if (n != 0) 'n': n,
   };
 
   @override
@@ -144,11 +263,16 @@ class Change {
       other.type == type &&
       other.parent == parent &&
       other.key == key &&
-      _jsonEquals(other.attributes, attributes) &&
-      other.text == text;
+      jsonEquals(other.attributes, attributes) &&
+      other.text == text &&
+      (other.cells == null) == (cells == null) &&
+      (cells == null || listEquals(other.cells, cells)) &&
+      other.dim == dim &&
+      other.at == at &&
+      other.n == n;
 
   @override
-  int get hashCode => Object.hash(kind, id, key, text);
+  int get hashCode => Object.hash(kind, id, key, text, dim, at, n);
 
   @override
   String toString() => '${toJson()}';
@@ -167,8 +291,9 @@ class Edit {
   int get growth => changes.fold(0, (n, c) {
     final text = c.text?.change ?? 0;
     return n + switch (c.kind) {
-      ChangeKind.create => 1 + (text > 0 ? text : 0),
+      ChangeKind.create => 1 + (text > 0 ? text : 0) + (c.cells?.length ?? 0),
       ChangeKind.text => text > 0 ? text : 0,
+      ChangeKind.cells => c.cells!.length,
       _ => 0,
     };
   });
@@ -229,17 +354,24 @@ class Edit {
         c
       else
         switch (c.kind) {
-          ChangeKind.create => Change.create(Node(
-            id: names[c.id] ?? c.id,
-            type: c.type,
-            parent: names[c.parent] ?? c.parent,
-            key: c.key,
-            attributes: c.attributes,
-            text: c.text,
-          )),
+          ChangeKind.create => Change._create(
+            Node(
+              id: names[c.id] ?? c.id,
+              type: c.type,
+              parent: names[c.parent] ?? c.parent,
+              key: c.key,
+              attributes: c.attributes,
+              text: c.text,
+              grid: c.cells == null ? null : Grid(c.cells!),
+            ),
+            c.cells,
+          ),
           ChangeKind.delete => Change.delete(names[c.id]!),
           ChangeKind.set => Change.set(names[c.id]!, key: c.key, attributes: c.attributes),
           ChangeKind.text => Change.text(names[c.id]!, c.text!),
+          ChangeKind.cells => Change.cells(names[c.id]!, c.cells!),
+          ChangeKind.insert => Change.insert(names[c.id]!, c.dim, c.at, c.n),
+          ChangeKind.remove => Change.remove(names[c.id]!, c.dim, c.at, c.n),
         },
   ]);
 
@@ -256,6 +388,7 @@ class Edit {
 /// [a] and [b] rebased over each other; null for a change left with
 /// nothing to do.
 (Change?, Change?) _transform(Change a, Change b, {required bool thisFirst}) {
+  if (a.id == b.id && a.kind.isGrid && b.kind.isGrid) return _transformGrid(a, b, thisFirst: thisFirst);
   if (a.id != b.id || a.kind != b.kind) return (a, b);
   switch (a.kind) {
     case ChangeKind.text:
@@ -280,9 +413,86 @@ Change? _overridden(Change c, Change later) {
   return Change.set(c.id, key: key, attributes: attributes);
 }
 
+/// [a] and [b], two changes to the same grid, rebased over each other.
+(Change?, Change?) _transformGrid(Change a, Change b, {required bool thisFirst}) {
+  Change? x = a, y = b;
+  if (a.kind == ChangeKind.cells && b.kind == ChangeKind.cells) {
+    if (thisFirst) {
+      x = _cellsChange(a.id, _overriddenCells(a.cells!, b.cells!));
+    } else {
+      y = _cellsChange(b.id, _overriddenCells(b.cells!, a.cells!));
+    }
+  } else if (a.kind == ChangeKind.cells) {
+    x = _cellsChange(a.id, _shiftCells(a.cells!, b));
+  } else if (b.kind == ChangeKind.cells) {
+    y = _cellsChange(b.id, _shiftCells(b.cells!, a));
+  } else if (a.dim != b.dim) {
+  } else if (a.kind == ChangeKind.insert && b.kind == ChangeKind.insert) {
+    if (a.at < b.at || a.at == b.at && thisFirst) {
+      y = Change.insert(b.id, b.dim, b.at + a.n, b.n);
+    } else {
+      x = Change.insert(a.id, a.dim, a.at + b.n, a.n);
+    }
+  } else if (a.kind == ChangeKind.remove && b.kind == ChangeKind.remove) {
+    x = _removedOver(a, b);
+    y = _removedOver(b, a);
+  } else if (a.kind == ChangeKind.insert) {
+    (y, x) = _removalOverInsert(b, a);
+  } else {
+    (x, y) = _removalOverInsert(a, b);
+  }
+  return (x, y);
+}
+
+Change? _cellsChange(String id, List<Cell> cells) => cells.isEmpty ? null : Change.cells(id, cells);
+
+/// [cells] without the fields [later] sets.
+List<Cell> _overriddenCells(List<Cell> cells, List<Cell> later) {
+  final sets = {for (final c in later) (c.row, c.col): c.fields};
+  final out = <Cell>[];
+  for (final c in cells) {
+    final set = sets[(c.row, c.col)];
+    final fields = set == null ? c.fields : {
+      for (final e in c.fields.entries)
+        if (!set.containsKey(e.key)) e.key: e.value,
+    };
+    if (fields.isNotEmpty) out.add(Cell(c.row, c.col, fields));
+  }
+  return out;
+}
+
+/// [cells] where the rows or columns inserted or removed by [s] put them,
+/// without those removed.
+List<Cell> _shiftCells(List<Cell> cells, Change s) {
+  final n = s.kind == ChangeKind.remove ? -s.n : s.n;
+  final out = <Cell>[];
+  for (final c in cells) {
+    final rows = s.dim == dimRows;
+    final i = movedIndex(rows ? c.row : c.col, s.at, n, rows ? maxRows : maxCols);
+    if (i != null) out.add(rows ? Cell(i, c.col, c.fields) : Cell(c.row, i, c.fields));
+  }
+  return out;
+}
+
+/// The removal [r] once [other] is removed too.
+Change? _removedOver(Change r, Change other) {
+  final end = r.at + r.n, otherEnd = other.at + other.n;
+  final before = max(0, min(otherEnd, r.at) - other.at).toInt();
+  final overlap = max(0, min(end, otherEnd) - max(r.at, other.at)).toInt();
+  return r.n - overlap <= 0 ? null : Change.remove(r.id, r.dim, r.at - before, r.n - overlap);
+}
+
+/// A removal and an insertion rebased over each other: rows inserted
+/// inside the removed ones are removed with them.
+(Change?, Change?) _removalOverInsert(Change rem, Change ins) {
+  if (ins.at <= rem.at) return (Change.remove(rem.id, rem.dim, rem.at + ins.n, rem.n), ins);
+  if (ins.at >= rem.at + rem.n) return (rem, Change.insert(ins.id, ins.dim, ins.at - rem.n, ins.n));
+  return (Change.remove(rem.id, rem.dim, rem.at, rem.n + ins.n), null);
+}
+
 /// A document made of nodes, as the Go package `ot` keeps it: each node
 /// sits under its parent, ordered among its siblings by key then id, and
-/// may hold a flow of text. A change to a node that no longer exists does
+/// may hold a flow of text or a grid of cells. A change to a node that no longer exists does
 /// nothing.
 class Tree {
   Tree();
@@ -401,9 +611,39 @@ class Tree {
         undo.add(Change.text(c.id, delta.invert(text)));
         saved.add((c.id, node));
         _put(c.id, node._with(text: result));
+      case ChangeKind.cells || ChangeKind.insert || ChangeKind.remove:
+        final grid = node.grid;
+        if (grid == null) return false;
+        saved.add((c.id, node));
+        _put(c.id, node._with(grid: _applyGrid(grid, c, undo)));
       case ChangeKind.create:
     }
     return true;
+  }
+
+  static Grid _applyGrid(Grid grid, Change c, List<Change> undo) {
+    switch (c.kind) {
+      case ChangeKind.cells:
+        final old = <Cell>[];
+        for (final cell in c.cells!) {
+          final f = grid.cell(cell.row, cell.col) ?? const {};
+          if (cell.fields.entries.every((e) => e.value == null && f[e.key] == null)) continue;
+          old.add(Cell(cell.row, cell.col, {for (final k in cell.fields.keys) k: f[k]}));
+        }
+        if (old.isNotEmpty) undo.add(Change.cells(c.id, old));
+        return grid.set(c.cells!);
+      case ChangeKind.insert:
+        undo.add(Change.remove(c.id, c.dim, c.at, c.n));
+        return grid.shift(c.dim, c.at, c.n);
+      default:
+        final gone = grid.cells.where((cell) {
+          final i = c.dim == dimRows ? cell.row : cell.col;
+          return i >= c.at && i < c.at + c.n;
+        }).toList();
+        if (gone.isNotEmpty) undo.add(Change.cells(c.id, gone));
+        undo.add(Change.insert(c.id, c.dim, c.at, c.n));
+        return grid.shift(c.dim, c.at, -c.n);
+    }
   }
 
   void _put(String id, Node? node) {
@@ -427,7 +667,7 @@ class Tree {
     _length += _size(node);
   }
 
-  static int _size(Node node) => 1 + (node.text?.length ?? 0);
+  static int _size(Node node) => 1 + (node.text?.length ?? 0) + (node.grid?.length ?? 0);
 
   static int _compare(Node a, Node b) {
     final byKey = a.key.compareTo(b.key);
@@ -452,7 +692,7 @@ Edit diffTrees(Tree from, Tree to) {
     }
     final attributes = <String, Object?>{
       for (final e in c.attributes.entries)
-        if (!_jsonEquals(old.attributes[e.key], e.value)) e.key: e.value,
+        if (!jsonEquals(old.attributes[e.key], e.value)) e.key: e.value,
       for (final k in old.attributes.keys)
         if (!c.attributes.containsKey(k)) k: null,
     };
@@ -464,8 +704,31 @@ Edit diffTrees(Tree from, Tree to) {
       final d = diff(a.text, b.text);
       if (!d.isEmpty) out.add(Change.text(c.id, d));
     }
+    final before = old.grid, after = c.cells;
+    if (before != null && after != null) {
+      final cells = _diffCells(before, Grid(after));
+      if (cells.isNotEmpty) out.add(Change.cells(c.id, cells));
+    }
   }
   return Edit(out);
+}
+
+List<Cell> _diffCells(Grid from, Grid to) {
+  final out = <Cell>[];
+  for (final cell in to.cells) {
+    final old = from.cell(cell.row, cell.col) ?? const {};
+    final fields = {
+      for (final e in cell.fields.entries)
+        if (!jsonEquals(old[e.key], e.value)) e.key: e.value,
+      for (final k in old.keys)
+        if (!cell.fields.containsKey(k)) k: null,
+    };
+    if (fields.isNotEmpty) out.add(Cell(cell.row, cell.col, fields));
+  }
+  for (final cell in from.cells) {
+    if (to.cell(cell.row, cell.col) == null) out.add(Cell(cell.row, cell.col, {for (final k in cell.fields.keys) k: null}));
+  }
+  return out;
 }
 
 /// Whether [delta] deletes the last unit of a flow of [length] units, its
@@ -485,15 +748,6 @@ bool _isFlow(Delta d) => !d.isEmpty && d.ops.every((op) => op.isInsert) && d.ops
 /// Dart.
 bool _isName(String s) => s.isNotEmpty && s.length <= 64 && s.codeUnits.every((c) => c >= 0x21 && c <= 0x7E);
 
-bool _jsonEquals(Object? a, Object? b) {
-  if (a is Map && b is Map) {
-    return a.length == b.length && a.keys.every((k) => b.containsKey(k) && _jsonEquals(a[k], b[k]));
-  }
-  if (a is List && b is List) {
-    return a.length == b.length && Iterable<int>.generate(a.length).every((i) => _jsonEquals(a[i], b[i]));
-  }
-  return a == b;
-}
 
 const _digits = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
 

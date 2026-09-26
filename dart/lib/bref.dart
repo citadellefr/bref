@@ -3,6 +3,7 @@ library;
 
 export 'src/chrome/strings.dart' show BrefStrings;
 export 'src/ot/delta.dart' show Attributes, Delta, Op;
+export 'src/ot/grid.dart' show Cell, Grid, dimCols, dimRows, maxCols, maxRows;
 export 'src/ot/tree.dart' show Change, ChangeKind, Edit, Node, Tree, diffTrees, keyBetween;
 export 'src/plain_text_editor.dart' show PlainTextEditor;
 export 'src/powerpoint/editor.dart' show PresentationEditor;

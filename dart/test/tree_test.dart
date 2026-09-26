@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:bref/src/ot/delta.dart';
+import 'package:bref/src/ot/grid.dart';
 import 'package:bref/src/ot/tree.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -136,14 +137,30 @@ Tree _randomTree(Random random) {
   return Tree.fromEdit(Edit(changes))!;
 }
 
-Node _randomNode(Random random, String parent) => Node(
-  id: 'n${_next++}',
-  type: 't',
-  parent: parent,
-  key: ['F', 'V', 'k'][random.nextInt(3)],
-  attributes: random.nextBool() ? {'x': random.nextInt(3)} : const {},
-  text: random.nextBool() ? Delta([Op.insert('${'ab\n' * random.nextInt(3)}c\n')]) : null,
-);
+Node _randomNode(Random random, String parent) {
+  final kind = random.nextInt(3);
+  return Node(
+    id: 'n${_next++}',
+    type: 't',
+    parent: parent,
+    key: ['F', 'V', 'k'][random.nextInt(3)],
+    attributes: random.nextBool() ? {'x': random.nextInt(3)} : const {},
+    text: kind == 0 ? Delta([Op.insert('${'ab\n' * random.nextInt(3)}c\n')]) : null,
+    grid: kind == 1 ? Grid(_randomCells(random, set: false)) : null,
+  );
+}
+
+List<Cell> _randomCells(Random random, {required bool set}) {
+  final cells = <(int, int), Cell>{};
+  for (var i = 0; i < 1 + random.nextInt(3); i++) {
+    final row = random.nextInt(5), col = random.nextInt(4);
+    cells[(row, col)] = Cell(row, col, {
+      'v': random.nextInt(3),
+      if (random.nextBool()) 's': set && random.nextBool() ? null : 'x${random.nextInt(2)}',
+    });
+  }
+  return cells.values.toList();
+}
 
 /// A random edit, which it applies to [tree].
 Edit _randomEdit(Random random, Tree tree) {
@@ -159,6 +176,11 @@ Edit _randomEdit(Random random, Tree tree) {
         0 => Change.delete(node.id),
         1 => Change.set(node.id, key: 'a', attributes: {'x': null, 'y': 1}),
         _ when node.text != null => Change.text(node.id, Delta([Op.retain(random.nextInt(node.text!.length)), const Op.insert('z\n')])),
+        _ when node.grid != null => switch (random.nextInt(3)) {
+          0 => Change.insert(node.id, random.nextBool() ? dimRows : dimCols, 1 + random.nextInt(4), 1 + random.nextInt(2)),
+          1 => Change.remove(node.id, random.nextBool() ? dimRows : dimCols, 1 + random.nextInt(4), 1 + random.nextInt(2)),
+          _ => Change.cells(node.id, _randomCells(random, set: true)),
+        },
         _ => Change.set(node.id, attributes: {'z': [1]}),
       };
     }
