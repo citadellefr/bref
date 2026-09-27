@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 — 2026-09-27
+
+- `Grid`: the cells of sheets, as the Go package `ot` has them.
+- `SpreadsheetEditor`: Excel in French: the ribbon (Home, Insert,
+  Formulas, Data, View), the formula bar with the French names of
+  functions, the cells drawn as Excel draws them with their formats,
+  borders, merged cells and frozen panes, values typed as French Excel
+  reads them, rows, columns and sheets inserted and removed, the fill
+  handle, copy and paste, sort, and the status bar's sum, average and
+  count.
+- Number formats written as the Go engine writes them.
+- `DocSelection.cells`: the cells others select.
+
 ## 0.2.0 — 2026-09-26
 
 - `Tree` and `Edit`: documents as trees of nodes, as the Go package `ot` has

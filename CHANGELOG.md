@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.0 — 2026-09-27
+
+- `ot`: grids of cells in nodes: cells set field by field, rows and
+  columns inserted and removed; cells checked and kept without decoding
+  them.
+- `xlsx`: workbooks read into trees of sheets, grids and cell formats, and
+  written back, only the sheets that changed; shared strings appended,
+  formats derived from those of the file, sheets added, deleted, moved
+  and renamed, defined names.
+- `xlsx`: what the file keeps as XML (conditional formats, validations,
+  links, filters, drawings, tables, comments, pivot tables, charts) moves
+  with the rows and columns inserted and removed.
+- `formula`: formulas parsed and calculated with the coercions and errors
+  of Excel, 223 functions, number formats written in the workbook's
+  locale, French by default; an engine that calculates again only what a
+  change reaches.
+- `bref`: the hub serves workbooks and follows each edit with its own:
+  formulas moved and renamed, values calculated again.
+- `internal/xmldom`: `Clone`; `Insert` passes over the children a schema
+  order does not name.
+- `opc`: `MarshalRelationships`.
+- `tools/validate`: the calculation chain, which Excel makes again, may be
+  dropped; parts under names with backslashes bring no new errors.
+- corpus: Calc test documents from LibreOffice.
+
 ## 0.2.0 — 2026-09-26
 
 - `ot`: documents are trees of nodes with attributes and text, changed by
