@@ -63,6 +63,7 @@ func (r *reader) sheet(s *xmldom.Element, key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	r.tables(id, name)
 	cells, rest, err := r.sheetData(data, part)
 	if err != nil {
 		return "", fmt.Errorf("xlsx: %s: %w", name, err)
@@ -154,6 +155,30 @@ func (r *reader) sheet(s *xmldom.Element, key string) (string, error) {
 	}
 	r.add(ot.Change{Op: ot.OpNew, ID: id, Type: "sheet", Parent: "book", Key: key, Attrs: attrs, Cells: cells})
 	return id, nil
+}
+
+// tables notes the areas of the tables of a sheet.
+func (r *reader) tables(id, name string) {
+	rels, err := r.d.pkg.Relationships(name)
+	if err != nil {
+		return
+	}
+	for _, x := range rels {
+		if x.Type != relTable || x.External {
+			continue
+		}
+		part, err := opc.Resolve(name, x.Target)
+		if err != nil {
+			continue
+		}
+		doc, err := r.part(part)
+		if err != nil {
+			continue
+		}
+		if a, ok := formula.ParseArea(doc.Root.Get("ref")); ok {
+			r.d.tables[id] = append(r.d.tables[id], a)
+		}
+	}
 }
 
 // relID is the relationship a sheet of the workbook points to, whatever

@@ -26,6 +26,9 @@ var sheetViewOrder = []string{"pane", "selection", "pivotSelection", "extLst"}
 // sheet writes a worksheet from its node.
 func (w *writer) sheet(n *ot.Node, p *sheetPart) error {
 	root := p.doc.Root.Clone()
+	if len(w.moves) > 0 {
+		w.mover().sheet(root, n.ID)
+	}
 	old := ot.Values{}
 	if loaded := w.d.loaded.Node(n.ID); loaded != nil && loaded.Type == "sheet" {
 		old = loaded.Attrs

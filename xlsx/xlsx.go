@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/citadellefr/bref/formula"
 	"github.com/citadellefr/bref/internal/xmldom"
 	"github.com/citadellefr/bref/opc"
 	"github.com/citadellefr/bref/ot"
@@ -90,6 +91,12 @@ type Document struct {
 	// order are the sheet node ids as the workbook lists them.
 	order  []string
 	loaded *ot.Tree
+	// moves are the rows and columns inserted and removed since the
+	// workbook was read, and tables the areas of its tables as read, by
+	// sheet.
+	movesMu sync.Mutex
+	moves   []move
+	tables  map[string][]formula.Area
 	// cellData is the size of the fields of the cells read.
 	cellData int
 	// trusted are the hashes of the XML the cells carry: only that may be
@@ -117,7 +124,7 @@ func Open(data []byte) (*Document, *ot.Tree, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	d := &Document{original: data, pkg: pkg, sheets: map[string]*sheetPart{}, trusted: map[uint64]bool{}, seed: maphash.MakeSeed()}
+	d := &Document{original: data, pkg: pkg, sheets: map[string]*sheetPart{}, tables: map[string][]formula.Area{}, trusted: map[uint64]bool{}, seed: maphash.MakeSeed()}
 	root, err := pkg.Relationships("")
 	if err != nil {
 		return nil, nil, err

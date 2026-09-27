@@ -2,6 +2,7 @@ package bref
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/citadellefr/bref/xlsx"
@@ -36,6 +37,14 @@ func TestWorkbooksAreCalculatedAndSaved(t *testing.T) {
 	if f := b.expect("op"); string(f.D) != `[{"o":"cel","id":"S1","c":[[2,1,{"v":15}],[3,1,{"v":"15,00"}]]}]` {
 		t.Fatalf("follow-up: %s", f.D)
 	}
+	// rows inserted: the server counts the moves the file saw
+	a.expect("op")
+	a.expect("op")
+	a.send(`{"t":"op","n":2,"v":4,"d":[{"o":"ins","id":"S1","dim":"r","at":1,"n":1}]}`)
+	a.expect("ack")
+	if f := a.expect("op"); f.SID != 0 || !strings.Contains(string(f.D), `"moves":1`) {
+		t.Fatalf("follow-up of rows inserted: %s", f.D)
+	}
 	<-store.saves
 	_, tree, err := xlsx.Open([]byte(store.file("book.xlsx")))
 	if err != nil {
@@ -45,7 +54,7 @@ func TestWorkbooksAreCalculatedAndSaved(t *testing.T) {
 	for _, c := range tree.Node("S1").Grid.Cells() {
 		cells[[2]int{c.Row, c.Col}] = string(c.Fields)
 	}
-	if cells[[2]int{2, 1}] != `{"f":"A1*3","v":15}` || cells[[2]int{3, 1}] != `{"f":"TEXT(A2,\"0,00\")","v":"15,00"}` {
+	if cells[[2]int{3, 1}] != `{"f":"A2*3","v":15}` || cells[[2]int{4, 1}] != `{"f":"TEXT(A3,\"0,00\")","v":"15,00"}` {
 		t.Fatalf("saved cells: %v", cells)
 	}
 	a.leave()

@@ -1,8 +1,10 @@
 package bref
 
 import (
+	"encoding/json"
 	"fmt"
 	"path"
+	"strconv"
 	"strings"
 
 	"github.com/citadellefr/bref/formula"
@@ -100,7 +102,17 @@ func (w *workbook) follow(doc *ot.Tree, e ot.Edit, since []ot.Edit) (out ot.Edit
 			out = nil
 		}
 	}()
-	return w.calc.Follow(e, since)
+	out = w.calc.Follow(e, since)
+	for _, c := range e {
+		if c.Op == ot.OpIns || c.Op == ot.OpRem {
+			moves := ot.Change{Op: ot.OpSet, ID: "book", Attrs: ot.Values{"moves": json.RawMessage(strconv.Itoa(w.doc.Moved(e)))}}
+			if doc.Apply(ot.Edit{moves}) == nil {
+				out = append(out, moves)
+			}
+			break
+		}
+	}
+	return out
 }
 
 // open reads a file into a document, in the format its key's extension

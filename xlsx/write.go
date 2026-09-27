@@ -40,7 +40,7 @@ func (d *Document) save(tree *ot.Tree, force bool) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	w := &writer{d: d, pkg: pkg, tree: tree, force: force, rels: slices.Clone(d.bookRels), stringRefs: map[*sheetPart]int{}}
+	w := &writer{d: d, pkg: pkg, tree: tree, force: force, rels: slices.Clone(d.bookRels), stringRefs: map[*sheetPart]int{}, moves: d.movesOf(tree)}
 	if err := w.save(); err != nil {
 		return nil, err
 	}
@@ -60,6 +60,9 @@ type writer struct {
 	// stringRefs counts the cells of each sheet rewritten that point to
 	// shared strings.
 	stringRefs map[*sheetPart]int
+	// moves are the rows and columns inserted and removed since the
+	// workbook was read, which every sheet is rewritten after.
+	moves []move
 }
 
 // sheet is a sheet of the workbook as written.
@@ -91,7 +94,7 @@ func (w *writer) save() error {
 			p = w.newSheet(nextID)
 			nextID++
 			fallthrough
-		case w.force || !w.same(n.ID):
+		case w.force || len(w.moves) > 0 || !w.same(n.ID):
 			if err := w.sheet(n, p); err != nil {
 				return err
 			}
@@ -102,6 +105,11 @@ func (w *writer) save() error {
 	}
 	if len(sheets) == 0 {
 		return fmt.Errorf("xlsx: a workbook needs a sheet")
+	}
+	if len(w.moves) > 0 {
+		if err := w.moveParts(sheets); err != nil {
+			return err
+		}
 	}
 	removed := false
 	for _, p := range w.d.sheets {
