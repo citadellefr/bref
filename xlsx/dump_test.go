@@ -1,0 +1,34 @@
+package xlsx
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// TestDump writes the trees of workbooks to $BREF_DUMP, for the Dart
+// package to draw them: $BREF_DUMP_FILES lists them, relative to
+// corpus/files.
+func TestDump(t *testing.T) {
+	dir := os.Getenv("BREF_DUMP")
+	if dir == "" {
+		t.Skip("BREF_DUMP not set")
+	}
+	for _, name := range strings.Split(os.Getenv("BREF_DUMP_FILES"), ",") {
+		data, err := os.ReadFile(filepath.Join("../corpus/files", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, tree, err := Open(data)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		nodes, _ := json.Marshal(tree.Edit())
+		base := filepath.Join(dir, strings.TrimSuffix(filepath.Base(name), filepath.Ext(name)))
+		if err := os.WriteFile(base+".json", nodes, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

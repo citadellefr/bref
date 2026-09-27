@@ -9,29 +9,15 @@ import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'fonts.dart';
+
 /// Draws the slides of the trees in $BREF_RENDER, as the Go package dumps
 /// them, into PNG files beside them, with the fonts found in $BREF_FONTS:
 /// a look at the rendering, not a test.
 void main() {
   final dir = Platform.environment['BREF_RENDER'];
   test('renders slides', () async {
-    final fonts = <String, List<String>>{};
-    for (final root in (Platform.environment['BREF_FONTS'] ?? '').split(':').where((d) => d.isNotEmpty)) {
-      for (final f in Directory(root).listSync(recursive: true).whereType<File>()) {
-        final name = f.uri.pathSegments.last;
-        for (final family in ['Carlito', 'Caladea', 'LiberationSans', 'LiberationSerif', 'LiberationMono']) {
-          if (name.startsWith('$family-') && name.endsWith('.ttf')) (fonts[family] ??= []).add(f.path);
-        }
-      }
-    }
-    for (final e in fonts.entries) {
-      final family = e.key.replaceFirst('Liberation', 'Liberation ');
-      final loader = FontLoader(family);
-      for (final path in e.value) {
-        loader.addFont(Future.value(ByteData.sublistView(File(path).readAsBytesSync())));
-      }
-      await loader.load();
-    }
+    await loadFonts();
     for (final file in Directory(dir!).listSync().whereType<File>().where((f) => f.path.endsWith('.json'))) {
       final base = file.path.substring(0, file.path.length - 5);
       final deck = Deck(Tree.fromEdit(Edit.fromJson(jsonDecode(file.readAsStringSync()))!)!);

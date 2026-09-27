@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'ot/delta.dart';
+import 'ot/grid.dart';
 import 'ot/tree.dart';
 
 /// The text link to the server, behind an interface so that sessions can be
@@ -67,16 +68,25 @@ class DocClosed implements Exception {
 }
 
 /// Where someone's selection is: a range of the text of a node, base then
-/// extent.
+/// extent, or cells of a sheet.
 @immutable
 class DocSelection {
-  const DocSelection(this.node, this.base, this.extent);
+  const DocSelection(this.node, this.base, this.extent) : cells = null;
 
-  const DocSelection.collapsed(this.node, int offset) : base = offset, extent = offset;
+  const DocSelection.collapsed(this.node, int offset) : base = offset, extent = offset, cells = null;
+
+  /// Cells of the sheet [node], from [top] [left] to [bottom] [right].
+  DocSelection.cells(this.node, int top, int left, int bottom, int right)
+    : base = 0,
+      extent = 0,
+      cells = List.unmodifiable([top, left, bottom, right]);
 
   final String node;
   final int base;
   final int extent;
+
+  /// The rows and columns of the cells selected: top, left, bottom, right.
+  final List<int>? cells;
 
   int get start => math.min(base, extent);
 
@@ -84,15 +94,38 @@ class DocSelection {
 
   static DocSelection? fromJson(Object? json) {
     if (json is! Map<String, Object?>) return null;
-    final node = json['n'], base = json['b'], extent = json['e'];
-    return node is String && base is int && extent is int ? DocSelection(node, base, extent) : null;
+    final node = json['n'], base = json['b'], extent = json['e'], cells = json['c'];
+    if (node is! String) return null;
+    if (cells is List<Object?> && cells.length == 4 && cells.every((c) => c is int)) {
+      final c = cells.cast<int>();
+      return DocSelection.cells(node, c[0], c[1], c[2], c[3]);
+    }
+    return base is int && extent is int ? DocSelection(node, base, extent) : null;
   }
 
-  Map<String, Object?> toJson() => {'n': node, 'b': base, 'e': extent};
+  Map<String, Object?> toJson() => cells != null ? {'n': node, 'c': cells} : {'n': node, 'b': base, 'e': extent};
 
   /// This selection once [edit] is made; null when its node went away.
   DocSelection? moved(Edit edit, Tree after, {required bool own}) {
     if (after[node] == null) return null;
+    final cells = this.cells;
+    if (cells != null) {
+      var (top, left, bottom, right) = (cells[0], cells[1], cells[2], cells[3]);
+      for (final c in edit.changes) {
+        if (c.id != node || (c.kind != ChangeKind.insert && c.kind != ChangeKind.remove)) continue;
+        final n = c.kind == ChangeKind.insert ? c.n : -c.n;
+        int move(int i, int limit) => movedIndex(i, c.at, n, limit) ?? math.max(1, c.at - 1);
+        if (c.dim == dimRows) {
+          top = move(top, maxRows);
+          bottom = move(bottom, maxRows);
+        } else {
+          left = move(left, maxCols);
+          right = move(right, maxCols);
+        }
+      }
+      if (top == cells[0] && left == cells[1] && bottom == cells[2] && right == cells[3]) return this;
+      return DocSelection.cells(node, top, left, math.max(top, bottom), math.max(left, right));
+    }
     var (b, e) = (base, extent);
     for (final c in edit.changes) {
       if (c.kind != ChangeKind.text || c.id != node) continue;
@@ -104,13 +137,17 @@ class DocSelection {
 
   @override
   bool operator ==(Object other) =>
-      other is DocSelection && other.node == node && other.base == base && other.extent == extent;
+      other is DocSelection &&
+      other.node == node &&
+      other.base == base &&
+      other.extent == extent &&
+      listEquals(other.cells, cells);
 
   @override
-  int get hashCode => Object.hash(node, base, extent);
+  int get hashCode => Object.hash(node, base, extent, cells == null ? null : Object.hashAll(cells!));
 
   @override
-  String toString() => '$node[$base, $extent]';
+  String toString() => cells != null ? '$node$cells' : '$node[$base, $extent]';
 }
 
 class DocPeer {

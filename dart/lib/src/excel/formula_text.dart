@@ -1,0 +1,404 @@
+/// The names of functions in the French version of Excel, by their names
+/// in files. Those marked with a prefix are newer than the file format:
+/// files call them "_xlfn.XLOOKUP".
+const _functions = <String, String>{
+  'ABS': 'ABS',
+  'ACOS': 'ACOS',
+  'ACOSH': 'ACOSH',
+  'ADDRESS': 'ADRESSE',
+  'AND': 'ET',
+  'ASIN': 'ASIN',
+  'ASINH': 'ASINH',
+  'ATAN': 'ATAN',
+  'ATAN2': 'ATAN2',
+  'ATANH': 'ATANH',
+  'AVEDEV': 'ECART.MOYEN',
+  'AVERAGE': 'MOYENNE',
+  'AVERAGEA': 'AVERAGEA',
+  'AVERAGEIF': 'MOYENNE.SI',
+  'AVERAGEIFS': 'MOYENNE.SI.ENS',
+  'CEILING': 'PLAFOND',
+  'CEILING.MATH': 'PLAFOND.MATH',
+  'CEILING.PRECISE': 'PLAFOND.PRECIS',
+  'CHAR': 'CAR',
+  'CHOOSE': 'CHOISIR',
+  'CLEAN': 'EPURAGE',
+  'CODE': 'CODE',
+  'COLUMN': 'COLONNE',
+  'COLUMNS': 'COLONNES',
+  'COMBIN': 'COMBIN',
+  'COMBINA': 'COMBINA',
+  'CONCAT': 'CONCAT',
+  'CONCATENATE': 'CONCATENER',
+  'CORREL': 'COEFFICIENT.CORRELATION',
+  'COS': 'COS',
+  'COSH': 'COSH',
+  'COUNT': 'NB',
+  'COUNTA': 'NBVAL',
+  'COUNTBLANK': 'NB.VIDE',
+  'COUNTIF': 'NB.SI',
+  'COUNTIFS': 'NB.SI.ENS',
+  'COVAR': 'COVARIANCE',
+  'COVARIANCE.P': 'COVARIANCE.PEARSON',
+  'COVARIANCE.S': 'COVARIANCE.STANDARD',
+  'DATE': 'DATE',
+  'DATEDIF': 'DATEDIF',
+  'DATEVALUE': 'DATEVAL',
+  'DAY': 'JOUR',
+  'DAYS': 'JOURS',
+  'DAYS360': 'JOURS360',
+  'DDB': 'DDB',
+  'DEGREES': 'DEGRES',
+  'DEVSQ': 'SOMME.CARRES.ECARTS',
+  'DOLLAR': 'DEVISE',
+  'EDATE': 'MOIS.DECALER',
+  'EFFECT': 'TAUX.EFFECTIF',
+  'EOMONTH': 'FIN.MOIS',
+  'ERROR.TYPE': 'TYPE.ERREUR',
+  'EVEN': 'PAIR',
+  'EXACT': 'EXACT',
+  'EXP': 'EXP',
+  'FACT': 'FACT',
+  'FACTDOUBLE': 'FACTDOUBLE',
+  'FALSE': 'FAUX',
+  'FIND': 'TROUVE',
+  'FIXED': 'CTXT',
+  'FLOOR': 'PLANCHER',
+  'FLOOR.MATH': 'PLANCHER.MATH',
+  'FLOOR.PRECISE': 'PLANCHER.PRECIS',
+  'FORECAST': 'PREVISION',
+  'FORECAST.LINEAR': 'PREVISION.LINEAIRE',
+  'FV': 'VC',
+  'GCD': 'PGCD',
+  'GEOMEAN': 'MOYENNE.GEOMETRIQUE',
+  'HARMEAN': 'MOYENNE.HARMONIQUE',
+  'HLOOKUP': 'RECHERCHEH',
+  'HOUR': 'HEURE',
+  'IF': 'SI',
+  'IFERROR': 'SIERREUR',
+  'IFNA': 'SI.NON.DISP',
+  'IFS': 'SI.CONDITIONS',
+  'INDEX': 'INDEX',
+  'INDIRECT': 'INDIRECT',
+  'INT': 'ENT',
+  'INTERCEPT': 'ORDONNEE.ORIGINE',
+  'IPMT': 'INTPER',
+  'IRR': 'TRI',
+  'ISBLANK': 'ESTVIDE',
+  'ISERR': 'ESTERR',
+  'ISERROR': 'ESTERREUR',
+  'ISEVEN': 'EST.PAIR',
+  'ISFORMULA': 'ESTFORMULE',
+  'ISLOGICAL': 'ESTLOGIQUE',
+  'ISNA': 'ESTNA',
+  'ISNONTEXT': 'ESTNONTEXTE',
+  'ISNUMBER': 'ESTNUM',
+  'ISODD': 'EST.IMPAIR',
+  'ISO.CEILING': 'ISO.PLAFOND',
+  'ISOWEEKNUM': 'NO.SEMAINE.ISO',
+  'ISREF': 'ESTREF',
+  'ISTEXT': 'ESTTEXTE',
+  'LARGE': 'GRANDE.VALEUR',
+  'LCM': 'PPCM',
+  'LEFT': 'GAUCHE',
+  'LEN': 'NBCAR',
+  'LN': 'LN',
+  'LOG': 'LOG',
+  'LOG10': 'LOG10',
+  'LOOKUP': 'RECHERCHE',
+  'LOWER': 'MINUSCULE',
+  'MATCH': 'EQUIV',
+  'MAX': 'MAX',
+  'MAXA': 'MAXA',
+  'MAXIFS': 'MAX.SI.ENS',
+  'MEDIAN': 'MEDIANE',
+  'MID': 'STXT',
+  'MIN': 'MIN',
+  'MINA': 'MINA',
+  'MINIFS': 'MIN.SI.ENS',
+  'MINUTE': 'MINUTE',
+  'MOD': 'MOD',
+  'MODE': 'MODE',
+  'MODE.SNGL': 'MODE.SIMPLE',
+  'MONTH': 'MOIS',
+  'MROUND': 'ARRONDI.AU.MULTIPLE',
+  'N': 'N',
+  'NA': 'NA',
+  'NETWORKDAYS': 'NB.JOURS.OUVRES',
+  'NOMINAL': 'TAUX.NOMINAL',
+  'NOT': 'NON',
+  'NOW': 'MAINTENANT',
+  'NPER': 'NPM',
+  'NPV': 'VAN',
+  'NUMBERVALUE': 'VALEURNOMBRE',
+  'ODD': 'IMPAIR',
+  'OFFSET': 'DECALER',
+  'OR': 'OU',
+  'PEARSON': 'PEARSON',
+  'PERCENTILE': 'CENTILE',
+  'PERCENTILE.EXC': 'CENTILE.EXCLURE',
+  'PERCENTILE.INC': 'CENTILE.INCLURE',
+  'PERMUT': 'PERMUTATION',
+  'PI': 'PI',
+  'PMT': 'VPM',
+  'POWER': 'PUISSANCE',
+  'PPMT': 'PRINCPER',
+  'PRODUCT': 'PRODUIT',
+  'PROPER': 'NOMPROPRE',
+  'PV': 'VA',
+  'QUARTILE': 'QUARTILE',
+  'QUARTILE.EXC': 'QUARTILE.EXCLURE',
+  'QUARTILE.INC': 'QUARTILE.INCLURE',
+  'QUOTIENT': 'QUOTIENT',
+  'RADIANS': 'RADIANS',
+  'RAND': 'ALEA',
+  'RANDBETWEEN': 'ALEA.ENTRE.BORNES',
+  'RANK': 'RANG',
+  'RANK.AVG': 'MOYENNE.RANG',
+  'RANK.EQ': 'EQUATION.RANG',
+  'RATE': 'TAUX',
+  'REPLACE': 'REMPLACER',
+  'REPT': 'REPT',
+  'RIGHT': 'DROITE',
+  'ROUND': 'ARRONDI',
+  'ROUNDDOWN': 'ARRONDI.INF',
+  'ROUNDUP': 'ARRONDI.SUP',
+  'ROW': 'LIGNE',
+  'ROWS': 'LIGNES',
+  'SEARCH': 'CHERCHE',
+  'SECOND': 'SECONDE',
+  'SIGN': 'SIGNE',
+  'SIN': 'SIN',
+  'SINH': 'SINH',
+  'SLN': 'AMORLIN',
+  'SLOPE': 'PENTE',
+  'SMALL': 'PETITE.VALEUR',
+  'SQRT': 'RACINE',
+  'SQRTPI': 'RACINE.PI',
+  'STANDARDIZE': 'CENTREE.REDUITE',
+  'STDEV': 'ECARTYPE',
+  'STDEV.P': 'ECARTYPE.PEARSON',
+  'STDEV.S': 'ECARTYPE.STANDARD',
+  'STDEVA': 'STDEVA',
+  'STDEVP': 'ECARTYPEP',
+  'STDEVPA': 'STDEVPA',
+  'SUBSTITUTE': 'SUBSTITUE',
+  'SUBTOTAL': 'SOUS.TOTAL',
+  'SUM': 'SOMME',
+  'SUMIF': 'SOMME.SI',
+  'SUMIFS': 'SOMME.SI.ENS',
+  'SUMPRODUCT': 'SOMMEPROD',
+  'SUMSQ': 'SOMME.CARRES',
+  'SWITCH': 'SI.MULTIPLE',
+  'SYD': 'SYD',
+  'T': 'T',
+  'TAN': 'TAN',
+  'TANH': 'TANH',
+  'TEXT': 'TEXTE',
+  'TEXTAFTER': 'TEXTE.APRES',
+  'TEXTBEFORE': 'TEXTE.AVANT',
+  'TEXTJOIN': 'JOINDRE.TEXTE',
+  'TIME': 'TEMPS',
+  'TIMEVALUE': 'TEMPSVAL',
+  'TODAY': 'AUJOURDHUI',
+  'TRANSPOSE': 'TRANSPOSE',
+  'TRIM': 'SUPPRESPACE',
+  'TRUE': 'VRAI',
+  'TRUNC': 'TRONQUE',
+  'TYPE': 'TYPE',
+  'UNICHAR': 'UNICAR',
+  'UNICODE': 'UNICODE',
+  'UPPER': 'MAJUSCULE',
+  'VALUE': 'CNUM',
+  'VAR': 'VAR',
+  'VAR.P': 'VAR.P.N',
+  'VAR.S': 'VAR.S',
+  'VARA': 'VARA',
+  'VARP': 'VAR.P',
+  'VARPA': 'VARPA',
+  'VLOOKUP': 'RECHERCHEV',
+  'WEEKDAY': 'JOURSEM',
+  'WEEKNUM': 'NO.SEMAINE',
+  'WORKDAY': 'SERIE.JOUR.OUVRE',
+  'XLOOKUP': 'RECHERCHEX',
+  'XMATCH': 'EQUIVX',
+  'XOR': 'OUX',
+  'YEAR': 'ANNEE',
+  'YEARFRAC': 'FRACTION.ANNEE',
+};
+
+/// The functions newer than the file format, which files call with the
+/// prefix "_xlfn.".
+const _newer = {
+  'CEILING.MATH', 'CEILING.PRECISE', 'COMBINA', 'CONCAT', 'COVARIANCE.P', 'COVARIANCE.S', 'DAYS', //
+  'FLOOR.MATH', 'FLOOR.PRECISE', 'FORECAST.LINEAR', 'IFNA', 'IFS', 'ISO.CEILING', 'ISOWEEKNUM', 'MAXIFS',
+  'MINIFS', 'MODE.SNGL', 'NUMBERVALUE', 'PERCENTILE.EXC', 'PERCENTILE.INC', 'QUARTILE.EXC', 'QUARTILE.INC',
+  'RANK.AVG', 'RANK.EQ', 'STDEV.P', 'STDEV.S', 'SWITCH', 'TEXTAFTER', 'TEXTBEFORE', 'TEXTJOIN', 'UNICHAR',
+  'UNICODE', 'VAR.P', 'VAR.S', 'XLOOKUP', 'XMATCH', 'XOR',
+};
+
+const _errors = <String, String>{
+  '#NULL!': '#NUL!',
+  '#VALUE!': '#VALEUR!',
+  '#NAME?': '#NOM?',
+  '#NUM!': '#NOMBRE!',
+};
+
+final _english = {for (final e in _functions.entries) e.value: e.key};
+final _englishErrors = {for (final e in _errors.entries) e.value: e.key};
+
+/// An error value as the French version shows it.
+String errorText(String code) => _errors[code] ?? code;
+
+/// The French names of the functions, by name, for suggestions.
+Iterable<String> get frenchFunctions => _functions.values;
+
+/// A formula as the French version of Excel shows it, from the way files
+/// write it: French names, ";" between arguments, "," before decimals.
+String formulaToFrench(String f) => _translate(f, toFrench: true);
+
+/// A formula as files write it, from the way the French version shows it.
+/// Names written in English are taken as well.
+String formulaFromFrench(String f) => _translate(f, toFrench: false);
+
+bool _letter(int c) => c >= 0x41 && c <= 0x5A || c >= 0x61 && c <= 0x7A || c == 0x5F || c == 0x5C || c > 0x7F;
+
+bool _digit(int c) => c >= 0x30 && c <= 0x39;
+
+String _translate(String f, {required bool toFrench}) {
+  final b = StringBuffer();
+  var braces = 0;
+  var i = 0;
+  while (i < f.length) {
+    final c = f.codeUnitAt(i);
+    // text and quoted sheet names are kept as they are
+    if (c == 0x22 || c == 0x27) {
+      var j = i + 1;
+      while (j < f.length) {
+        if (f.codeUnitAt(j) == c) {
+          if (j + 1 < f.length && f.codeUnitAt(j + 1) == c) {
+            j += 2;
+            continue;
+          }
+          break;
+        }
+        j++;
+      }
+      b.write(f.substring(i, (j + 1).clamp(0, f.length)));
+      i = j + 1;
+      continue;
+    }
+    if (c == 0x5B) {
+      var depth = 0, j = i;
+      for (; j < f.length; j++) {
+        if (f[j] == '[') depth++;
+        if (f[j] == ']' && --depth == 0) break;
+      }
+      b.write(f.substring(i, (j + 1).clamp(0, f.length)));
+      i = j + 1;
+      continue;
+    }
+    if (c == 0x23) {
+      final rest = f.substring(i).toUpperCase();
+      final table = toFrench ? _errors : _englishErrors;
+      final hit = table.keys.where(rest.startsWith).firstOrNull;
+      if (hit != null) {
+        b.write(table[hit]);
+        i += hit.length;
+        continue;
+      }
+      b.write('#');
+      i++;
+      continue;
+    }
+    if (_digit(c) || c == 0x2E && i + 1 < f.length && _digit(f.codeUnitAt(i + 1)) && toFrench) {
+      // a number, or a reference such as 1:3 or A1 read further on
+      var j = i;
+      while (j < f.length && (_digit(f.codeUnitAt(j)) || f[j] == (toFrench ? '.' : ','))) {
+        j++;
+      }
+      if (j < f.length && (f[j] == 'E' || f[j] == 'e') && j + 1 < f.length && (f[j + 1] == '+' || f[j + 1] == '-' || _digit(f.codeUnitAt(j + 1)))) {
+        j += 2;
+        while (j < f.length && _digit(f.codeUnitAt(j))) {
+          j++;
+        }
+      }
+      if (j < f.length && _letter(f.codeUnitAt(j))) {
+        // part of a name
+        final k = _nameEnd(f, i);
+        b.write(f.substring(i, k));
+        i = k;
+        continue;
+      }
+      final number = f.substring(i, j);
+      b.write(toFrench ? number.replaceAll('.', ',') : number.replaceAll(',', '.'));
+      i = j;
+      continue;
+    }
+    if (_letter(c) || c == 0x24) {
+      final k = _nameEnd(f, i);
+      final word = f.substring(i, k);
+      final call = k < f.length && f[k] == '(';
+      final upper = word.toUpperCase();
+      if (call) {
+        b.write(toFrench ? _toFrench(upper) : _fromFrench(upper, word));
+      } else if (upper == 'TRUE' || upper == 'FALSE' || upper == 'VRAI' || upper == 'FAUX') {
+        final isTrue = upper == 'TRUE' || upper == 'VRAI';
+        b.write(toFrench ? (isTrue ? 'VRAI' : 'FAUX') : (isTrue ? 'TRUE' : 'FALSE'));
+      } else {
+        b.write(word);
+      }
+      i = k;
+      continue;
+    }
+    switch (f[i]) {
+      case '{':
+        braces++;
+        b.write('{');
+      case '}':
+        braces--;
+        b.write('}');
+      case ',' when toFrench:
+        b.write(braces > 0 ? '.' : ';');
+      case ';' when toFrench:
+        b.write(';');
+      case ';' when !toFrench:
+        b.write(braces > 0 ? ';' : ',');
+      case '.' when !toFrench && braces > 0:
+        b.write(',');
+      default:
+        b.write(f[i]);
+    }
+    i++;
+  }
+  return b.toString();
+}
+
+/// Where the name that starts at [i] ends: letters, digits, "_", ".",
+/// "\", "$", "!" and ":" of references.
+int _nameEnd(String f, int i) {
+  var k = i;
+  while (k < f.length) {
+    final c = f.codeUnitAt(k);
+    if (_letter(c) || _digit(c) || c == 0x2E || c == 0x24 || c == 0x21 || c == 0x3F) {
+      k++;
+      continue;
+    }
+    break;
+  }
+  return k;
+}
+
+String _toFrench(String name) {
+  var bare = name;
+  for (final p in ['_XLFN._XLWS.', '_XLFN.', '_XLWS.']) {
+    if (bare.startsWith(p)) bare = bare.substring(p.length);
+  }
+  return _functions[bare] ?? bare;
+}
+
+String _fromFrench(String upper, String word) {
+  final english = _english[upper] ?? (_functions.containsKey(upper) ? upper : null);
+  if (english == null) return upper.startsWith('_XLFN.') ? word : upper;
+  return _newer.contains(english) ? '_xlfn.$english' : english;
+}
