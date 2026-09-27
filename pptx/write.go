@@ -202,7 +202,7 @@ func (w *writer) putRels(rw *relsWriter, isNew bool) error {
 	if !rw.changed && !isNew {
 		return nil
 	}
-	return w.put(opc.RelsName(rw.source), "application/vnd.openxmlformats-package.relationships+xml", marshalRels(rw.list))
+	return w.put(opc.RelsName(rw.source), "application/vnd.openxmlformats-package.relationships+xml", opc.MarshalRelationships(rw.list))
 }
 
 // str is a string attribute of a node, "" if it has none.

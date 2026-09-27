@@ -271,16 +271,3 @@ func relative(source, name string) string {
 	}
 	return strings.Repeat("../", len(from)-i) + strings.Join(to[i:], "/")
 }
-
-// marshalRels writes a relationships part.
-func marshalRels(list []opc.Relationship) []byte {
-	root := xmldom.New("", "Relationships", "xmlns", "http://schemas.openxmlformats.org/package/2006/relationships")
-	for _, x := range list {
-		r := xmldom.New("", "Relationship", "Id", x.ID, "Type", x.Type, "Target", x.Target)
-		if x.External {
-			r.Set("TargetMode", "External")
-		}
-		root.Append(r)
-	}
-	return append([]byte("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n"), root.Bytes()...)
-}

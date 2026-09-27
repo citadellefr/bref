@@ -78,6 +78,7 @@ var MaxCellData = 256 << 20
 // Document is a workbook open for editing.
 type Document struct {
 	mu       sync.Mutex // guards pkg once open
+	original []byte
 	pkg      *opc.Package
 	bookName string
 	book     *xmldom.Document
@@ -106,6 +107,8 @@ type sheetPart struct {
 	kept bool
 	// doc is the worksheet with its sheetData left empty.
 	doc *xmldom.Document
+	// strings counts its cells that point to shared strings.
+	strings int
 }
 
 // Open reads a workbook.
@@ -114,7 +117,7 @@ func Open(data []byte) (*Document, *ot.Tree, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	d := &Document{pkg: pkg, sheets: map[string]*sheetPart{}, trusted: map[uint64]bool{}, seed: maphash.MakeSeed()}
+	d := &Document{original: data, pkg: pkg, sheets: map[string]*sheetPart{}, trusted: map[uint64]bool{}, seed: maphash.MakeSeed()}
 	root, err := pkg.Relationships("")
 	if err != nil {
 		return nil, nil, err
@@ -126,7 +129,7 @@ func Open(data []byte) (*Document, *ot.Tree, error) {
 		}
 		return nil, nil, ErrNotWorkbook
 	}
-	r := &reader{d: d}
+	r := &reader{d: d, names: map[string]bool{}}
 	if err := r.workbook(); err != nil {
 		return nil, nil, err
 	}
@@ -162,6 +165,8 @@ func (d *Document) isTrusted(s string) bool {
 type reader struct {
 	d     *Document
 	nodes ot.Edit
+	// names are the names of the sheets read, in lower case.
+	names map[string]bool
 }
 
 func (r *reader) add(c ot.Change) {

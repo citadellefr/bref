@@ -5,6 +5,7 @@ package formula
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -48,6 +49,11 @@ var ErrSyntax = errors.New("formula: syntax error")
 
 // Errors a formula may produce or hold.
 var errorCodes = []string{"#NULL!", "#DIV/0!", "#VALUE!", "#REF!", "#NAME?", "#NUM!", "#N/A", "#GETTING_DATA", "#SPILL!", "#CALC!", "#FIELD!", "#BLOCKED!", "#CONNECT!", "#BUSY!", "#UNKNOWN!"}
+
+// IsError tells whether s is an error value, as a cell holds it.
+func IsError(s string) bool {
+	return slices.Contains(errorCodes, s)
+}
 
 // Tokens splits a formula, written without its "=", into tokens that
 // cover it whole.

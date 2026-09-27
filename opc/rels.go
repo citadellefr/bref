@@ -1,6 +1,7 @@
 package opc
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"net/url"
@@ -25,6 +26,22 @@ type Relationship struct {
 func RelsName(source string) string {
 	dir, file := path.Split(source)
 	return dir + "_rels/" + file + ".rels"
+}
+
+// MarshalRelationships writes a relationships part.
+func MarshalRelationships(list []Relationship) []byte {
+	var buf bytes.Buffer
+	buf.WriteString(declaration)
+	buf.WriteString(`<Relationships xmlns="` + relsNamespace + `">`)
+	for _, r := range list {
+		fmt.Fprintf(&buf, `<Relationship Id="%s" Type="%s" Target="%s"`, escape(r.ID), escape(r.Type), escape(r.Target))
+		if r.External {
+			buf.WriteString(` TargetMode="External"`)
+		}
+		buf.WriteString(`/>`)
+	}
+	buf.WriteString(`</Relationships>`)
+	return buf.Bytes()
 }
 
 // Relationships of source, none when it has no relationships part.

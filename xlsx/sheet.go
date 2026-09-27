@@ -49,8 +49,8 @@ func (r *reader) sheet(s *xmldom.Element, key string) (string, error) {
 	part := &sheetPart{name: name, sheetID: sheetID, rid: rid}
 	d.sheets[id] = part
 
-	attrs := ot.Values{"name": mustJSON(s.Get("name"))}
-	if state := s.Get("state"); state != "" && state != "visible" {
+	attrs := ot.Values{"name": mustJSON(sheetName(s.Get("name"), len(d.sheets)-1, r.names))}
+	if state := s.Get("state"); state == "hidden" || state == "veryHidden" {
 		attrs["state"] = mustJSON(state)
 	}
 	if rel.ID == "" || err != nil || rel.Type != relWorksheet || !d.pkg.Has(name) {
@@ -63,7 +63,7 @@ func (r *reader) sheet(s *xmldom.Element, key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	cells, rest, err := r.sheetData(data)
+	cells, rest, err := r.sheetData(data, part)
 	if err != nil {
 		return "", fmt.Errorf("xlsx: %s: %w", name, err)
 	}
@@ -117,8 +117,8 @@ func (r *reader) sheet(s *xmldom.Element, key string) (string, error) {
 		}
 		f := lineFields{
 			BF: truthy(c.Get("bestFit")), CL: truthy(c.Get("collapsed")), CW: truthy(c.Get("customWidth")),
-			W: parseFloat(c.Get("width")), Hide: truthy(c.Get("hidden")), OL: atoi(c.Get("outlineLevel")),
-			S: styleID(atoi(c.Get("style"))),
+			W: min(max(parseFloat(c.Get("width")), 0), maxWidth), Hide: truthy(c.Get("hidden")), OL: outlineLevel(c.Get("outlineLevel")),
+			S: d.styleID(atoi(c.Get("style"))),
 		}
 		if f == (lineFields{}) {
 			continue
@@ -200,11 +200,25 @@ func mergeInto(cells []ot.Cell, merges map[[2]int][2]int) []ot.Cell {
 	return cells
 }
 
-func styleID(i int) string {
-	if i <= 0 {
+// styleID is the id of the xf node of a cell format, "" for the default
+// one and those the workbook does not have.
+func (d *Document) styleID(i int) string {
+	if i <= 0 || i >= len(d.styles.xfs) {
 		return ""
 	}
 	return xfID(i)
+}
+
+// The limits of Excel: rows up to 409.5 points high, columns 255
+// characters wide, grouped 7 levels deep.
+const (
+	maxHeight  = 409.5
+	maxWidth   = 255
+	maxOutline = 7
+)
+
+func outlineLevel(s string) int {
+	return min(max(atoi(s), 0), maxOutline)
 }
 
 func parseFloat(s string) float64 {
@@ -220,7 +234,7 @@ type shared struct {
 
 // sheetData reads the cells of a worksheet, and returns the worksheet with
 // its sheetData left empty.
-func (r *reader) sheetData(data []byte) ([]ot.Cell, []byte, error) {
+func (r *reader) sheetData(data []byte, part *sheetPart) ([]ot.Cell, []byte, error) {
 	s := xmltok.New(data)
 	var start xmltok.Token
 	for {
@@ -236,7 +250,7 @@ func (r *reader) sheetData(data []byte) ([]ot.Cell, []byte, error) {
 			break
 		}
 	}
-	c := &cellReader{d: r.d, shared: map[string]shared{}}
+	c := &cellReader{d: r.d, part: part, shared: map[string]shared{}}
 	c.cells = make([]ot.Cell, 0, bytes.Count(data, []byte("<c "))+bytes.Count(data, []byte("<row ")))
 	var end int
 	if start.SelfClosing {
@@ -263,6 +277,7 @@ func (r *reader) sheetData(data []byte) ([]ot.Cell, []byte, error) {
 
 type cellReader struct {
 	d      *Document
+	part   *sheetPart
 	cells  []ot.Cell
 	shared map[string]shared
 	// followers are the cells of shared formulas read before their first.
@@ -322,17 +337,17 @@ func (c *cellReader) row(tok xmltok.Token, last int) (int, error) {
 				row = n
 			}
 		case "ht":
-			f.H = parseFloat(v)
+			f.H = min(max(parseFloat(v), 0), maxHeight)
 		case "customHeight":
 			f.CH = truthy(v)
 		case "hidden":
 			f.Hide = truthy(v)
 		case "s":
-			f.S = styleID(atoi(v))
+			f.S = c.d.styleID(atoi(v))
 		case "customFormat":
 			styled = truthy(v)
 		case "outlineLevel":
-			f.OL = atoi(v)
+			f.OL = outlineLevel(v)
 		case "collapsed":
 			f.CL = truthy(v)
 		}
@@ -373,7 +388,7 @@ func (c *cellReader) cell(s *xmltok.Scanner, tok xmltok.Token, row int) error {
 				row, col = r, cl
 			}
 		case "s":
-			f.S = styleID(atoi(v))
+			f.S = c.d.styleID(atoi(v))
 		case "t":
 			typ = v
 		case "cm":
@@ -421,7 +436,7 @@ func (c *cellReader) cell(s *xmltok.Scanner, tok xmltok.Token, row int) error {
 			}
 			value, typ = []byte(item.text), "str"
 			if item.rich != "" {
-				f.Rich = siOf(item.rich)
+				f.Rich = siOf(item.rich, local(t.Name) != string(t.Name))
 				c.d.trust(f.Rich)
 			}
 		case "f":
@@ -432,7 +447,7 @@ func (c *cellReader) cell(s *xmltok.Scanner, tok xmltok.Token, row int) error {
 			formulaType, _ := t.Attr("t")
 			ref, _ := t.Attr("ref")
 			ca, _ := t.Attr("ca")
-			f.CA = truthy(string(ca))
+			f.CA = truthy(string(ca)) && (len(text) > 0 || string(formulaType) == "shared")
 			switch string(formulaType) {
 			case "shared":
 				idx, _ := t.Attr("si")
@@ -453,6 +468,7 @@ func (c *cellReader) cell(s *xmltok.Scanner, tok xmltok.Token, row int) error {
 	}
 	switch typ {
 	case "s":
+		c.part.strings++
 		if i, err := strconv.Atoi(string(value)); err == nil && c.d.sst != nil && i >= 0 && i < len(c.d.sst.items) {
 			item := c.d.sst.items[i]
 			f.V = mustJSON(item.text)
@@ -493,14 +509,20 @@ func (c *cellReader) cell(s *xmltok.Scanner, tok xmltok.Token, row int) error {
 	return c.put(row, col, fields)
 }
 
-// siOf is a rich inline string <is> written as the <si> of the table.
-func siOf(is string) string {
+// siOf is a rich inline string <is> written as the <si> of the table,
+// which declares the namespace of its runs, prefixed or not.
+func siOf(is string, prefixed bool) string {
 	start := strings.IndexByte(is, '>')
 	end := strings.LastIndexByte(is, '<')
-	if start < 0 || end <= start || strings.HasSuffix(is[:start], "/") {
-		return "<si/>"
+	open := `<si xmlns="` + mainNS + `"`
+	if prefixed {
+		prefix, _, _ := strings.Cut(is[1:], ":")
+		open += ` xmlns:` + prefix + `="` + mainNS + `"`
 	}
-	return "<si>" + is[start+1:end] + "</si>"
+	if start < 0 || end <= start || strings.HasSuffix(is[:start], "/") {
+		return open + "/>"
+	}
+	return open + ">" + is[start+1:end] + "</si>"
 }
 
 // resolveShared gives the cells of shared formulas their own formula, the

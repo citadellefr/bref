@@ -30,13 +30,16 @@ foreach (var rewritten in Directory.EnumerateFiles(args[1], "*", SearchOption.Al
     }
     files++;
     var after = Check(rewritten);
+    // parts the SDK could not see in the original, under a name Bref
+    // normalized, bring their own errors
+    var hidden = Hidden(Path.Combine(args[0], name));
     var added = after == null
         ? ["the rewritten package does not open"]
-        : before.Parts.Except(after.Parts).Where(_ => !edited).Select(p => $"{p} lost")
-            // parts the SDK could not see in the original, under a name
-            // Bref normalized, bring their own errors
+        // the calculation chain goes when cells are rewritten: Excel makes
+        // it again
+        : before.Parts.Except(after.Parts).Where(p => !edited && !p.EndsWith("/calcChain.xml")).Select(p => $"{p} lost")
             .Concat(after.Errors.Where(e => before.Parts.Contains(e.Part) && !before.Errors.Contains(e)).Select(e => e.Text))
-            .Concat(after.Errors.Where(e => edited && !before.Parts.Contains(e.Part)).Select(e => e.Text))
+            .Concat(after.Errors.Where(e => edited && !before.Parts.Contains(e.Part) && !hidden.Contains(e.Part)).Select(e => e.Text))
             .ToList();
     if (added.Count > 0)
     {
@@ -80,6 +83,21 @@ Report? Check(string path)
             errors = [new Error("", $"validation stopped: {e.GetType().Name}: {e.Message}")];
         }
         return new Report(parts, errors);
+    }
+}
+
+// Hidden are the parts of a package stored under a name with backslashes,
+// as they read once normalized.
+static HashSet<string> Hidden(string path)
+{
+    try
+    {
+        using var zip = System.IO.Compression.ZipFile.OpenRead(path);
+        return zip.Entries.Where(e => e.FullName.Contains('\\')).Select(e => "/" + e.FullName.Replace('\\', '/')).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+    catch (Exception)
+    {
+        return [];
     }
 }
 

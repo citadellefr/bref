@@ -93,3 +93,17 @@ func TestCorpus(t *testing.T) {
 	}
 	t.Logf("%d parts", parts)
 }
+
+func TestInsert(t *testing.T) {
+	doc, err := Parse([]byte(`<w><a/><mc:x xmlns:mc="m"/><c/><e/></w>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	order := []string{"a", "b", "c", "d", "e"}
+	doc.Root.Insert(New("", "d"), order)
+	doc.Root.Insert(New("", "b"), order)
+	doc.Root.Insert(New("", "z"), order)
+	if got, want := string(doc.Bytes()), `<w><a/><b/><mc:x xmlns:mc="m"/><c/><d/><e/><z/></w>`; got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}

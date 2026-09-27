@@ -152,15 +152,15 @@ func decodeEscapes(s string) string {
 	return b.String()
 }
 
-// encodeEscapes escapes what XML cannot hold, and an underscore that would
-// read as an escape.
+// encodeEscapes escapes what XML cannot hold or would read back otherwise
+// (a carriage return), and an underscore that would read as an escape.
 func encodeEscapes(s string) string {
 	var b strings.Builder
 	for i, r := range s {
 		switch {
 		case r == '_' && i+7 <= len(s) && s[i+1] == 'x' && s[i+6] == '_':
 			b.WriteString("_x005F_")
-		case r < 0x20 && r != '\t' && r != '\n' && r != '\r', r == 0xFFFE, r == 0xFFFF:
+		case r < 0x20 && r != '\t' && r != '\n', r == 0xFFFE, r == 0xFFFF:
 			fmt.Fprintf(&b, "_x%04X_", r)
 		default:
 			b.WriteRune(r)

@@ -6,6 +6,7 @@ package xmldom
 import (
 	"bytes"
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/citadellefr/bref/internal/xmltok"
@@ -273,6 +274,23 @@ func (e *Element) Text() string {
 	return string(b)
 }
 
+// Clone is a deep copy of the element, which changes to either leave the
+// other alone.
+func (e *Element) Clone() *Element {
+	c := *e
+	c.Attrs = slices.Clone(e.Attrs)
+	if e.Content != nil {
+		c.Content = make([]Node, len(e.Content))
+		for i, n := range e.Content {
+			if el, ok := n.(*Element); ok {
+				n = el.Clone()
+			}
+			c.Content[i] = n
+		}
+	}
+	return &c
+}
+
 // Remove takes the child out; it reports whether it was there.
 func (e *Element) Remove(child *Element) bool {
 	for i, c := range e.Content {
@@ -304,9 +322,10 @@ func (e *Element) Append(child Node) {
 	e.Content = append(e.Content, child)
 }
 
-// Insert adds a child before the first child element whose local name comes
-// after its own in order, the sequence a schema imposes; names missing from
-// order count as coming last.
+// Insert adds a child where the sequence a schema imposes puts it: after
+// the last child element whose local name comes no later than its own in
+// order, or before the first one when none does. A child whose name order
+// misses comes last; the children whose names it misses are passed over.
 func (e *Element) Insert(child *Element, order []string) {
 	rank := func(local string) int {
 		for i, o := range order {
@@ -314,16 +333,34 @@ func (e *Element) Insert(child *Element, order []string) {
 				return i
 			}
 		}
-		return len(order)
+		return -1
 	}
 	r := rank(child.Local)
+	if r < 0 {
+		r = len(order)
+	}
+	at := -1
 	for i, c := range e.Content {
-		if c, ok := c.(*Element); ok && rank(c.Local) > r {
-			e.Content = append(e.Content[:i:i], append([]Node{child}, e.Content[i:]...)...)
-			return
+		c, ok := c.(*Element)
+		if !ok {
+			continue
+		}
+		k := rank(c.Local)
+		if k > r {
+			if at < 0 {
+				at = i
+			}
+			break
+		}
+		if k >= 0 {
+			at = i + 1
 		}
 	}
-	e.Append(child)
+	if at < 0 {
+		e.Append(child)
+		return
+	}
+	e.Content = append(e.Content[:at:at], append([]Node{child}, e.Content[at:]...)...)
 }
 
 func escape(b *bytes.Buffer, s string, attr bool) {
