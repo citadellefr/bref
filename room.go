@@ -208,7 +208,7 @@ func (r *room) apply(p *peer, in *inbound) {
 	if client != "" && in.N <= r.acks[client] {
 		return
 	}
-	e, err := r.rebase(p, in)
+	e, since, err := r.rebase(p, in)
 	if err == nil && e.Growth() > 0 && r.doc.Len()+e.Growth() > r.hub.opt.MaxLength {
 		err = errTooLong
 	}
@@ -222,46 +222,64 @@ func (r *room) apply(p *peer, in *inbound) {
 	if e == nil {
 		e = ot.Edit{}
 	}
-	raw, _ := json.Marshal(e)
-	r.history = append(r.history, edit{raw: raw, ops: e, sid: p.sid, client: client, n: in.N})
-	if len(r.history) > r.hub.opt.History {
-		r.history = slices.Clone(r.history[len(r.history)-r.hub.opt.History/2:])
-	}
 	if client != "" {
 		r.acks[client] = in.N
 	}
+	r.record(e, p, client, in.N)
+	p.send(ackFrame(in.N, r.version))
+	if f, ok := r.file.(follower); ok {
+		if more := f.follow(r.doc, e, since); len(more) > 0 {
+			r.record(more, nil, "", 0)
+		}
+	}
+	r.requestSave()
+}
+
+// record adds an applied edit to the history, as the next revision, and
+// hands it to every peer but its author, which the server is when p is
+// nil. Callers hold r.mu.
+func (r *room) record(e ot.Edit, p *peer, client string, n uint64) {
+	raw, _ := json.Marshal(e)
+	var sid uint32
+	if p != nil {
+		sid = p.sid
+	}
+	r.history = append(r.history, edit{raw: raw, ops: e, sid: sid, client: client, n: n})
+	if len(r.history) > r.hub.opt.History {
+		r.history = slices.Clone(r.history[len(r.history)-r.hub.opt.History/2:])
+	}
 	r.version++
-	frame := opFrame(p.sid, r.version, raw)
+	frame := opFrame(sid, r.version, raw)
 	for _, q := range r.peers {
 		if q != p && q.synced {
 			q.send(frame)
 		}
 	}
-	p.send(ackFrame(in.N, r.version))
-	r.requestSave()
 }
 
 // rebase turns an edit made on an earlier revision into one on the current
-// document. Callers hold r.mu.
-func (r *room) rebase(p *peer, in *inbound) (ot.Edit, error) {
+// document, and returns the edits it was rebased over. Callers hold r.mu.
+func (r *room) rebase(p *peer, in *inbound) (ot.Edit, []ot.Edit, error) {
 	if p.info.ReadOnly {
-		return nil, errReadOnly
+		return nil, nil, errReadOnly
 	}
 	var e ot.Edit
 	if json.Unmarshal(in.D, &e) != nil || e.Check() != nil {
-		return nil, errMalformed
+		return nil, nil, errMalformed
 	}
 	if err := r.file.check(r.doc, e); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	first := r.version - uint64(len(r.history))
 	if in.V < first || in.V > r.version {
-		return nil, errStale
+		return nil, nil, errStale
 	}
+	var since []ot.Edit
 	for _, h := range r.history[in.V-first:] {
 		e = ot.TransformEdit(h.ops, e, true)
+		since = append(since, h.ops)
 	}
-	return e, nil
+	return e, since, nil
 }
 
 func (r *room) requestSave() {

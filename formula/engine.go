@@ -474,7 +474,13 @@ func cellValue(v Value) Value {
 	return v
 }
 
+// sameValue tells whether a value is the one a cell holds, numbers
+// compared to the 15 digits Excel keeps: what a workbook saved, calculated
+// again, stays the same.
 func sameValue(a, b Value) bool {
+	if a.Type == TypeNumber && b.Type == TypeNumber {
+		return a.Num == b.Num || strconv.FormatFloat(a.Num, 'g', 15, 64) == strconv.FormatFloat(b.Num, 'g', 15, 64)
+	}
 	return a.Type == b.Type && a.Num == b.Num && a.Str == b.Str
 }
 

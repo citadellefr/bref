@@ -5,8 +5,10 @@ import (
 	"path"
 	"strings"
 
+	"github.com/citadellefr/bref/formula"
 	"github.com/citadellefr/bref/ot"
 	"github.com/citadellefr/bref/pptx"
+	"github.com/citadellefr/bref/xlsx"
 )
 
 // format writes a document back into the kind of file it was read from,
@@ -17,12 +19,22 @@ type format interface {
 	media(name string) ([]byte, string, error)
 }
 
+// follower is a format that follows an edit with changes of its own,
+// which every peer receives as the server's: the formulas of a workbook
+// calculated again. since are the edits the edit was rebased over.
+type follower interface {
+	follow(doc *ot.Tree, e ot.Edit, since []ot.Edit) ot.Edit
+}
+
 // formats read files into documents, by extension.
 var formats = map[string]func(data []byte) (*ot.Tree, format, error){
 	".txt":  openText,
 	".pptx": openPresentation,
 	".pptm": openPresentation,
 	".ppsx": openPresentation,
+	".xlsx": openWorkbook,
+	".xlsm": openWorkbook,
+	".xltx": openWorkbook,
 }
 
 // presentation is a PowerPoint file.
@@ -52,6 +64,43 @@ func (p presentation) media(name string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("%w: %v", ErrNoMedia, err)
 	}
 	return data, typ, nil
+}
+
+// workbook is an Excel file, whose formulas the hub calculates.
+type workbook struct {
+	doc  *xlsx.Document
+	calc *xlsx.Calc
+}
+
+func openWorkbook(data []byte) (*ot.Tree, format, error) {
+	doc, tree, err := xlsx.Open(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	return tree, &workbook{doc: doc, calc: xlsx.NewCalc(tree, formula.Options{})}, nil
+}
+
+func (w *workbook) check(doc *ot.Tree, e ot.Edit) error {
+	return w.doc.Check(doc, e)
+}
+
+func (w *workbook) encode(doc *ot.Tree) ([]byte, error) {
+	return w.doc.Save(doc)
+}
+
+func (w *workbook) media(string) ([]byte, string, error) {
+	return nil, "", ErrNoMedia
+}
+
+// follow calculates again what the edit reaches. A failure of the
+// calculation leaves the values as they are rather than the hub down.
+func (w *workbook) follow(doc *ot.Tree, e ot.Edit, since []ot.Edit) (out ot.Edit) {
+	defer func() {
+		if recover() != nil {
+			out = nil
+		}
+	}()
+	return w.calc.Follow(e, since)
 }
 
 // open reads a file into a document, in the format its key's extension

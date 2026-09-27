@@ -291,6 +291,32 @@ func (g *Grid) Each(lo, hi int, f func(row, col int, fields json.RawMessage) boo
 	}
 }
 
+// EachIn calls f with every cell of rows r1 to r2 and columns c1 to c2,
+// row by row, until f returns false.
+func (g *Grid) EachIn(r1, r2, c1, c2 int, f func(row, col int, fields json.RawMessage) bool) {
+	i, _ := slices.BinarySearch(g.rows, int32(r1))
+	for ; i < len(g.rows) && int(g.rows[i]) <= r2; i++ {
+		cells := g.cells[i]
+		j, _ := slices.BinarySearchFunc(cells, int32(c1), func(c gridCell, col int32) int { return int(c.col - col) })
+		for ; j < len(cells) && int(cells[j].col) <= c2; j++ {
+			if !f(int(g.rows[i]), int(cells[j].col), json.RawMessage(cells[j].fields)) {
+				return
+			}
+		}
+	}
+}
+
+// Bounds are the last row and the last column holding cells.
+func (g *Grid) Bounds() (rows, cols int) {
+	if len(g.rows) == 0 {
+		return 0, 0
+	}
+	for _, cells := range g.cells {
+		cols = max(cols, int(cells[len(cells)-1].col))
+	}
+	return int(g.rows[len(g.rows)-1]), cols
+}
+
 // Clone is a copy that later edits of g leave alone.
 func (g *Grid) Clone() *Grid {
 	return &Grid{rows: slices.Clone(g.rows), cells: slices.Clone(g.cells), size: g.size}

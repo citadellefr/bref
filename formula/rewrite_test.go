@@ -108,3 +108,10 @@ func TestNames(t *testing.T) {
 		}
 	}
 }
+
+func TestDrop(t *testing.T) {
+	got, err := Drop("Data!A1+'data'!B2:C3+Other!C3+A4", "Data")
+	if want := "#REF!+#REF!+Other!C3+A4"; err != nil || got != want {
+		t.Errorf("got %s, %v; want %s", got, err, want)
+	}
+}

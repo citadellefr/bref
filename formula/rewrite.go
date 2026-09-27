@@ -144,3 +144,15 @@ func Rename(f, old, new string) (string, error) {
 		return true
 	})
 }
+
+// Drop is f once the sheet named sheet is deleted: its references to it
+// become #REF!.
+func Drop(f, sheet string) (string, error) {
+	return Rewrite(f, func(r *Ref) bool {
+		if r.Book != "" || !strings.EqualFold(r.Sheet, sheet) && !strings.EqualFold(r.LastSheet, sheet) {
+			return false
+		}
+		*r = Ref{Invalid: true}
+		return true
+	})
+}
