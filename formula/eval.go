@@ -1,0 +1,533 @@
+package formula
+
+import (
+	"math"
+	"strings"
+	"time"
+)
+
+// Book is the workbook formulas read. Sheets are known by handles the
+// Book gives them.
+type Book interface {
+	// Cell is the value of a cell, its formula calculated first when it
+	// must be.
+	Cell(sheet, row, col int) Value
+	// Cells calls f with the cells of an area that are not blank, row by
+	// row, until f returns false.
+	Cells(a Area3, f func(row, col int, v Value) bool)
+	// Size is the last row and column of a sheet holding a cell.
+	Size(sheet int) (rows, cols int)
+	// Sheets are the handles of the sheets from first to last, in the
+	// order of the workbook; first alone when last is "".
+	Sheets(first, last string) ([]int, bool)
+	// Name is the formula of a defined name, local to sheet or global.
+	Name(name string, sheet int) (Expr, bool)
+}
+
+// Context is where a formula is calculated.
+type Context struct {
+	Book Book
+	// Sheet, Row and Col are the cell of the formula.
+	Sheet, Row, Col int
+	Locale          *Locale
+	Now             time.Time
+	Rand            func() float64
+	Date1904        bool
+	depth           int
+}
+
+// ErrUnsupported is what a formula gives when it calls a function the
+// engine does not know: the cell keeps the value Excel last saved.
+var ErrUnsupported = Err("#UNSUPPORTED")
+
+// maxDepth bounds names defined by names.
+const maxDepth = 64
+
+// Eval calculates a formula in its cell. The result may be an array, or a
+// reference when the formula is one.
+func (c *Context) Eval(e Expr) Value {
+	switch e := e.(type) {
+	case numberExpr:
+		return Num(float64(e))
+	case textExpr:
+		return Str(string(e))
+	case boolExpr:
+		return Boolean(bool(e))
+	case errorExpr:
+		return Err(string(e))
+	case missingExpr:
+		return Value{}
+	case valueExpr:
+		return e.v
+	case refExpr:
+		return c.ref(e.ref)
+	case nameExpr:
+		return c.name(e)
+	case unaryExpr:
+		x := c.Eval(e.x)
+		switch e.op {
+		case '@':
+			return c.scalar(x)
+		case '+':
+			return x
+		}
+		return c.mapValues(x, func(v Value) Value {
+			n, err := c.number(v)
+			if err != nil {
+				return *err
+			}
+			return Num(-n)
+		})
+	case percentExpr:
+		return c.mapValues(c.Eval(e.x), func(v Value) Value {
+			n, err := c.number(v)
+			if err != nil {
+				return *err
+			}
+			return Num(n / 100)
+		})
+	case spillExpr:
+		return c.Eval(e.x)
+	case binaryExpr:
+		return c.binary(e)
+	case callExpr:
+		f := functions[e.name]
+		if f == nil {
+			return ErrUnsupported
+		}
+		if len(e.args) < f.min || f.max >= 0 && len(e.args) > f.max {
+			return ErrValue
+		}
+		return f.call(c, e.args)
+	case arrayExpr:
+		t := &Table{Rows: e.rows, Cols: e.cols, Cells: make([]Value, len(e.cells))}
+		for i, x := range e.cells {
+			t.Cells[i] = c.Eval(x)
+		}
+		return Value{Type: TypeArray, Arr: t}
+	}
+	return ErrValue
+}
+
+func (c *Context) ref(r *Ref) Value {
+	if r.Invalid || r.Book != "" {
+		return ErrRef
+	}
+	sheets := []int{c.Sheet}
+	if r.Sheet != "" {
+		var ok bool
+		if sheets, ok = c.Book.Sheets(r.Sheet, r.LastSheet); !ok {
+			return ErrRef
+		}
+	}
+	v := Value{Type: TypeRange}
+	for _, s := range sheets {
+		v.Refs = append(v.Refs, Area3{s, r.Area})
+	}
+	return v
+}
+
+func (c *Context) name(e nameExpr) Value {
+	sheet := c.Sheet
+	if e.sheet != "" {
+		s, ok := c.Book.Sheets(e.sheet, "")
+		if !ok {
+			return ErrRef
+		}
+		sheet = s[0]
+	}
+	x, ok := c.Book.Name(e.name, sheet)
+	if !ok {
+		if strings.ContainsRune(e.name, '[') {
+			return ErrUnsupported
+		}
+		return ErrName
+	}
+	if c.depth >= maxDepth {
+		return ErrRef
+	}
+	c.depth++
+	defer func() { c.depth-- }()
+	return c.Eval(x)
+}
+
+// deref turns a reference into the values it points to: the value of a
+// cell, or an array.
+func (c *Context) deref(v Value) Value {
+	if v.Type != TypeRange {
+		return v
+	}
+	if len(v.Refs) != 1 {
+		return ErrValue
+	}
+	a := v.Refs[0]
+	if a.R1 == a.R2 && a.C1 == a.C2 {
+		return c.Book.Cell(a.Sheet, a.R1, a.C1)
+	}
+	return Value{Type: TypeArray, Arr: c.table(a)}
+}
+
+// table is the values of an area, bounded by the cells its sheet holds.
+func (c *Context) table(a Area3) *Table {
+	rows, cols := c.Book.Size(a.Sheet)
+	r2, c2 := min(a.R2, max(rows, a.R1)), min(a.C2, max(cols, a.C1))
+	if a.Rows || a.Cols {
+		a.R2, a.C2 = r2, c2
+	}
+	t := &Table{Rows: a.R2 - a.R1 + 1, Cols: a.C2 - a.C1 + 1}
+	if t.Rows*t.Cols > maxCells {
+		return &Table{Rows: 1, Cols: 1, Cells: []Value{ErrNum}}
+	}
+	t.Cells = make([]Value, t.Rows*t.Cols)
+	c.Book.Cells(a, func(row, col int, v Value) bool {
+		t.Cells[(row-a.R1)*t.Cols+col-a.C1] = v
+		return true
+	})
+	return t
+}
+
+// maxCells bounds the arrays a formula makes, against memory exhaustion.
+const maxCells = 1 << 24
+
+// scalar is the single value a formula takes where it expects one: a
+// range crossed with the formula's row or column, the first value of an
+// array.
+func (c *Context) scalar(v Value) Value {
+	switch v.Type {
+	case TypeRange:
+		if len(v.Refs) != 1 {
+			return ErrValue
+		}
+		a := v.Refs[0]
+		switch {
+		case a.R1 == a.R2 && a.C1 == a.C2:
+			return c.Book.Cell(a.Sheet, a.R1, a.C1)
+		case a.C1 == a.C2 && a.R1 <= c.Row && c.Row <= a.R2:
+			return c.Book.Cell(a.Sheet, c.Row, a.C1)
+		case a.R1 == a.R2 && a.C1 <= c.Col && c.Col <= a.C2:
+			return c.Book.Cell(a.Sheet, a.R1, c.Col)
+		}
+		return ErrValue
+	case TypeArray:
+		if len(v.Arr.Cells) == 0 {
+			return ErrValue
+		}
+		return v.Arr.Cells[0]
+	}
+	return v
+}
+
+// number is a value as a number, or the error it gives.
+func (c *Context) number(v Value) (float64, *Value) {
+	v = c.scalar(v)
+	switch v.Type {
+	case TypeNumber, TypeBool:
+		return v.Num, nil
+	case TypeBlank:
+		return 0, nil
+	case TypeText:
+		if n, ok := c.parseNumber(v.Str); ok {
+			return n, nil
+		}
+		return 0, &ErrValue
+	}
+	return 0, &v
+}
+
+// parseNumber reads text as Excel does where it expects a number: a
+// number written in the locale, a date, a time.
+func (c *Context) parseNumber(s string) (float64, bool) {
+	if n, ok := number(s, c.Locale); ok {
+		return n, true
+	}
+	return c.parseDate(s)
+}
+
+// text is a value as text.
+func (c *Context) text(v Value) (string, *Value) {
+	v = c.scalar(v)
+	switch v.Type {
+	case TypeNumber:
+		return c.formatNumber(v.Num), nil
+	case TypeText:
+		return v.Str, nil
+	case TypeBool:
+		if v.Num != 0 {
+			return c.Locale.True, nil
+		}
+		return c.Locale.False, nil
+	case TypeBlank:
+		return "", nil
+	}
+	return "", &v
+}
+
+// formatNumber writes a number as General does, in the locale.
+func (c *Context) formatNumber(n float64) string {
+	s := formatGeneral(n)
+	if c.Locale.Decimal != "." {
+		s = strings.Replace(s, ".", c.Locale.Decimal, 1)
+	}
+	return s
+}
+
+// boolean is a value as a boolean.
+func (c *Context) boolean(v Value) (bool, *Value) {
+	v = c.scalar(v)
+	switch v.Type {
+	case TypeNumber, TypeBool:
+		return v.Num != 0, nil
+	case TypeBlank:
+		return false, nil
+	case TypeText:
+		switch {
+		case strings.EqualFold(v.Str, "TRUE") || strings.EqualFold(v.Str, c.Locale.True):
+			return true, nil
+		case strings.EqualFold(v.Str, "FALSE") || strings.EqualFold(v.Str, c.Locale.False):
+			return false, nil
+		}
+		return false, &ErrValue
+	}
+	return false, &v
+}
+
+// array is a value as a table: a range's values, a single value alone.
+func (c *Context) array(v Value) *Table {
+	switch v.Type {
+	case TypeArray:
+		return v.Arr
+	case TypeRange:
+		if len(v.Refs) != 1 {
+			return &Table{Rows: 1, Cols: 1, Cells: []Value{ErrValue}}
+		}
+		return c.table(v.Refs[0])
+	}
+	return &Table{Rows: 1, Cols: 1, Cells: []Value{v}}
+}
+
+// mapValues applies f to a value, or to each value of an array.
+func (c *Context) mapValues(v Value, f func(Value) Value) Value {
+	if v.Type != TypeArray && v.Type != TypeRange {
+		return f(v)
+	}
+	if v.Type == TypeRange && len(v.Refs) == 1 && v.Refs[0].R1 == v.Refs[0].R2 && v.Refs[0].C1 == v.Refs[0].C2 {
+		return f(c.deref(v))
+	}
+	t := c.array(v)
+	out := &Table{Rows: t.Rows, Cols: t.Cols, Cells: make([]Value, len(t.Cells))}
+	for i, x := range t.Cells {
+		out.Cells[i] = f(x)
+	}
+	return Value{Type: TypeArray, Arr: out}
+}
+
+// zip applies f to two values, element by element when either is an
+// array: a single row or column is repeated along the other's, cells past
+// the smaller are #N/A.
+func (c *Context) zip(x, y Value, f func(a, b Value) Value) Value {
+	single := func(v Value) bool {
+		return v.Type != TypeArray && (v.Type != TypeRange || len(v.Refs) == 1 && v.Refs[0].R1 == v.Refs[0].R2 && v.Refs[0].C1 == v.Refs[0].C2)
+	}
+	if single(x) && single(y) {
+		return f(c.deref(x), c.deref(y))
+	}
+	a, b := c.array(x), c.array(y)
+	rows, cols := max(a.Rows, b.Rows), max(a.Cols, b.Cols)
+	at := func(t *Table, i, j int) Value {
+		if t.Rows == 1 {
+			i = 0
+		}
+		if t.Cols == 1 {
+			j = 0
+		}
+		if i >= t.Rows || j >= t.Cols {
+			return ErrNA
+		}
+		return t.At(i, j)
+	}
+	if rows*cols > maxCells {
+		return ErrNum
+	}
+	out := &Table{Rows: rows, Cols: cols, Cells: make([]Value, rows*cols)}
+	for i := range rows {
+		for j := range cols {
+			out.Cells[i*cols+j] = f(at(a, i, j), at(b, i, j))
+		}
+	}
+	return Value{Type: TypeArray, Arr: out}
+}
+
+func (c *Context) binary(e binaryExpr) Value {
+	switch e.op {
+	case ":", ",", " ":
+		return c.refOp(e)
+	}
+	x, y := c.Eval(e.x), c.Eval(e.y)
+	switch e.op {
+	case "&":
+		return c.zip(x, y, func(a, b Value) Value {
+			s, err := c.text(a)
+			if err != nil {
+				return *err
+			}
+			t, err := c.text(b)
+			if err != nil {
+				return *err
+			}
+			return Str(s + t)
+		})
+	case "=", "<>", "<", ">", "<=", ">=":
+		return c.zip(x, y, func(a, b Value) Value {
+			if a.Type == TypeError {
+				return a
+			}
+			if b.Type == TypeError {
+				return b
+			}
+			r := compare(a, b)
+			switch e.op {
+			case "=":
+				return Boolean(r == 0)
+			case "<>":
+				return Boolean(r != 0)
+			case "<":
+				return Boolean(r < 0)
+			case ">":
+				return Boolean(r > 0)
+			case "<=":
+				return Boolean(r <= 0)
+			}
+			return Boolean(r >= 0)
+		})
+	}
+	return c.zip(x, y, func(a, b Value) Value {
+		m, err := c.number(a)
+		if err != nil {
+			return *err
+		}
+		n, err := c.number(b)
+		if err != nil {
+			return *err
+		}
+		switch e.op {
+		case "+":
+			return Num(m + n)
+		case "-":
+			return Num(m - n)
+		case "*":
+			return Num(m * n)
+		case "/":
+			if n == 0 {
+				return ErrDiv0
+			}
+			return Num(m / n)
+		case "^":
+			return power(m, n)
+		}
+		return ErrValue
+	})
+}
+
+func power(m, n float64) Value {
+	if m == 0 && n == 0 {
+		return ErrNum
+	}
+	if m == 0 && n < 0 {
+		return ErrDiv0
+	}
+	if m < 0 && n != math.Trunc(n) {
+		return ErrNum
+	}
+	return Num(math.Pow(m, n))
+}
+
+// compare orders two values as Excel does: numbers, then text without
+// regard to case, then booleans; a blank is 0, "" or FALSE, whichever the
+// other value is.
+func compare(a, b Value) int {
+	if a.Type == TypeBlank {
+		a = blankLike(b)
+	}
+	if b.Type == TypeBlank {
+		b = blankLike(a)
+	}
+	rank := func(v Value) int {
+		switch v.Type {
+		case TypeText:
+			return 1
+		case TypeBool:
+			return 2
+		}
+		return 0
+	}
+	if ra, rb := rank(a), rank(b); ra != rb {
+		return ra - rb
+	}
+	if a.Type == TypeText {
+		return strings.Compare(foldCase(a.Str), foldCase(b.Str))
+	}
+	switch {
+	case a.Num < b.Num:
+		return -1
+	case a.Num > b.Num:
+		return 1
+	}
+	return 0
+}
+
+func blankLike(v Value) Value {
+	switch v.Type {
+	case TypeText:
+		return Str("")
+	case TypeBool:
+		return Boolean(false)
+	}
+	return Num(0)
+}
+
+func foldCase(s string) string {
+	return strings.ToLower(s)
+}
+
+// refOp applies the reference operators: ":" the area two references
+// span, "," both, " " the cells they share.
+func (c *Context) refOp(e binaryExpr) Value {
+	x, y := c.Eval(e.x), c.Eval(e.y)
+	if x.Type == TypeError {
+		return x
+	}
+	if y.Type == TypeError {
+		return y
+	}
+	if x.Type != TypeRange || y.Type != TypeRange {
+		return ErrValue
+	}
+	switch e.op {
+	case ",":
+		return Value{Type: TypeRange, Refs: append(append([]Area3{}, x.Refs...), y.Refs...)}
+	case ":":
+		if len(x.Refs) != 1 || len(y.Refs) != 1 || x.Refs[0].Sheet != y.Refs[0].Sheet {
+			return ErrValue
+		}
+		a, b := x.Refs[0], y.Refs[0]
+		return Value{Type: TypeRange, Refs: []Area3{{a.Sheet, Area{
+			R1: min(a.R1, b.R1), C1: min(a.C1, b.C1), R2: max(a.R2, b.R2), C2: max(a.C2, b.C2),
+		}}}}
+	}
+	var out []Area3
+	for _, a := range x.Refs {
+		for _, b := range y.Refs {
+			if a.Sheet != b.Sheet {
+				continue
+			}
+			i := Area3{a.Sheet, Area{R1: max(a.R1, b.R1), C1: max(a.C1, b.C1), R2: min(a.R2, b.R2), C2: min(a.C2, b.C2)}}
+			if i.R1 <= i.R2 && i.C1 <= i.C2 {
+				out = append(out, i)
+			}
+		}
+	}
+	if len(out) == 0 {
+		return ErrNull
+	}
+	return Value{Type: TypeRange, Refs: out}
+}
