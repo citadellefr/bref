@@ -289,7 +289,8 @@ func (c *Context) numbersA(args []Expr) ([]float64, *Value) {
 	c.each(args, func(v Value, direct bool) bool {
 		switch v.Type {
 		case TypeError:
-			err = &v
+			found := v
+			err = &found
 			return false
 		case TypeNumber, TypeBool:
 			out = append(out, v.Num)
@@ -489,7 +490,8 @@ func nth(largest bool) *function {
 		c.eachOf(v[0], func(x Value, direct bool) bool {
 			switch {
 			case x.Type == TypeError:
-				err = &x
+				found := x
+				err = &found
 				return false
 			case x.Type == TypeNumber:
 				xs = append(xs, x.Num)
@@ -605,7 +607,8 @@ func quantile(f func(xs []float64, k float64) Value) *function {
 		c.eachOf(v[0], func(x Value, _ bool) bool {
 			switch x.Type {
 			case TypeError:
-				err = &x
+				found := x
+				err = &found
 				return false
 			case TypeNumber:
 				xs = append(xs, x.Num)

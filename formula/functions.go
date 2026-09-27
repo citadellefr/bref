@@ -122,7 +122,8 @@ func (c *Context) numbers(args []Expr, f func(n float64)) *Value {
 	c.each(args, func(v Value, direct bool) bool {
 		switch {
 		case v.Type == TypeError:
-			err = &v
+			found := v
+			err = &found
 			return false
 		case v.Type == TypeNumber:
 			f(v.Num)

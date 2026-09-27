@@ -192,7 +192,8 @@ func logical(f func(n, t int) bool) *function {
 		c.each(args, func(v Value, direct bool) bool {
 			switch v.Type {
 			case TypeError:
-				err = &v
+				found := v
+				err = &found
 				return false
 			case TypeNumber, TypeBool:
 				n++

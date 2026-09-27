@@ -42,6 +42,9 @@ type (
 	}
 	// missingExpr is an argument left out: IF(A1,,2).
 	missingExpr struct{}
+	// boundExpr is a reference whose sheets are known, nil when they are
+	// not.
+	boundExpr struct{ refs []Area3 }
 )
 
 func (numberExpr) expr()  {}
@@ -57,6 +60,7 @@ func (binaryExpr) expr()  {}
 func (callExpr) expr()    {}
 func (arrayExpr) expr()   {}
 func (missingExpr) expr() {}
+func (boundExpr) expr()   {}
 
 // token is a token that is not a space, knowing whether one came before.
 type token struct {

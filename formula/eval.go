@@ -61,6 +61,11 @@ func (c *Context) Eval(e Expr) Value {
 		return e.v
 	case refExpr:
 		return c.ref(e.ref)
+	case boundExpr:
+		if e.refs == nil {
+			return ErrRef
+		}
+		return Value{Type: TypeRange, Refs: e.refs}
 	case nameExpr:
 		return c.name(e)
 	case unaryExpr:
@@ -231,7 +236,8 @@ func (c *Context) number(v Value) (float64, *Value) {
 		}
 		return 0, &ErrValue
 	}
-	return 0, &v
+	err := v
+	return 0, &err
 }
 
 // parseNumber reads text as Excel does where it expects a number: a
@@ -259,7 +265,8 @@ func (c *Context) text(v Value) (string, *Value) {
 	case TypeBlank:
 		return "", nil
 	}
-	return "", &v
+	err := v
+	return "", &err
 }
 
 // formatNumber writes a number as General does, in the locale.
@@ -288,7 +295,8 @@ func (c *Context) boolean(v Value) (bool, *Value) {
 		}
 		return false, &ErrValue
 	}
-	return false, &v
+	err := v
+	return false, &err
 }
 
 // array is a value as a table: a range's values, a single value alone.

@@ -618,7 +618,8 @@ func (c *Context) holidays(args []Expr) (map[float64]bool, *Value) {
 	c.eachOf(c.Eval(args[0]), func(v Value, _ bool) bool {
 		switch v.Type {
 		case TypeError:
-			err = &v
+			found := v
+			err = &found
 			return false
 		case TypeNumber:
 			out[math.Floor(v.Num)] = true

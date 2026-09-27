@@ -82,7 +82,8 @@ func init() {
 			c.eachOf(v[0], func(x Value, _ bool) bool {
 				switch x.Type {
 				case TypeError:
-					err = &x
+					found := x
+					err = &found
 					return false
 				case TypeNumber:
 					flows = append(flows, x.Num)
