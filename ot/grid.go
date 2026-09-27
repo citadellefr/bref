@@ -88,34 +88,164 @@ func fields(raw json.RawMessage, set bool) (map[string]json.RawMessage, bool) {
 }
 
 func checkCells(cells []Cell, set bool) bool {
-	seen := make(map[[2]int]bool, len(cells))
-	for _, c := range cells {
-		at := [2]int{c.Row, c.Col}
-		if c.Row < 0 || c.Row > MaxRows || c.Col < 0 || c.Col > MaxCols || seen[at] {
+	var seen map[[2]int]bool
+	for i, c := range cells {
+		if c.Row < 0 || c.Row > MaxRows || c.Col < 0 || c.Col > MaxCols {
 			return false
 		}
-		f, ok := fields(c.Fields, set)
-		if !ok || set && len(f) == 0 {
+		if i > 0 && seen == nil && compareCells(cells[i-1], c) >= 0 {
+			seen = make(map[[2]int]bool, len(cells))
+			for _, d := range cells[:i] {
+				seen[[2]int{d.Row, d.Col}] = true
+			}
+		}
+		if seen != nil {
+			at := [2]int{c.Row, c.Col}
+			if seen[at] {
+				return false
+			}
+			seen[at] = true
+		}
+		n, _, ok := scanFields(c.Fields, set)
+		if !ok || set && n == 0 {
 			return false
 		}
-		seen[at] = true
 	}
 	return true
 }
 
-// NewGrid is a grid of cells, which only set fields.
-func NewGrid(cells []Cell) (*Grid, error) {
-	g := &Grid{}
-	for _, c := range cells {
-		f, ok := fields(c.Fields, false)
-		if !ok {
-			return nil, ErrInvalid
+// scanFields checks that raw is a cell's object, set allowing the nulls
+// that remove fields, and counts its fields. canonical tells whether it is
+// written as compact writes it: no blanks, keys in order, nothing escaped.
+func scanFields(raw []byte, set bool) (n int, canonical, ok bool) {
+	if len(raw) == 0 || raw[0] != '{' || !json.Valid(raw) {
+		return 0, false, false
+	}
+	canonical = true
+	var last []byte
+	i := 1
+	for {
+		i = skipBlank(raw, i, &canonical)
+		if raw[i] == '}' {
+			return n, canonical && i == len(raw)-1, true
 		}
-		if len(f) > 0 {
-			g.put(c.Row, c.Col, compact(f))
+		if raw[i] == ',' {
+			i = skipBlank(raw, i+1, &canonical)
+		}
+		end := skipString(raw, i)
+		key := raw[i+1 : end-1]
+		if len(key) == 0 {
+			return 0, false, false
+		}
+		if escaped(key) || bytes.IndexByte(key, '\\') >= 0 || last != nil && bytes.Compare(last, key) >= 0 {
+			canonical = false
+		}
+		last = key
+		i = skipBlank(raw, end, &canonical) + 1
+		i = skipBlank(raw, i, &canonical)
+		start := i
+		i = skipValue(raw, i, &canonical)
+		if bytes.Equal(raw[start:i], null) && !set {
+			return 0, false, false
+		}
+		n++
+	}
+}
+
+func skipBlank(raw []byte, i int, canonical *bool) int {
+	for raw[i] == ' ' || raw[i] == '\t' || raw[i] == '\n' || raw[i] == '\r' {
+		*canonical = false
+		i++
+	}
+	return i
+}
+
+// skipString is the end of the valid string raw starts at i.
+func skipString(raw []byte, i int) int {
+	for i++; raw[i] != '"'; i++ {
+		if raw[i] == '\\' {
+			i++
 		}
 	}
+	return i + 1
+}
+
+// escaped tells whether compact would escape some of s: what HTML reads as
+// markup, and the line separators of JavaScript.
+func escaped(s []byte) bool {
+	return bytes.ContainsAny(s, "<>&") || bytes.Contains(s, []byte("\u2028")) || bytes.Contains(s, []byte("\u2029"))
+}
+
+// skipValue is the end of the valid value raw starts at i.
+func skipValue(raw []byte, i int, canonical *bool) int {
+	depth := 0
+	for {
+		switch c := raw[i]; c {
+		case '"':
+			end := skipString(raw, i)
+			str := raw[i:end]
+			if escaped(str) {
+				*canonical = false
+			}
+			i = end
+		case '{', '[':
+			depth++
+			i++
+		case '}', ']':
+			if depth == 0 {
+				return i
+			}
+			depth--
+			i++
+		case ',':
+			if depth == 0 {
+				return i
+			}
+			i++
+		case ' ', '\t', '\n', '\r':
+			*canonical = false
+			i++
+		default:
+			i++
+		}
+	}
+}
+
+// NewGrid is a grid of cells, which only set fields, each once.
+func NewGrid(cells []Cell) (*Grid, error) {
+	if !slices.IsSortedFunc(cells, compareCells) {
+		cells = slices.Clone(cells)
+		slices.SortFunc(cells, compareCells)
+	}
+	g := &Grid{}
+	for i, c := range cells {
+		n, canonical, ok := scanFields(c.Fields, false)
+		if !ok || i > 0 && compareCells(cells[i-1], c) == 0 {
+			return nil, ErrInvalid
+		}
+		if n == 0 {
+			continue
+		}
+		f := string(c.Fields)
+		if !canonical {
+			m, _ := fields(c.Fields, false)
+			f = compact(m)
+		}
+		if k := len(g.rows); k == 0 || g.rows[k-1] != int32(c.Row) {
+			g.rows = append(g.rows, int32(c.Row))
+			g.cells = append(g.cells, nil)
+		}
+		g.cells[len(g.cells)-1] = append(g.cells[len(g.cells)-1], gridCell{int32(c.Col), f})
+		g.size++
+	}
 	return g, nil
+}
+
+func compareCells(a, b Cell) int {
+	if a.Row != b.Row {
+		return a.Row - b.Row
+	}
+	return a.Col - b.Col
 }
 
 // Len is the number of cells.

@@ -178,3 +178,37 @@ func BenchmarkGridSet(b *testing.B) {
 		}
 	}
 }
+
+func TestScanFields(t *testing.T) {
+	for _, c := range []struct {
+		raw       string
+		n         int
+		canonical bool
+		ok        bool
+	}{
+		{`{}`, 0, true, true},
+		{`{"f":"A1","v":1}`, 2, true, true},
+		{`{"v":1,"f":"A1"}`, 2, false, true},
+		{`{"f": "A1"}`, 1, false, true},
+		{`{"m":[2,3],"r":{"a":"x\"y"}}`, 2, true, true},
+		{`{"v":"a<b"}`, 1, false, true},
+		{"{\"v\":\"a\\u003cb\"}", 1, true, true},
+		{"{\"v\":\"a b\"}", 1, false, true},
+		{`{"v":1,"v":2}`, 2, false, true},
+		{`{"v":null}`, 0, false, false},
+		{`{"":1}`, 0, false, false},
+		{`[1]`, 0, false, false},
+		{`{"v":1`, 0, false, false},
+	} {
+		n, canonical, ok := scanFields(json.RawMessage(c.raw), false)
+		if ok != c.ok || ok && (n != c.n || canonical != c.canonical) {
+			t.Errorf("%s: %d %v %v", c.raw, n, canonical, ok)
+		}
+		if f, _ := fields(json.RawMessage(c.raw), false); canonical && compact(f) != c.raw {
+			t.Errorf("%s: canonical but compacted to %s", c.raw, compact(f))
+		}
+	}
+	if n, _, ok := scanFields(json.RawMessage(`{"v":null}`), true); !ok || n != 1 {
+		t.Errorf("a null that removes a field: %d %v", n, ok)
+	}
+}
