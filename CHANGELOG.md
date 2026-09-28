@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 — 2026-09-28
 
 - `xlsx`: CSV files read as workbooks of one sheet, fields read as the
   French version of Excel reads them (leading zeros kept), written back
