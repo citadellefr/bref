@@ -6,11 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/citadellefr/bref/formula"
 )
 
-// TestDump writes the trees of workbooks to $BREF_DUMP, for the Dart
-// package to draw them: $BREF_DUMP_FILES lists them, relative to
-// corpus/files.
+// TestDump writes the trees of workbooks to $BREF_DUMP, as the hub
+// serves them, for the Dart package to draw them: $BREF_DUMP_FILES lists
+// them, relative to corpus/files.
 func TestDump(t *testing.T) {
 	dir := os.Getenv("BREF_DUMP")
 	if dir == "" {
@@ -25,6 +27,7 @@ func TestDump(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
+		NewCalc(tree, formula.Options{})
 		nodes, _ := json.Marshal(tree.Edit())
 		base := filepath.Join(dir, strings.TrimSuffix(filepath.Base(name), filepath.Ext(name)))
 		if err := os.WriteFile(base+".json", nodes, 0o644); err != nil {

@@ -4,6 +4,7 @@ import 'package:flutter/painting.dart';
 
 import '../ot/grid.dart';
 import '../ot/tree.dart';
+import 'conditional.dart';
 import 'formula_text.dart';
 import 'lists.dart';
 import 'number_format.dart';
@@ -42,6 +43,7 @@ class Workbook {
   var csv = false;
   final _styles = <String, CellStyle>{};
   final _layouts = <String, (Node, SheetLayout)>{};
+  final _looks = <String, (Node, Node?, SheetLooks)>{};
 
   /// The sheets in order, chart sheets included.
   List<Node> get sheets => [for (final n in tree.children('book')) if (n.type == 'sheet' || n.type == 'kept') n];
@@ -62,6 +64,17 @@ class Workbook {
     if (cached != null && identical(cached.$1, sheet)) return cached.$2;
     final l = SheetLayout(sheet);
     _layouts[sheet.id] = (sheet, l);
+    return l;
+  }
+
+  /// What the conditional formats of a sheet give its cells, kept until
+  /// the sheet or its looks change.
+  SheetLooks looks(Node sheet) {
+    final node = tree.children(sheet.id).where((n) => n.type == 'looks').firstOrNull;
+    final cached = _looks[sheet.id];
+    if (cached != null && identical(cached.$1, sheet) && identical(cached.$2, node)) return cached.$3;
+    final l = SheetLooks(this, sheet, node);
+    _looks[sheet.id] = (sheet, node, l);
     return l;
   }
 
@@ -190,6 +203,8 @@ class CellStyle {
   final Map<String, Object?> align;
 
   NumberFormat get format => NumberFormat(formatCode);
+
+  CellStyle withFill(Color fill) => CellStyle._(json, formatCode, font, fill, left, right, top, bottom, align);
 
   String? get horizontal => align['h'] as String?;
 

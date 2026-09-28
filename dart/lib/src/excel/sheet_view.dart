@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../ot/grid.dart';
 import '../ot/tree.dart';
+import 'conditional.dart';
 import 'number_format.dart';
 import 'workbook.dart';
 
@@ -603,6 +604,14 @@ class _SheetPainter extends CustomPainter {
 
   double get z => view._z;
 
+  late final looks = book.looks(sheet);
+
+  /// The format of a cell, with what its conditional formats change.
+  CellStyle _style(Cell c) {
+    final id = c.fields['s'] as String?;
+    return looks.style(book.style(id), id, c.row, c.col);
+  }
+
   double width(int col) => resizing != null && resizing!.$1 == 'c' && resizing!.$2 == col ? resizing!.$3 : layout.width(col);
 
   double height(int row) => resizing != null && resizing!.$1 == 'r' && resizing!.$2 == row ? resizing!.$3 : layout.height(row);
@@ -678,6 +687,13 @@ class _SheetPainter extends CustomPainter {
         if (f != null) cells.add(Cell(m.top, m.left, f));
       }
     }
+    // empty cells a conditional format fills
+    if (!looks.isEmpty) {
+      final held = {for (final c in cells) (c.row, c.col)};
+      for (final c in looks.grid.rows(area.top, area.bottom)) {
+        if (c.col >= area.left && c.col <= area.right && !held.contains((c.row, c.col))) cells.add(Cell(c.row, c.col, const {}));
+      }
+    }
     for (final e in colStyles.entries) {
       if (e.key < area.left || e.key > area.right) continue;
       final fill = book.style(e.value).fill;
@@ -689,7 +705,7 @@ class _SheetPainter extends CustomPainter {
     }
     for (final c in cells) {
       if (covered.contains((c.row, c.col))) continue;
-      final fill = book.style(c.fields['s'] as String?).fill;
+      final fill = _style(c).fill;
       if (fill == null) continue;
       final m = l.mergeAt(c.row, c.col);
       canvas.drawRect(m == null ? _rect(c.row, c.col, c.row, c.col) : _rect(m.top, m.left, m.bottom, m.right), Paint()..color = fill);
@@ -717,17 +733,37 @@ class _SheetPainter extends CustomPainter {
       }
     }
 
+    // data bars and icons
+    final icons = <(int, int)>{};
+    for (final c in cells) {
+      if (covered.contains((c.row, c.col))) continue;
+      final bar = looks.bar(c.row, c.col);
+      final icon = looks.icon(c.row, c.col);
+      if (bar == null && icon == null) continue;
+      final r = _rect(c.row, c.col, c.row, c.col);
+      if (r.height < 6 || r.width < 6) continue;
+      if (bar != null) {
+        final b = Rect.fromLTWH(r.left + 1, r.top + 2, (r.width - 2) * bar.$1 / 100, r.height - 4);
+        canvas.drawRect(b, Paint()..shader = LinearGradient(colors: [bar.$2, Color.lerp(bar.$2, Colors.white, 0.85)!]).createShader(b));
+      }
+      if (icon != null) {
+        final side = math.min(r.height - 4, 14 * z);
+        paintIcon(canvas, Rect.fromLTWH(r.left + 2 * z, r.bottom - side - 2, side, side), icon.$1, icon.$2);
+        icons.add((c.row, c.col));
+      }
+    }
+
     // texts
     final occupied = <(int, int)>{for (final c in cells) if (_shows(c.fields)) (c.row, c.col)};
     for (final c in cells) {
-      if (covered.contains((c.row, c.col)) || !_shows(c.fields)) continue;
-      _text(canvas, c, occupied, area);
+      if (covered.contains((c.row, c.col)) || !_shows(c.fields) || looks.hidesValue(c.row, c.col)) continue;
+      _text(canvas, c, occupied, area, icon: icons.contains((c.row, c.col)));
     }
 
     // borders
     for (final c in cells) {
       if (covered.contains((c.row, c.col))) continue;
-      final s = book.style(c.fields['s'] as String?);
+      final s = _style(c);
       if (s.left == null && s.right == null && s.top == null && s.bottom == null) continue;
       final m = l.mergeAt(c.row, c.col);
       final r = m == null ? _rect(c.row, c.col, c.row, c.col) : _rect(m.top, m.left, m.bottom, m.right);
@@ -764,9 +800,11 @@ class _SheetPainter extends CustomPainter {
     canvas.drawLine(a, b, p);
   }
 
-  void _text(Canvas canvas, Cell c, Set<(int, int)> occupied, CellArea area) {
+  /// Paints the text of a cell, past the icon a conditional format gives
+  /// it if any.
+  void _text(Canvas canvas, Cell c, Set<(int, int)> occupied, CellArea area, {bool icon = false}) {
     final l = layout;
-    final style = book.style(c.fields['s'] as String?);
+    final style = _style(c);
     final shown = cellText(c.fields, style, locale, date1904: book.date1904);
     if (shown.text.isEmpty) return;
     final m = l.mergeAt(c.row, c.col);
@@ -815,7 +853,7 @@ class _SheetPainter extends CustomPainter {
     final dx = switch (shown.align) {
       'right' => rect.right - pad - painter.width,
       'center' => rect.center.dx - painter.width / 2,
-      _ => rect.left + pad,
+      _ => rect.left + pad + (icon ? 16 * z : 0),
     };
     final dy = switch (style.vertical) {
       'top' => rect.top + 1,

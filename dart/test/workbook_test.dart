@@ -1,3 +1,4 @@
+import 'package:bref/src/excel/conditional.dart';
 import 'package:bref/src/excel/input.dart';
 import 'package:bref/src/excel/number_format.dart';
 import 'package:bref/src/excel/workbook.dart';
@@ -38,6 +39,35 @@ void main() {
     expect(cellText({'e': '#VALUE!'}, w.style(null), NumberLocale.fr).text, '#VALEUR!');
     expect(cellText({'v': true}, w.style(null), NumberLocale.fr).text, 'VRAI');
     expect(cellText({'v': 12}, w.style(null), NumberLocale.fr).align, 'right');
+  });
+
+  test('conditional formats change the formats of cells', () {
+    final tree = book(const [], attributes: {
+      'cf': [
+        {'type': 'formula', 'style': {'font': {'color': {'rgb': '9C0006'}}, 'fill': {'pattern': 'solid', 'fg': {'rgb': 'FFC7CE'}}}},
+        {'type': 'formula', 'style': {'font': {'i': true, 'color': {'rgb': '00B050'}}}},
+        {'type': 'colorScale', 'colors': [{'rgb': 'FF0000'}, {'rgb': 'FFFF00'}, {'rgb': '00FF00'}]},
+        {'type': 'dataBar', 'colors': [{'rgb': '638EC6'}], 'noValue': true},
+      ],
+    });
+    tree.apply(Edit([
+      Change.create(Node(id: 'S1.cf', type: 'looks', parent: 'S1', key: 'V', grid: Grid(const [
+        Cell(1, 1, {'r': [0, 1], 's': [2, 0.75]}),
+        Cell(2, 1, {'s': [2, 0.25], 'b': [3, 40]}),
+      ]))),
+    ]));
+    final w = Workbook(tree);
+    final looks = w.looks(tree['S1']!);
+    final a1 = looks.style(w.style('x1'), 'x1', 1, 1);
+    expect(a1.font.color, const Color(0xFF9C0006));
+    expect(a1.font.italic, isTrue);
+    expect(a1.font.bold, isTrue);
+    expect(a1.fill, const Color(0xFFFFC7CE));
+    expect(looks.style(w.style(null), null, 2, 1).fill, scaleColor(const [Color(0xFFFF0000), Color(0xFFFFFF00), Color(0xFF00FF00)], 0.25));
+    expect(looks.bar(2, 1), (40.0, const Color(0xFF638EC6)));
+    expect(looks.hidesValue(2, 1), isTrue);
+    expect(looks.hidesValue(1, 1), isFalse);
+    expect(scaleColor(const [Color(0xFF000000), Color(0xFFFFFFFF)], 0.5)!.toARGB32(), 0xFF808080);
   });
 
   test('palette colors become theme tints', () {
