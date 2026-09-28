@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- `xlsx`: list validations shown in the sheets' "lists", moved and
+  renamed with the cells and sheets they read.
+- `xlsx`: conditional formats read into the sheets' "cf" and calculated
+  by the server into a "looks" node under each sheet: formulas, top and
+  bottom values, averages, duplicates, color scales, data bars and icon
+  sets, calculated again after each edit on the sheets they read.
+- `xlsx`: filters of sheets read into their "filter", which the editor
+  sets; filters of other kinds kept as the file has them, moved with
+  their columns.
+- `formula`: formulas calculated in cells other than the one they were
+  written for; `Context.Result`.
+- Dart: lists of values offered in cells, values out of them refused as
+  Excel does; conditional formats painted; filters set, applied and
+  cleared from arrows on their first row, Ctrl+Shift+L.
+- Dart: the editors laid out for phones: a ribbon of one row whose tab is
+  chosen from a list, slides in a strip under the slide, pinch to zoom.
+
 ## 0.3.1 — 2026-09-28
 
 - `xlsx`: CSV files read as workbooks of one sheet, fields read as the
