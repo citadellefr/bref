@@ -89,6 +89,7 @@ type styles struct {
 	fills   []*xmldom.Element
 	borders []*xmldom.Element
 	xfs     []*xmldom.Element
+	dxfs    []*xmldom.Element
 	formats map[int]string
 	palette []string
 }
@@ -100,6 +101,7 @@ func readStyles(name string, doc *xmldom.Document) *styles {
 	s.fills = elements(root.Child(mainNS, "fills"), "fill")
 	s.borders = elements(root.Child(mainNS, "borders"), "border")
 	s.xfs = elements(root.Child(mainNS, "cellXfs"), "xf")
+	s.dxfs = elements(root.Child(mainNS, "dxfs"), "dxf")
 	for _, f := range elements(root.Child(mainNS, "numFmts"), "numFmt") {
 		if id, err := strconv.Atoi(f.Get("numFmtId")); err == nil {
 			s.formats[id] = f.Get("formatCode")

@@ -3,9 +3,11 @@ package xlsx
 import (
 	"bytes"
 	"encoding/json"
+	"math/rand/v2"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/citadellefr/bref/formula"
 	"github.com/citadellefr/bref/ot"
@@ -36,8 +38,22 @@ func NewCalc(tree *ot.Tree, opt formula.Options) *Calc {
 	if book := tree.Node("book"); book != nil {
 		_ = json.Unmarshal(book.Attrs["date1904"], &opt.Date1904)
 	}
+	if opt.Locale == nil {
+		opt.Locale = formula.French
+	}
+	if opt.Now == nil {
+		opt.Now = time.Now
+	}
+	if opt.Rand == nil {
+		opt.Rand = rand.Float64
+	}
 	c := &Calc{tree: tree, opt: opt}
 	c.rebuild()
+	for _, id := range c.sheets {
+		if e := c.looksChanges(id, c.looks(id)); e != nil {
+			_ = tree.Apply(e)
+		}
+	}
 	return c
 }
 
@@ -96,7 +112,7 @@ func (c *Calc) Formulas() int {
 // was rebased over: the formulas it sets are moved by the rows they
 // inserted or removed.
 func (c *Calc) Follow(e ot.Edit, since []ot.Edit) ot.Edit {
-	f := &follow{c: c, cells: map[string]map[[2]int]map[string]json.RawMessage{}, lists: map[string][]List{}}
+	f := &follow{c: c, cells: map[string]map[[2]int]map[string]json.RawMessage{}, sheets: map[string]ot.Values{}}
 	// whether sheets came, went, moved or were renamed, or names changed
 	books := false
 	for _, ch := range e {
@@ -127,6 +143,7 @@ func (c *Calc) Follow(e ot.Edit, since []ot.Edit) ot.Edit {
 	}
 	f.recalc(e)
 	f.flush()
+	f.restyle(e, books)
 	return f.out
 }
 
@@ -139,20 +156,30 @@ type follow struct {
 	cells map[string]map[[2]int]map[string]json.RawMessage
 	// book are the attributes of the book to set.
 	book ot.Values
-	// lists are the list validations to set, by sheet.
-	lists map[string][]List
+	// sheets are the attributes of sheets to set, by sheet.
+	sheets map[string]ot.Values
 }
 
-// listsOf are the list validations of a sheet, those to set if any.
-func (f *follow) listsOf(id string) []List {
-	if l, ok := f.lists[id]; ok {
-		return l
+// attr reads an attribute of a sheet into v, the value to set if any.
+func (f *follow) attr(id, key string, v any) {
+	raw, ok := f.sheets[id][key]
+	if !ok {
+		if n := f.c.tree.Node(id); n != nil {
+			raw = n.Attrs[key]
+		}
 	}
-	var l []List
-	if n := f.c.tree.Node(id); n != nil {
-		_ = json.Unmarshal(n.Attrs[listsKey], &l)
+	_ = json.Unmarshal(raw, v)
+}
+
+// setList sets a list attribute of a sheet, removed when it is empty.
+func setList[T any](f *follow, id, key string, v []T) {
+	if f.sheets[id] == nil {
+		f.sheets[id] = ot.Values{}
 	}
-	return l
+	f.sheets[id][key] = json.RawMessage("null")
+	if len(v) > 0 {
+		f.sheets[id][key] = mustJSON(v)
+	}
 }
 
 func (f *follow) setCell(sheet string, row, col int, key string, v any) {
@@ -188,17 +215,13 @@ func (f *follow) flush() {
 		}
 		e = append(e, ot.Change{Op: ot.OpCel, ID: id, Cells: cells})
 	}
-	for _, id := range slices.Sorted(mapKeys(f.lists)) {
-		v := json.RawMessage("null")
-		if l := f.lists[id]; len(l) > 0 {
-			v = mustJSON(l)
-		}
-		e = append(e, ot.Change{Op: ot.OpSet, ID: id, Attrs: ot.Values{listsKey: v}})
+	for _, id := range slices.Sorted(mapKeys(f.sheets)) {
+		e = append(e, ot.Change{Op: ot.OpSet, ID: id, Attrs: f.sheets[id]})
 	}
 	if len(f.book) > 0 {
 		e = append(e, ot.Change{Op: ot.OpSet, ID: "book", Attrs: f.book})
 	}
-	f.cells, f.book, f.lists = map[string]map[[2]int]map[string]json.RawMessage{}, nil, map[string][]List{}
+	f.cells, f.book, f.sheets = map[string]map[[2]int]map[string]json.RawMessage{}, nil, map[string]ot.Values{}
 	if len(e) == 0 {
 		return
 	}
@@ -238,7 +261,8 @@ func mapKeys[K comparable, V any](m map[K]V) func(func(K) bool) {
 }
 
 // formulas calls rewrite with every formula of the workbook, those of the
-// defined names and list validations included, and sets those it changes.
+// defined names, list validations and conditional formats included, and
+// sets those it changes.
 func (f *follow) formulas(rewrite func(text, sheet string) string) {
 	c := f.c
 	for _, id := range c.sheets {
@@ -259,7 +283,8 @@ func (f *follow) formulas(rewrite func(text, sheet string) string) {
 			}
 			return true
 		})
-		lists := slices.Clone(f.listsOf(id))
+		var lists []List
+		f.attr(id, listsKey, &lists)
 		changed := false
 		for i, l := range lists {
 			if g := rewrite(l.Src, id); g != l.Src {
@@ -268,7 +293,27 @@ func (f *follow) formulas(rewrite func(text, sheet string) string) {
 			}
 		}
 		if changed {
-			f.lists[id] = lists
+			setList(f, id, listsKey, lists)
+		}
+		var rules []Conditional
+		f.attr(id, conditionalKey, &rules)
+		changed = false
+		for i, r := range rules {
+			for j, x := range r.F {
+				if g := rewrite(x, id); g != x {
+					rules[i].F[j] = g
+					changed = true
+				}
+			}
+			for j, t := range r.Stops {
+				if g := rewrite(t.Val, id); t.Val != "" && g != t.Val {
+					rules[i].Stops[j].Val = g
+					changed = true
+				}
+			}
+		}
+		if changed {
+			setList(f, id, conditionalKey, rules)
 		}
 	}
 	changed := false
@@ -352,14 +397,31 @@ func (f *follow) shift(ch ot.Change) {
 		}
 		return g
 	})
-	if lists := f.listsOf(ch.ID); len(lists) > 0 {
+	var lists []List
+	if f.attr(ch.ID, listsKey, &lists); len(lists) > 0 {
 		var kept []List
 		for _, l := range lists {
 			if l.Ref = shiftRef(l.Ref, sheet, rows, ch.At, n); l.Ref != "" {
 				kept = append(kept, l)
 			}
 		}
-		f.lists[ch.ID] = kept
+		setList(f, ch.ID, listsKey, kept)
+	}
+	var rules []Conditional
+	if f.attr(ch.ID, conditionalKey, &rules); len(rules) > 0 {
+		var kept []Conditional
+		for _, r := range rules {
+			if r.Ref = shiftRef(r.Ref, sheet, rows, ch.At, n); r.Ref != "" {
+				kept = append(kept, r)
+			}
+		}
+		setList(f, ch.ID, conditionalKey, kept)
+	}
+	if looks := looksID(ch.ID); c.tree.Node(looks) != nil {
+		mv := ot.Edit{{Op: ch.Op, ID: looks, Dim: ch.Dim, At: ch.At, N: ch.N}}
+		if c.tree.Apply(mv) == nil {
+			f.out = append(f.out, mv...)
+		}
 	}
 	node := c.tree.Node(ch.ID)
 	if node != nil && node.Grid != nil {
@@ -404,6 +466,38 @@ func spanShifted(m [2]int, row, col int, rows bool, at, n int) [2]int {
 		*span -= min(last, at-n-1) - at + 1
 	}
 	return m
+}
+
+// restyle calculates again the looks conditional formats give cells: on
+// the sheets whose cells or rules changed, those whose rules read other
+// sheets when any did, all when sheets or names changed.
+func (f *follow) restyle(e ot.Edit, all bool) {
+	changed := map[string]bool{}
+	for _, ch := range slices.Concat(e, f.out) {
+		switch {
+		case ch.Op == ot.OpCel || ch.Op == ot.OpIns || ch.Op == ot.OpRem || ch.Op == ot.OpNew && ch.Cells != nil:
+			changed[ch.ID] = true
+		case ch.Op == ot.OpSet && ch.Attrs[conditionalKey] != nil:
+			changed[ch.ID] = true
+		}
+	}
+	if len(changed) == 0 && !all {
+		return
+	}
+	c := f.c
+	for _, id := range c.sheets {
+		n := c.tree.Node(id)
+		var rules []Conditional
+		if n != nil {
+			_ = json.Unmarshal(n.Attrs[conditionalKey], &rules)
+		}
+		if len(rules) == 0 && c.tree.Node(looksID(id)) == nil || !all && !changed[id] && !reachesOut(rules) {
+			continue
+		}
+		if edit := c.looksChanges(id, c.looks(id)); edit != nil && c.tree.Apply(edit) == nil {
+			f.out = append(f.out, edit...)
+		}
+	}
 }
 
 // rebased moves the formulas an edit sets with the rows and columns the

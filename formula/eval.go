@@ -118,6 +118,12 @@ func (c *Context) Eval(e Expr) Value {
 	return ErrValue
 }
 
+// Result is the single value a formula gives in its cell: that of the
+// cell a reference points to, the first of an array.
+func (c *Context) Result(e Expr) Value {
+	return c.scalar(c.Eval(e))
+}
+
 func (c *Context) ref(r *Ref) Value {
 	if r.Invalid || r.Book != "" {
 		return ErrRef
