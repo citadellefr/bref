@@ -38,7 +38,7 @@ foreach (var rewritten in Directory.EnumerateFiles(args[1], "*", SearchOption.Al
         // the calculation chain goes when cells are rewritten: Excel makes
         // it again
         : before.Parts.Except(after.Parts).Where(p => !edited && !p.EndsWith("/calcChain.xml")).Select(p => $"{p} lost")
-            .Concat(after.Errors.Where(e => before.Parts.Contains(e.Part) && !before.Errors.Contains(e)).Select(e => e.Text))
+            .Concat(Added(before.Errors, after.Errors.Where(e => before.Parts.Contains(e.Part)), edited))
             .Concat(after.Errors.Where(e => edited && !before.Parts.Contains(e.Part) && !hidden.Contains(e.Part)).Select(e => e.Text))
             .ToList();
     if (added.Count > 0)
@@ -85,6 +85,27 @@ Report? Check(string path)
         return new Report(parts, errors);
     }
 }
+
+// Added are the errors after that were not before. Runs of the same
+// formatting merged move the elements after them, so an error counts as
+// the same wherever it moved in its part: errors are compared by their
+// text without positions, paths or lines, as many after as before. An edit
+// copies what it splits, errors and all: in an edited document an error
+// that was there before may come back more often.
+static IEnumerable<string> Added(HashSet<Error> before, IEnumerable<Error> after, bool edited)
+{
+    var count = before.GroupBy(e => Unplaced(e.Text)).ToDictionary(g => g.Key, g => edited ? int.MaxValue : g.Count());
+    foreach (var e in after.OrderBy(e => e.Text))
+    {
+        var key = Unplaced(e.Text);
+        if (count.TryGetValue(key, out var n) && n > 0)
+            count[key] = n - 1;
+        else
+            yield return e.Text;
+    }
+}
+
+static string Unplaced(string text) => System.Text.RegularExpressions.Regex.Replace(text, @"\[\d+\]|Line \d+, position \d+", "");
 
 // Hidden are the parts of a package stored under a name with backslashes,
 // as they read once normalized.

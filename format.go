@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/citadellefr/bref/docx"
 	"github.com/citadellefr/bref/formula"
 	"github.com/citadellefr/bref/ot"
 	"github.com/citadellefr/bref/pptx"
@@ -38,6 +39,38 @@ var formats = map[string]func(name string, data []byte) (*ot.Tree, format, error
 	".xlsx": openWorkbook,
 	".xlsm": openWorkbook,
 	".xltx": openWorkbook,
+	".docx": openDocument,
+	".docm": openDocument,
+	".dotx": openDocument,
+}
+
+// document is a Word file.
+type document struct {
+	doc *docx.Document
+}
+
+func openDocument(_ string, data []byte) (*ot.Tree, format, error) {
+	doc, tree, err := docx.Open(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	return tree, document{doc}, nil
+}
+
+func (d document) check(doc *ot.Tree, e ot.Edit) error {
+	return d.doc.Check(doc, e)
+}
+
+func (d document) encode(doc *ot.Tree) ([]byte, error) {
+	return d.doc.Save(doc)
+}
+
+func (d document) media(name string) ([]byte, string, error) {
+	data, typ, err := d.doc.Media(name)
+	if err != nil {
+		return nil, "", fmt.Errorf("%w: %v", ErrNoMedia, err)
+	}
+	return data, typ, nil
 }
 
 // presentation is a PowerPoint file.

@@ -1,0 +1,62 @@
+package bref
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/citadellefr/bref/docx"
+	"github.com/citadellefr/bref/ot"
+)
+
+func TestDocumentsAreEditedAndSaved(t *testing.T) {
+	data, err := os.ReadFile("corpus/files/python-docx/having-images.docx")
+	if err != nil {
+		t.Skip("no corpus: corpus/fetch.sh")
+	}
+	store := newMemStore()
+	store.data["letter.docx"] = data
+	h := NewHub(store, fastOptions())
+
+	c, _, doc := join(t, h, "letter.docx", Peer{ID: "1"})
+	var nodes ot.Edit
+	if err := json.Unmarshal(doc.D, &nodes); err != nil {
+		t.Fatal(err)
+	}
+	var text, media string
+	for _, n := range nodes {
+		if n.Type == "text" && n.Parent == "body" && text == "" {
+			text = n.ID
+		}
+		for _, o := range n.Text {
+			var p docx.Picture
+			if json.Unmarshal([]byte(o.Attrs["img"]), &p) == nil && p.Media != "" && media == "" {
+				media = p.Media
+			}
+		}
+	}
+
+	c.send(`{"t":"op","n":1,"v":0,"d":[{"o":"txt","id":"` + text + `","x":[{"i":"Bref ","a":{"b":"1"}}]}]}`)
+	c.expect("ack")
+	c.send(`{"t":"op","n":2,"v":1,"d":[{"o":"set","id":"doc","a":{"styles":{}}}]}`)
+	if f := c.expect("nack"); f.Error != docx.ErrReadOnly.Error() {
+		t.Fatalf("nack = %+v", f)
+	}
+	<-store.saves
+	c.expect("saved")
+
+	_, tree, err := docx.Open([]byte(store.file("letter.docx")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := tree.Node(text).Text.Delta()[0]; !strings.HasPrefix(got.Insert, "Bref ") || got.Attrs["b"] != "1" {
+		t.Fatalf("saved text %+v", got)
+	}
+	picture, typ, err := h.Media(context.Background(), "letter.docx", media)
+	if err != nil || len(picture) == 0 || !strings.HasPrefix(typ, "image/") {
+		t.Fatalf("media %q: %d bytes, %q, %v", media, len(picture), typ, err)
+	}
+	c.leave()
+}

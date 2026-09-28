@@ -1,0 +1,782 @@
+package docx
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"maps"
+	"reflect"
+	"slices"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/citadellefr/bref/internal/partrel"
+	"github.com/citadellefr/bref/internal/xmldom"
+	"github.com/citadellefr/bref/opc"
+	"github.com/citadellefr/bref/ot"
+)
+
+const (
+	xmlHeader  = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n"
+	typeHeader = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"
+	typeFooter = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"
+	typeRels   = "application/vnd.openxmlformats-package.relationships+xml"
+)
+
+// Save writes the document as the tree has it. Only the parts whose
+// content changed are rewritten: the main part when the body or the last
+// section did, a header or footer when its own blocks did.
+func (d *Document) Save(tree *ot.Tree) ([]byte, error) {
+	pkg, err := opc.Open(d.original, Limits)
+	if err != nil {
+		return nil, err
+	}
+	w := &writer{d: d, pkg: pkg, tree: tree, headerRef: func(string) string { return "" }}
+	if err := w.save(); err != nil {
+		return nil, err
+	}
+	return pkg.Bytes()
+}
+
+type writer struct {
+	d    *Document
+	pkg  *opc.Package
+	tree *ot.Tree
+	// parts are the headers and footers by node id, those created while
+	// writing included.
+	parts map[string]string
+	// headerRef is the relationship id of the part of a header or footer
+	// node, from the main part.
+	headerRef func(id string) string
+	// force rewrites every part, for tests.
+	force bool
+}
+
+func (w *writer) save() error {
+	w.parts = map[string]string{}
+	for id, p := range w.d.parts {
+		w.parts[id] = p.name
+	}
+	var created []*ot.Node
+	for _, n := range w.tree.Children("doc") {
+		if n.Type != "hdr" && n.Type != "ftr" {
+			continue
+		}
+		p := w.d.parts[n.ID]
+		if p == nil {
+			created = append(created, n)
+			kind := map[string]string{"hdr": "header", "ftr": "footer"}[n.Type]
+			w.parts[n.ID] = w.freeName("word/" + kind + "%d.xml")
+			continue
+		}
+		if !w.same(n.ID) {
+			if err := w.header(n, p.name, p.rels); err != nil {
+				return err
+			}
+		}
+	}
+	for _, n := range created {
+		if err := w.header(n, w.parts[n.ID], nil); err != nil {
+			return err
+		}
+	}
+	if len(created) == 0 && w.same("body") && w.sameAttrs("doc") {
+		return nil
+	}
+	return w.document()
+}
+
+func (w *writer) freeName(pattern string) string {
+	for n := 1; ; n++ {
+		name := fmt.Sprintf(pattern, n)
+		if !w.pkg.Has(name) && !slices.Contains(slices.Collect(maps.Values(w.parts)), name) {
+			return name
+		}
+	}
+}
+
+func (w *writer) sameAttrs(id string) bool {
+	a, b := w.d.loaded.Node(id), w.tree.Node(id)
+	return !w.force && a != nil && b != nil && maps.EqualFunc(a.Attrs, b.Attrs, func(x, y json.RawMessage) bool { return bytes.Equal(x, y) })
+}
+
+// same tells whether the node and all under it are as they were read.
+func (w *writer) same(id string) bool {
+	if w.force {
+		return false
+	}
+	a, b := w.d.loaded.Node(id), w.tree.Node(id)
+	if a == nil || b == nil {
+		return a == b
+	}
+	if a.Type != b.Type || a.Key != b.Key || !w.sameAttrs(id) {
+		return false
+	}
+	if (a.Text == nil) != (b.Text == nil) || a.Text != nil && !reflect.DeepEqual(a.Text.Delta(), b.Text.Delta()) {
+		return false
+	}
+	ka, kb := w.d.loaded.Children(id), w.tree.Children(id)
+	if len(ka) != len(kb) {
+		return false
+	}
+	for i := range ka {
+		if ka[i].ID != kb[i].ID || !w.same(ka[i].ID) {
+			return false
+		}
+	}
+	return true
+}
+
+// open reads a part to rewrite, its relationships named.
+func (w *writer) open(name string, rels *partrel.Rels) (*xmldom.Document, map[string]string, error) {
+	data, err := w.pkg.Read(name)
+	if err != nil {
+		return nil, nil, err
+	}
+	doc, err := xmldom.Parse(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	spaces := standardSpaces()
+	maps.Copy(spaces, doc.Root.Spaces())
+	w.d.names.NameAll(doc.Root, name, rels, spaces)
+	return doc, spaces, nil
+}
+
+// put writes a part and its relationships, resolving the names its
+// elements carry; read counts the ids of its tracked changes as read.
+func (w *writer) put(doc *xmldom.Document, name, contentType string, rels *partrel.Rels, spaces map[string]string, rw *partrel.Writer, read map[string]int) error {
+	if rw == nil {
+		rw = partrel.NewWriter(name, rels, w.d.names.Lookup)
+	}
+	rw.Resolve(doc.Root, spaces)
+	declare(doc.Root)
+	uniqueRevisions(doc.Root, read)
+	data := doc.Bytes()
+	if w.pkg.Has(name) {
+		if err := w.pkg.Set(name, data); err != nil {
+			return err
+		}
+	} else if err := w.pkg.Add(name, contentType, data); err != nil {
+		return err
+	}
+	if !rw.Changed && (rels != nil || len(rw.List) == 0) {
+		return nil
+	}
+	relsName := opc.RelsName(name)
+	out := opc.MarshalRelationships(rw.List)
+	if w.pkg.Has(relsName) {
+		return w.pkg.Set(relsName, out)
+	}
+	return w.pkg.Add(relsName, typeRels, out)
+}
+
+// revisions are the elements of tracked changes, whose ids Word wants
+// unique.
+var revisions = map[string]bool{
+	"ins": true, "del": true, "moveFrom": true, "moveTo": true, "pPrChange": true, "rPrChange": true,
+	"sectPrChange": true, "tblPrChange": true, "tblGridChange": true, "trPrChange": true, "tcPrChange": true,
+	"cellIns": true, "cellDel": true, "cellMerge": true, "numberingChange": true,
+}
+
+// revisionIDs counts the ids of the tracked changes of a part.
+func revisionIDs(root *xmldom.Element) map[string]int {
+	out := map[string]int{}
+	var walk func(e *xmldom.Element)
+	walk = func(e *xmldom.Element) {
+		if e.Space == NS && revisions[e.Local] {
+			if id := attr(e, "id"); id != "" {
+				out[id]++
+			}
+		}
+		for _, c := range e.Elements() {
+			walk(c)
+		}
+	}
+	walk(root)
+	return out
+}
+
+// uniqueRevisions gives new ids to the tracked changes that share one more
+// often than the part as read did: a paragraph split in two copies those
+// of its mark.
+func uniqueRevisions(root *xmldom.Element, read map[string]int) {
+	next := 0
+	for id := range revisionIDs(root) {
+		if n, err := strconv.Atoi(id); err == nil {
+			next = max(next, n+1)
+		}
+	}
+	seen := map[string]int{}
+	var walk func(e *xmldom.Element)
+	walk = func(e *xmldom.Element) {
+		if e.Space == NS && revisions[e.Local] {
+			if id := attr(e, "id"); id != "" {
+				seen[id]++
+				if seen[id] > max(read[id], 1) {
+					setAttr(e, "id", strconv.Itoa(next))
+					next++
+				}
+			}
+		}
+		for _, c := range e.Elements() {
+			walk(c)
+		}
+	}
+	walk(root)
+}
+
+// declare gives the root the declarations of the standard prefixes its
+// elements use and it lacks: XML carried by a node may come from a part
+// that declared more.
+func declare(root *xmldom.Element) {
+	declared := root.Spaces()
+	used := map[string]bool{}
+	var walk func(e *xmldom.Element)
+	walk = func(e *xmldom.Element) {
+		if p, _, ok := strings.Cut(e.Name, ":"); ok {
+			used[p] = true
+		}
+		for _, a := range e.Attrs {
+			if p, _, ok := strings.Cut(a.Name, ":"); ok && p != "xmlns" && p != "xml" {
+				used[p] = true
+			}
+		}
+		for _, c := range e.Elements() {
+			walk(c)
+		}
+	}
+	walk(root)
+	standard := standardSpaces()
+	for _, p := range slices.Sorted(maps.Keys(used)) {
+		if _, ok := declared[p]; !ok && standard[p] != "" {
+			root.Set("xmlns:"+p, standard[p])
+		}
+	}
+}
+
+func (w *writer) header(n *ot.Node, name string, rels *partrel.Rels) error {
+	var doc *xmldom.Document
+	spaces := standardSpaces()
+	contentType := typeHeader
+	if n.Type == "ftr" {
+		contentType = typeFooter
+	}
+	var read map[string]int
+	if rels != nil {
+		var err error
+		if doc, spaces, err = w.open(name, rels); err != nil {
+			return err
+		}
+		read = revisionIDs(doc.Root)
+	} else {
+		root := xmldom.New(NS, "w:"+n.Type)
+		root.Set("xmlns:w", NS)
+		root.Set("xmlns:r", relNS)
+		doc = &xmldom.Document{Prolog: []byte(xmlHeader), Root: root}
+	}
+	doc.Root.Content = nil
+	w.blocks(n.ID, doc.Root, w.marks(n.ID))
+	if rels == nil && len(doc.Root.Content) == 0 {
+		doc.Root.Append(newW(doc.Root, "p"))
+	}
+	return w.put(doc, name, contentType, rels, spaces, nil, read)
+}
+
+// document rewrites the body of the main part and its last section.
+func (w *writer) document() error {
+	doc, spaces, err := w.open(w.d.main, w.d.mainRels)
+	if err != nil {
+		return err
+	}
+	read := revisionIDs(doc.Root)
+	body := child(doc.Root, "body")
+	rw := partrel.NewWriter(w.d.main, w.d.mainRels, w.d.names.Lookup)
+	w.headerRef = func(id string) string {
+		name := w.parts[id]
+		if name == "" {
+			return ""
+		}
+		typ := relHeader
+		if n := w.tree.Node(id); n != nil && n.Type == "ftr" {
+			typ = relFooter
+		}
+		return rw.Ensure(partrel.Rel{Type: typ, Target: name})
+	}
+	sect := child(body, "sectPr")
+	body.Content = nil
+	w.blocks("body", body, w.marks("body"))
+	root := w.tree.Node("doc")
+	if s := w.section(str(root.Attrs, "sx"), root.Attrs["sect"], body); s != nil {
+		body.Append(s)
+	} else if sect != nil {
+		body.Append(sect)
+	}
+	return w.put(doc, w.d.main, "", w.d.mainRels, spaces, rw, read)
+}
+
+// str is a string attribute, "" if absent.
+func str(attrs ot.Values, key string) string {
+	var s string
+	if v, ok := attrs[key]; ok {
+		_ = json.Unmarshal(v, &s)
+	}
+	return s
+}
+
+// section is the sectPr of raw with sect written over it, nil when there
+// is neither.
+func (w *writer) section(raw string, sect json.RawMessage, in *xmldom.Element) *xmldom.Element {
+	s := w.d.fragment(raw)
+	if s != nil && (s.Space != NS || s.Local != "sectPr") {
+		s = nil
+	}
+	var sec Section
+	if len(sect) == 0 || json.Unmarshal(sect, &sec) != nil {
+		return s
+	}
+	if s == nil {
+		s = newW(in, "sectPr")
+	}
+	old := readSection(s, w.nodesOf(s))
+	setSection(s, old, sec, w.headerRef)
+	return s
+}
+
+// nodesOf names the header and footer nodes a sectPr refers to, by the name
+// of their relationship.
+func (w *writer) nodesOf(s *xmldom.Element) map[string]string {
+	out := map[string]string{}
+	for _, ref := range s.Elements() {
+		name := ref.Get("r:id")
+		r, ok := w.d.names.Lookup(name)
+		if !ok {
+			continue
+		}
+		for id, part := range w.parts {
+			if part == r.Target {
+				out[name] = id
+			}
+		}
+	}
+	return out
+}
+
+// marks counts the paragraph elements as read under a node: a paragraph
+// split in two gives its id to one half only.
+type marks map[string]int
+
+func (w *writer) marks(id string) marks {
+	out := marks{}
+	var walk func(id string)
+	walk = func(id string) {
+		for _, n := range w.d.loaded.Children(id) {
+			if n.Text != nil {
+				for _, p := range paragraphs(n.Text.Delta()) {
+					out[p.mark["pa"]]++
+				}
+			}
+			walk(n.ID)
+		}
+	}
+	walk(id)
+	return out
+}
+
+// blocks writes the blocks under a node into an element.
+func (w *writer) blocks(parent string, into *xmldom.Element, ids marks) {
+	for _, n := range w.tree.Children(parent) {
+		switch n.Type {
+		case "text":
+			for _, p := range paragraphs(n.Text.Delta()) {
+				into.Append(w.paragraph(p, into, ids))
+			}
+		case "tbl":
+			into.Append(w.table(n, into, ids))
+		case "sdt":
+			sdt := w.d.fragment(str(n.Attrs, "xml"))
+			if sdt == nil || sdt.Space != NS || sdt.Local != "sdt" {
+				sdt = newW(into, "sdt")
+			}
+			remove(sdt, "sdtContent")
+			content := newW(sdt, "sdtContent")
+			sdt.Append(content)
+			w.blocks(n.ID, content, ids)
+			into.Append(sdt)
+		case "other":
+			if e := w.d.fragment(str(n.Attrs, "xml")); e != nil {
+				into.Append(e)
+			}
+		}
+	}
+}
+
+// paragraph is the text of a paragraph, its mark last.
+type paragraph struct {
+	ops  []ot.Op
+	mark ot.Attrs
+}
+
+// paragraphs cuts a flow at its marks.
+func paragraphs(flow ot.Delta) []paragraph {
+	var out []paragraph
+	var cur []ot.Op
+	for _, o := range flow {
+		s := o.Insert
+		for s != "" {
+			i := strings.IndexByte(s, '\n')
+			if i < 0 {
+				cur = append(cur, ot.Op{Insert: s, Attrs: o.Attrs})
+				break
+			}
+			if i > 0 {
+				cur = append(cur, ot.Op{Insert: s[:i], Attrs: o.Attrs})
+			}
+			out = append(out, paragraph{ops: cur, mark: o.Attrs})
+			cur = nil
+			s = s[i+1:]
+		}
+	}
+	return out
+}
+
+func (w *writer) paragraph(para paragraph, in *xmldom.Element, ids marks) *xmldom.Element {
+	pa := para.mark["pa"]
+	p := w.d.fragment(pa)
+	if p == nil || p.Space != NS || p.Local != "p" {
+		p = newW(in, "p")
+	}
+	p.Content = nil
+	if ids[pa] > 0 {
+		ids[pa]--
+	} else {
+		p.Unset("w14:paraId")
+	}
+	if pPr := w.pPr(para.mark, p); pPr != nil {
+		p.Append(pPr)
+	}
+	var items []item
+	for _, o := range para.ops {
+		items = append(items, item{text: o.Insert, attrs: o.Attrs, wrap: wraps(o.Attrs)})
+	}
+	w.inline(p, items, 0, false)
+	return p
+}
+
+var runKeys = func() map[string]bool {
+	out := map[string]bool{}
+	for _, p := range runProps {
+		out[p.key] = true
+	}
+	return out
+}()
+
+// pPr is the pPr of a mark: the one it was read from, its keys written
+// over it, and its section.
+func (w *writer) pPr(mark ot.Attrs, in *xmldom.Element) *xmldom.Element {
+	pPr := w.d.fragment(mark["p"])
+	var old, oldRun Props
+	read := pPr != nil && pPr.Space == NS && pPr.Local == "pPr"
+	if read {
+		old, oldRun = ParaProps(pPr), RunProps(child(pPr, "rPr"))
+	} else {
+		pPr = newW(in, "pPr")
+	}
+	hadRun := child(pPr, "rPr") != nil
+	remove(pPr, "sectPr")
+	para, run := Props{}, Props{}
+	for k, v := range mark {
+		switch {
+		case paraKeys[k]:
+			para[k] = v
+		case runKeys[k]:
+			run[k] = v
+		}
+	}
+	writeProps(pPr, paraProps, old, para)
+	rPr := child(pPr, "rPr")
+	if rPr == nil && len(run) > 0 {
+		rPr = newW(pPr, "rPr")
+		insert(pPr, rPr, pPrOrder)
+	}
+	if rPr != nil {
+		writeProps(rPr, runProps, oldRun, run)
+		if !hadRun && len(rPr.Content) == 0 {
+			pPr.Remove(rPr)
+		}
+	}
+	if s := w.section(mark["sx"], json.RawMessage(mark["sect"]), pPr); s != nil {
+		insert(pPr, s, pPrOrder)
+	}
+	if !read && len(pPr.Content) == 0 {
+		return nil
+	}
+	return pPr
+}
+
+// item is text of a paragraph with its attributes, and the elements around
+// it.
+type item struct {
+	text  string
+	attrs ot.Attrs
+	wrap  []string
+}
+
+func wraps(a ot.Attrs) []string {
+	var out []string
+	if s := a["wrap"]; s != "" {
+		_ = json.Unmarshal([]byte(s), &out)
+	}
+	return out
+}
+
+// described are the keys that describe an Object or its wrappers, which
+// do not tell runs apart.
+var described = map[string]bool{
+	"o": true, "po": true, "wrap": true, "link": true, "ins": true, "del": true, "field": true,
+	"img": true, "fld": true, "instr": true, "br": true, "sym": true, "note": true, "comment": true,
+	"bm": true, "math": true,
+}
+
+// runKey tells runs apart: two items with the same key belong to the same
+// run.
+func runKey(a ot.Attrs) string {
+	var b strings.Builder
+	for _, k := range slices.Sorted(maps.Keys(a)) {
+		if described[k] {
+			continue
+		}
+		b.WriteString(k)
+		b.WriteByte(0)
+		b.WriteString(a[k])
+		b.WriteByte(0)
+	}
+	return b.String()
+}
+
+// inline writes items into a paragraph or the element around them; depth
+// is the number of elements around them already written, deleted whether
+// one of them is a deletion.
+func (w *writer) inline(parent *xmldom.Element, items []item, depth int, deleted bool) {
+	for i := 0; i < len(items); {
+		it := items[i]
+		if len(it.wrap) > depth {
+			j := i + 1
+			for j < len(items) && len(items[j].wrap) > depth && items[j].wrap[depth] == it.wrap[depth] {
+				j++
+			}
+			shell := w.d.fragment(it.wrap[depth])
+			if shell == nil {
+				w.inline(parent, items[i:j], depth+1, deleted)
+			} else {
+				target := shell
+				if shell.Space == NS && shell.Local == "sdt" {
+					target = newW(shell, "sdtContent")
+					shell.Append(target)
+				}
+				del := deleted || shell.Space == NS && (shell.Local == "del" || shell.Local == "moveFrom")
+				w.inline(target, items[i:j], depth+1, del)
+				parent.Append(shell)
+			}
+			i = j
+			continue
+		}
+		if po := it.attrs["po"]; po != "" {
+			for range utf8.RuneCountInString(it.text) {
+				if e := w.d.fragment(po); e != nil {
+					parent.Append(e)
+				}
+			}
+			i++
+			continue
+		}
+		key := runKey(it.attrs)
+		j := i + 1
+		for j < len(items) && len(items[j].wrap) <= depth && items[j].attrs["po"] == "" && runKey(items[j].attrs) == key {
+			j++
+		}
+		if r := w.run(items[i:j], parent, deleted); r != nil {
+			parent.Append(r)
+		}
+		i = j
+	}
+}
+
+// run writes items of the same formatting as a w:r.
+func (w *writer) run(items []item, in *xmldom.Element, deleted bool) *xmldom.Element {
+	r := newW(in, "r")
+	attrs := items[0].attrs
+	rPr := w.d.fragment(attrs["r"])
+	var old Props
+	read := rPr != nil && rPr.Space == NS && rPr.Local == "rPr"
+	if read {
+		old = RunProps(rPr)
+	} else {
+		rPr = newW(r, "rPr")
+	}
+	props := Props{}
+	for k, v := range attrs {
+		if runKeys[k] {
+			props[k] = v
+		}
+	}
+	writeProps(rPr, runProps, old, props)
+	if read || len(rPr.Content) > 0 {
+		r.Append(rPr)
+	}
+	var text strings.Builder
+	flush := func() {
+		if text.Len() == 0 {
+			return
+		}
+		local := "t"
+		if deleted {
+			local = "delText"
+		}
+		t := newW(r, local)
+		s := text.String()
+		if strings.TrimSpace(s) != s || strings.Contains(s, "  ") {
+			t.Set("xml:space", "preserve")
+		}
+		t.Append(xmldom.EscapeText(s))
+		r.Append(t)
+		text.Reset()
+	}
+	for _, it := range items {
+		if o := it.attrs["o"]; o != "" {
+			flush()
+			for range utf8.RuneCountInString(it.text) {
+				if e := w.d.fragment(o); e != nil {
+					r.Append(e)
+				}
+			}
+			continue
+		}
+		for _, c := range it.text {
+			var local string
+			switch c {
+			case '\t':
+				local = "tab"
+			case '\v':
+				local = "br"
+			case '‑':
+				local = "noBreakHyphen"
+			case '­':
+				local = "softHyphen"
+			case 0xFFFC:
+				continue
+			default:
+				text.WriteRune(c)
+				continue
+			}
+			flush()
+			r.Append(newW(r, local))
+		}
+	}
+	flush()
+	if len(r.Content) == 0 || len(r.Content) == 1 && r.Content[0] == xmldom.Node(rPr) {
+		return nil
+	}
+	return r
+}
+
+func (w *writer) table(n *ot.Node, in *xmldom.Element, ids marks) *xmldom.Element {
+	tbl := w.d.fragment(str(n.Attrs, "xml"))
+	if tbl == nil || tbl.Space != NS || tbl.Local != "tbl" {
+		tbl = newW(in, "tbl")
+	}
+	tblPr := child(tbl, "tblPr")
+	if tblPr == nil {
+		tblPr = newW(tbl, "tblPr")
+		writeTprops(tblPr, tblProps, ot.Values{}, n.Attrs)
+		if len(tblPr.Content) > 0 {
+			tbl.Content = append([]xmldom.Node{tblPr}, tbl.Content...)
+			if child(tbl, "tblGrid") == nil {
+				insert(tbl, newW(tbl, "tblGrid"), []string{"tblPr", "tblGrid"})
+			}
+		}
+	} else {
+		old := ot.Values{}
+		readTprops(tblPr, tblProps, old)
+		writeTprops(tblPr, tblProps, old, n.Attrs)
+	}
+	var cols []int
+	if g := n.Attrs["grid"]; g != nil && json.Unmarshal(g, &cols) == nil && !slices.Equal(cols, grid(child(tbl, "tblGrid"))) {
+		g := child(tbl, "tblGrid")
+		if g == nil {
+			g = newW(tbl, "tblGrid")
+			insert(tbl, g, []string{"tblPr", "tblGrid"})
+		}
+		g.Content = nil
+		for _, c := range cols {
+			g.Append(newW(g, "gridCol", "w", fmt.Sprint(max(c, 0))))
+		}
+	}
+	for _, c := range w.tree.Children(n.ID) {
+		switch c.Type {
+		case "tr":
+			tbl.Append(w.row(c, tbl, ids))
+		case "other":
+			if e := w.d.fragment(str(c.Attrs, "xml")); e != nil {
+				tbl.Append(e)
+			}
+		}
+	}
+	return tbl
+}
+
+func (w *writer) row(n *ot.Node, in *xmldom.Element, ids marks) *xmldom.Element {
+	tr := w.d.fragment(str(n.Attrs, "xml"))
+	if tr == nil || tr.Space != NS || tr.Local != "tr" {
+		tr = newW(in, "tr")
+	}
+	trPr := child(tr, "trPr")
+	if trPr == nil {
+		trPr = newW(tr, "trPr")
+		writeTprops(trPr, trProps, ot.Values{}, n.Attrs)
+		if len(trPr.Content) > 0 {
+			insert(tr, trPr, []string{"tblPrEx", "trPr"})
+		}
+	} else {
+		old := ot.Values{}
+		readTprops(trPr, trProps, old)
+		writeTprops(trPr, trProps, old, n.Attrs)
+	}
+	for _, c := range w.tree.Children(n.ID) {
+		switch c.Type {
+		case "tc":
+			tr.Append(w.cell(c, tr, ids))
+		case "other":
+			if e := w.d.fragment(str(c.Attrs, "xml")); e != nil {
+				tr.Append(e)
+			}
+		}
+	}
+	return tr
+}
+
+func (w *writer) cell(n *ot.Node, in *xmldom.Element, ids marks) *xmldom.Element {
+	tc := w.d.fragment(str(n.Attrs, "xml"))
+	if tc == nil || tc.Space != NS || tc.Local != "tc" {
+		tc = newW(in, "tc")
+	}
+	tcPr := child(tc, "tcPr")
+	if tcPr == nil {
+		tcPr = newW(tc, "tcPr")
+		writeTprops(tcPr, tcProps, ot.Values{}, n.Attrs)
+		if len(tcPr.Content) > 0 {
+			tc.Content = append([]xmldom.Node{tcPr}, tc.Content...)
+		}
+	} else {
+		old := ot.Values{}
+		readTprops(tcPr, tcProps, old)
+		writeTprops(tcPr, tcProps, old, n.Attrs)
+	}
+	before := len(tc.Elements())
+	w.blocks(n.ID, tc, ids)
+	if len(tc.Elements()) == before {
+		tc.Append(newW(tc, "p"))
+	}
+	return tc
+}
