@@ -3,6 +3,7 @@ package xlsx
 import (
 	"encoding/json"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -133,5 +134,38 @@ func TestCorpusLooks(t *testing.T) {
 	t.Logf("%d conditional formats, %d cells with a look", rules, looks)
 	if rules == 0 || looks == 0 {
 		t.Fatal("no conditional formats calculated")
+	}
+}
+
+// BenchmarkFollowLooks follows an edit of a sheet of 10 000 numbers under
+// a formula rule and a color scale.
+func BenchmarkFollowLooks(b *testing.B) {
+	var cells []ot.Cell
+	for i := 1; i <= 10000; i++ {
+		cells = append(cells, cell(i, 1, `{"v":`+strconv.Itoa(i)+`}`))
+	}
+	tree, err := ot.NewTree(ot.Edit{
+		{Op: ot.OpNew, ID: "book", Type: "book", Key: "V"},
+		{Op: ot.OpNew, ID: "S1", Type: "sheet", Parent: "book", Key: "K", Attrs: ot.Values{
+			"name": json.RawMessage(`"Feuil1"`), conditionalKey: json.RawMessage(`[
+				{"ref":"A1:A10000","type":"formula","pri":1,"f":["A1>$B$1"],"style":{"font":{"b":true}}},
+				{"ref":"A1:A10000","type":"colorScale","pri":2,"stops":[{"t":"min"},{"t":"max"}],"colors":[{"rgb":"F8696B"},{"rgb":"63BE7B"}]}
+			]`),
+		}, Cells: cells},
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	c := NewCalc(tree, formula.Options{})
+	i := 0
+	for b.Loop() {
+		i++
+		e := ot.Edit{{Op: ot.OpCel, ID: "S1", Cells: []ot.Cell{cell(5000, 1, `{"v":`+strconv.Itoa(5000+4000*(i%2))+`}`)}}}
+		if err := tree.Apply(e); err != nil {
+			b.Fatal(err)
+		}
+		if out := c.Follow(e, nil); len(out) != 1 {
+			b.Fatalf("got %d changes", len(out))
+		}
 	}
 }

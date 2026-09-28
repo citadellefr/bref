@@ -30,6 +30,45 @@ type look struct {
 	I []int     `json:"i,omitempty"`
 }
 
+// marshal writes a look as JSON, its fields in the order the grid keeps
+// them.
+func (l *look) marshal() json.RawMessage {
+	b := []byte{'{'}
+	list := func(key string, v []float64) {
+		if v == nil {
+			return
+		}
+		if len(b) > 1 {
+			b = append(b, ',')
+		}
+		b = append(b, '"')
+		b = append(b, key...)
+		b = append(b, `":[`...)
+		for i, x := range v {
+			if i > 0 {
+				b = append(b, ',')
+			}
+			b = strconv.AppendFloat(b, x, 'f', -1, 64)
+		}
+		b = append(b, ']')
+	}
+	ints := func(v []int) []float64 {
+		if v == nil {
+			return nil
+		}
+		out := make([]float64, len(v))
+		for i, x := range v {
+			out[i] = float64(x)
+		}
+		return out
+	}
+	list("b", l.B)
+	list("i", ints(l.I))
+	list("r", ints(l.R))
+	list("s", l.S)
+	return append(b, '}')
+}
+
 // settled is the workbook as the last calculation left it, which the
 // formulas of conditional formats read.
 type settled struct {
@@ -400,7 +439,7 @@ func (c *Calc) looksChanges(id string, looks map[[2]int]*look) ot.Edit {
 	node := c.tree.Node(looksID(id))
 	var cells []ot.Cell
 	for at, l := range looks {
-		raw := mustJSON(l)
+		raw := l.marshal()
 		if node == nil || string(node.Grid.Cell(at[0], at[1])) != string(raw) {
 			cells = append(cells, ot.Cell{Row: at[0], Col: at[1], Fields: raw})
 		}
