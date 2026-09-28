@@ -25,6 +25,13 @@ type Source interface {
 	Name(name string, sheet int) (string, bool)
 }
 
+// Rows is a source or a book that knows the rows it hides, which SUBTOTAL
+// and AGGREGATE may leave out.
+type Rows interface {
+	// Hidden tells whether a row is hidden, and whether by a filter.
+	Hidden(sheet, row int) (hidden, filtered bool)
+}
+
 // Options tunes an engine.
 type Options struct {
 	Locale   *Locale
@@ -46,6 +53,9 @@ type Engine struct {
 	areas    map[[2]int][]areaReader
 	wide     map[int][]areaReader
 	volatile map[Pos]bool
+	// subtotals are the formulas calling SUBTOTAL or AGGREGATE, which
+	// read whether rows are hidden.
+	subtotals map[Pos]bool
 	// arrays gives each cell of an array formula its anchor.
 	arrays map[Pos]Pos
 
@@ -111,7 +121,7 @@ func NewEngine(src Source, opt Options) *Engine {
 		opt.Rand = rand.Float64
 	}
 	return &Engine{src: src, opt: opt, formulas: map[Pos]*cellFormula{}, readers: map[Pos][]*cellFormula{},
-		areas: map[[2]int][]areaReader{}, wide: map[int][]areaReader{}, volatile: map[Pos]bool{}, arrays: map[Pos]Pos{}}
+		areas: map[[2]int][]areaReader{}, wide: map[int][]areaReader{}, volatile: map[Pos]bool{}, subtotals: map[Pos]bool{}, arrays: map[Pos]Pos{}}
 }
 
 // Len is the number of formulas.
@@ -135,12 +145,15 @@ func (e *Engine) Set(p Pos, f string, array *Area) {
 		return
 	}
 	cf := &cellFormula{pos: p, expr: e.bind(x, p.Sheet), array: array}
-	volatile := false
-	e.reads(x, p.Sheet, 0, func(a Area3) { cf.reads = append(cf.reads, a) }, &volatile)
+	e.reads(x, p.Sheet, 0, func(a Area3) { cf.reads = append(cf.reads, a) }, func(name string) {
+		if f := functions[name]; f != nil && f.volatile {
+			e.volatile[p] = true
+		}
+		if name == "SUBTOTAL" || name == "AGGREGATE" {
+			e.subtotals[p] = true
+		}
+	})
 	e.formulas[p] = cf
-	if volatile {
-		e.volatile[p] = true
-	}
 	for _, a := range cf.reads {
 		if a.R1 == a.R2 && a.C1 == a.C2 {
 			q := Pos{a.Sheet, a.R1, a.C1}
@@ -168,6 +181,7 @@ func (e *Engine) Set(p Pos, f string, array *Area) {
 
 func (e *Engine) unindex(p Pos, cf *cellFormula) {
 	delete(e.volatile, p)
+	delete(e.subtotals, p)
 	for _, a := range cf.reads {
 		if a.R1 == a.R2 && a.C1 == a.C2 {
 			q := Pos{a.Sheet, a.R1, a.C1}
@@ -203,8 +217,8 @@ func (e *Engine) unindex(p Pos, cf *cellFormula) {
 }
 
 // reads calls f with the areas a formula reads, those of the names it
-// uses included, and tells whether it calls a volatile function.
-func (e *Engine) reads(x Expr, sheet, depth int, f func(Area3), volatile *bool) {
+// uses included, and calls calls with the functions it calls.
+func (e *Engine) reads(x Expr, sheet, depth int, f func(Area3), calls func(name string)) {
 	switch x := x.(type) {
 	case refExpr:
 		r := x.ref
@@ -230,24 +244,22 @@ func (e *Engine) reads(x Expr, sheet, depth int, f func(Area3), volatile *bool) 
 		}
 		if text, ok := e.src.Name(x.name, s); ok && depth < maxDepth {
 			if y, err := Parse(text); err == nil {
-				e.reads(y, s, depth+1, f, volatile)
+				e.reads(y, s, depth+1, f, calls)
 			}
 		}
 	case unaryExpr:
-		e.reads(x.x, sheet, depth, f, volatile)
+		e.reads(x.x, sheet, depth, f, calls)
 	case percentExpr:
-		e.reads(x.x, sheet, depth, f, volatile)
+		e.reads(x.x, sheet, depth, f, calls)
 	case spillExpr:
-		e.reads(x.x, sheet, depth, f, volatile)
+		e.reads(x.x, sheet, depth, f, calls)
 	case binaryExpr:
-		e.reads(x.x, sheet, depth, f, volatile)
-		e.reads(x.y, sheet, depth, f, volatile)
+		e.reads(x.x, sheet, depth, f, calls)
+		e.reads(x.y, sheet, depth, f, calls)
 	case callExpr:
-		if fn := functions[x.name]; fn != nil && fn.volatile {
-			*volatile = true
-		}
+		calls(x.name)
 		for _, a := range x.args {
-			e.reads(a, sheet, depth, f, volatile)
+			e.reads(a, sheet, depth, f, calls)
 		}
 	}
 }
@@ -304,8 +316,11 @@ type Result struct {
 
 // Recalc calculates again the formulas that read the cells changed, those
 // that read them in turn, and the volatile ones, and returns the cells
-// whose values changed. Cells whose formula was set count as changed.
-// Formulas the engine cannot calculate keep their values.
+// whose values changed. Cells whose formula was set count as changed; a
+// change in column 0 is that of a row hidden or shown, which reaches the
+// subtotals reading the row, or all the rows of the sheet in row 0.
+// Formulas the engine cannot calculate keep
+// their values.
 func (e *Engine) Recalc(changed []Pos) []Result {
 	e.filled, e.names = map[Pos]Value{}, map[string]Expr{}
 	e.bounds = map[int]Area{}
@@ -324,6 +339,10 @@ func (e *Engine) Recalc(changed []Pos) []Result {
 		}
 	}
 	for _, p := range changed {
+		if p.Col == 0 {
+			e.subtotalsOf(p, mark)
+			continue
+		}
 		if cf := e.formulas[p]; cf != nil {
 			mark(cf)
 			continue
@@ -446,6 +465,20 @@ func (e *Engine) readersOf(p Pos, f func(*cellFormula)) {
 	for _, r := range e.wide[p.Sheet] {
 		if r.area.Contains(p.Row, p.Col) {
 			f(r.f)
+		}
+	}
+}
+
+// subtotalsOf calls f with the subtotals reading the row of p, any row of
+// its sheet in row 0.
+func (e *Engine) subtotalsOf(p Pos, f func(*cellFormula)) {
+	for q := range e.subtotals {
+		cf := e.formulas[q]
+		for _, a := range cf.reads {
+			if a.Sheet == p.Sheet && (p.Row == 0 || a.R1 <= p.Row && p.Row <= a.R2) {
+				f(cf)
+				break
+			}
 		}
 	}
 }
@@ -622,6 +655,21 @@ func (b *engineBook) Name(name string, sheet int) (Expr, bool) {
 	}
 	b.names[key] = x
 	return x, x != nil
+}
+
+// Hidden tells whether a row is hidden, and whether by a filter, when the
+// source knows.
+func (b *engineBook) Hidden(sheet, row int) (hidden, filtered bool) {
+	if r, ok := b.src.(Rows); ok {
+		return r.Hidden(sheet, row)
+	}
+	return false, false
+}
+
+// Subtotal tells whether a cell calls SUBTOTAL or AGGREGATE, which those
+// leave out.
+func (b *engineBook) Subtotal(sheet, row, col int) bool {
+	return b.subtotals[Pos{sheet, row, col}]
 }
 
 // HasFormula tells whether a cell holds a formula, for ISFORMULA.

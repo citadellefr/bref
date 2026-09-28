@@ -30,6 +30,9 @@ type Calc struct {
 	defined []Name
 	engine  *formula.Engine
 	bounds  map[int][2]int
+	// filters are, by sheet, the rows under the first of a filter that
+	// filters columns, read once per calculation.
+	filters map[int]*formula.Area
 }
 
 // NewCalc keeps the formulas of the tree calculated. Their values are
@@ -71,7 +74,7 @@ func (c *Calc) rebuild() {
 	if book := c.tree.Node("book"); book != nil {
 		_ = json.Unmarshal(book.Attrs["names"], &c.defined)
 	}
-	c.bounds = map[int][2]int{}
+	c.bounds, c.filters = map[int][2]int{}, map[int]*formula.Area{}
 	c.engine = formula.NewEngine(c, c.opt)
 	for h, id := range c.sheets {
 		n := c.tree.Node(id)
@@ -584,15 +587,17 @@ func (f *follow) recalc(e ot.Edit) {
 	c := f.c
 	var changed []formula.Pos
 	seen := map[formula.Pos]bool{}
+	c.filters = map[int]*formula.Area{}
+	// cells in column 0 are rows hidden or shown, row 0 all of a sheet's
 	add := func(id string, row, col int) {
 		h, ok := c.handles[id]
 		p := formula.Pos{Sheet: h, Row: row, Col: col}
-		if !ok || row == 0 || col == 0 || seen[p] {
+		if !ok || row == 0 && col != 0 || seen[p] {
 			return
 		}
 		seen[p] = true
 		changed = append(changed, p)
-		if n := c.tree.Node(id); n != nil && n.Grid != nil {
+		if n := c.tree.Node(id); col > 0 && n != nil && n.Grid != nil {
 			c.set(p, n.Grid.Cell(row, col))
 		}
 	}
@@ -600,8 +605,12 @@ func (f *follow) recalc(e ot.Edit) {
 		switch {
 		case ch.Op == ot.OpCel || ch.Op == ot.OpNew && ch.Cells != nil:
 			for _, cell := range ch.Cells {
-				add(ch.ID, cell.Row, cell.Col)
+				if cell.Row > 0 {
+					add(ch.ID, cell.Row, cell.Col)
+				}
 			}
+		case ch.Op == ot.OpSet && ch.Attrs[filterKey] != nil:
+			add(ch.ID, 0, 0)
 		case ch.Op == ot.OpIns || ch.Op == ot.OpRem:
 			// what moved may read other cells now: ROW(), OFFSET
 			h := c.handles[ch.ID]
@@ -687,6 +696,25 @@ func (c *Calc) Size(sheet int) (int, int) {
 	rows, cols := g.Bounds()
 	c.bounds[sheet] = [2]int{rows, cols}
 	return rows, cols
+}
+
+// Hidden tells whether a row is hidden, and whether by the sheet's filter.
+func (c *Calc) Hidden(sheet, row int) (hidden, filtered bool) {
+	g := c.grid(sheet)
+	if g == nil || !bytes.Contains(g.Cell(row, 0), []byte(`"hide":true`)) {
+		return false, false
+	}
+	a, ok := c.filters[sheet]
+	if !ok {
+		var f AutoFilter
+		if raw := c.tree.Node(c.sheets[sheet]).Attrs[filterKey]; raw != nil && json.Unmarshal(raw, &f) == nil && len(f.Cols) > 0 {
+			if area, ok := formula.ParseArea(f.Ref); ok {
+				a = &area
+			}
+		}
+		c.filters[sheet] = a
+	}
+	return true, a != nil && a.R1 < row && row <= a.R2
 }
 
 func (c *Calc) Sheets(first, last string) ([]int, bool) {

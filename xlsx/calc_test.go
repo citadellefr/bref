@@ -122,6 +122,26 @@ func TestCalcBounds(t *testing.T) {
 	}
 }
 
+// Subtotals leave out the rows hidden by a filter, and 109 those hidden
+// by hand too.
+func TestCalcSubtotal(t *testing.T) {
+	tree, c := calcTree(t)
+	edit(t, tree, c, ot.Edit{{Op: ot.OpCel, ID: "S1", Cells: []ot.Cell{
+		cell(1, 3, `{"f":"SUBTOTAL(9,A1:A2)"}`), cell(2, 3, `{"f":"SUBTOTAL(109,A1:A2)"}`)}}})
+	edit(t, tree, c, ot.Edit{{Op: ot.OpCel, ID: "S1", Cells: []ot.Cell{cell(2, 0, `{"hide":true}`)}}})
+	if got := fieldsAt(tree, "S1", 1, 3) + fieldsAt(tree, "S1", 2, 3); got != `{"f":"SUBTOTAL(9,A1:A2)","v":3}{"f":"SUBTOTAL(109,A1:A2)","v":1}` {
+		t.Fatalf("hidden by hand: %s", got)
+	}
+	edit(t, tree, c, ot.Edit{{Op: ot.OpSet, ID: "S1", Attrs: ot.Values{filterKey: json.RawMessage(`{"ref":"A1:A3","cols":[{"col":0,"vals":["1"]}]}`)}}})
+	if got := fieldsAt(tree, "S1", 1, 3); got != `{"f":"SUBTOTAL(9,A1:A2)","v":1}` {
+		t.Fatalf("filtered: %s", got)
+	}
+	edit(t, tree, c, ot.Edit{{Op: ot.OpCel, ID: "S1", Cells: []ot.Cell{cell(2, 0, `{"hide":null}`)}}})
+	if got := fieldsAt(tree, "S1", 1, 3) + fieldsAt(tree, "S1", 2, 3); got != `{"f":"SUBTOTAL(9,A1:A2)","v":3}{"f":"SUBTOTAL(109,A1:A2)","v":3}` {
+		t.Fatalf("shown: %s", got)
+	}
+}
+
 func TestCalcSheets(t *testing.T) {
 	tree, c := calcTree(t)
 	edit(t, tree, c, ot.Edit{{Op: ot.OpSet, ID: "S1", Attrs: ot.Values{"name": json.RawMessage(`"Ventes 2024"`)}}})

@@ -11,6 +11,13 @@ import (
 type sheetSource struct {
 	*mapBook
 	formulas map[Pos]string
+	// hidden are the rows of the first sheet hidden, true those by a filter.
+	hidden map[int]bool
+}
+
+func (s *sheetSource) Hidden(sheet, row int) (bool, bool) {
+	filtered, hidden := s.hidden[row]
+	return sheet == 0 && hidden, sheet == 0 && filtered
 }
 
 func (s *sheetSource) Value(p Pos) Value {
@@ -48,7 +55,7 @@ func (s *sheetSource) set(e *Engine, cell string, v any) []Result {
 }
 
 func newSource() (*sheetSource, *Engine) {
-	s := &sheetSource{mapBook: book(nil), formulas: map[Pos]string{}}
+	s := &sheetSource{mapBook: book(nil), formulas: map[Pos]string{}, hidden: map[int]bool{}}
 	e := NewEngine(s, Options{Now: func() time.Time { return time.Date(2024, 12, 25, 12, 0, 0, 0, time.UTC) }})
 	return s, e
 }
@@ -100,6 +107,34 @@ func TestEngine(t *testing.T) {
 	// volatile functions are calculated each time
 	s.set(e, "I1", "=NOW()")
 	if got := results(s.set(e, "Z9", 1)); got != "[]" {
+		t.Fatal(got)
+	}
+}
+
+func TestEngineSubtotal(t *testing.T) {
+	s, e := newSource()
+	for i, v := range []int{1, 2, 4, 8} {
+		s.set(e, fmt.Sprintf("A%d", i+1), v)
+	}
+	s.set(e, "A5", "=SUBTOTAL(9,A1:A4)")
+	s.set(e, "B1", "=SUBTOTAL(9,A1:A5)")
+	s.set(e, "B2", "=SUBTOTAL(109,A1:A5)")
+	s.set(e, "B3", "=AGGREGATE(9,5,A1:A5)")
+	s.set(e, "B4", "=SUM(A1:A5)")
+	if got := results(e.Recalc([]Pos{{0, 1, 1}})); got != "[]" {
+		t.Fatal(got)
+	}
+	// a row hidden by hand, then one by a filter
+	s.hidden[2] = false
+	out := e.Recalc([]Pos{{0, 2, 0}})
+	if got := results(out); got != "[B2=13 B3=28]" {
+		t.Fatal(got)
+	}
+	for _, r := range out {
+		s.cells[[3]int{r.Sheet, r.Row, r.Col}] = r.Value
+	}
+	s.hidden[3] = true
+	if got := results(e.Recalc([]Pos{{0, 3, 0}})); got != "[B1=11 B2=9 B3=20 B4=26 A5=11]" {
 		t.Fatal(got)
 	}
 }

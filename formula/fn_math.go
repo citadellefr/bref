@@ -2,6 +2,7 @@ package formula
 
 import (
 	"math"
+	"slices"
 	"strconv"
 )
 
@@ -344,13 +345,125 @@ func init() {
 			if !ok || n < 1 || n > 111 {
 				return ErrValue
 			}
-			return functions[name].call(c, args[1:])
+			skip := skipNested | skipFiltered
+			if n > 100 {
+				skip = skipNested | skipHidden
+			}
+			refs, err := c.visible(args[1:], skip, true)
+			if err != nil {
+				return *err
+			}
+			return functions[name].call(c, refs)
+		}},
+		"AGGREGATE": {min: 3, max: 255, call: func(c *Context, args []Expr) Value {
+			n, err := c.number(c.Eval(args[0]))
+			if err != nil {
+				return *err
+			}
+			o, err := c.number(c.Eval(args[1]))
+			if err != nil {
+				return *err
+			}
+			if n < 1 || n >= float64(len(aggregates)+1) || o < 0 || o >= float64(len(aggregateSkips)) {
+				return ErrValue
+			}
+			name, skip := aggregates[int(n)-1], aggregateSkips[int(o)]
+			values := args[2:]
+			if n >= 14 {
+				if len(args) != 4 {
+					return ErrValue
+				}
+				values = args[2:3]
+			}
+			refs, err := c.visible(values, skip, false)
+			if err != nil {
+				return *err
+			}
+			if n >= 14 {
+				refs = append(refs, args[3])
+			}
+			return functions[name].call(c, refs)
 		}},
 	})
 }
 
 var subtotals = map[int]string{1: "AVERAGE", 2: "COUNT", 3: "COUNTA", 4: "MAX", 5: "MIN", 6: "PRODUCT",
 	7: "STDEV", 8: "STDEVP", 9: "SUM", 10: "VAR", 11: "VARP"}
+
+var aggregates = []string{"AVERAGE", "COUNT", "COUNTA", "MAX", "MIN", "PRODUCT", "STDEV.S", "STDEV.P", "SUM",
+	"VAR.S", "VAR.P", "MEDIAN", "MODE.SNGL", "LARGE", "SMALL", "PERCENTILE.INC", "QUARTILE.INC",
+	"PERCENTILE.EXC", "QUARTILE.EXC"}
+
+// What SUBTOTAL and AGGREGATE leave out.
+const (
+	skipNested = 1 << iota
+	skipHidden
+	skipFiltered
+	skipErrors
+)
+
+// aggregateSkips are the options of AGGREGATE.
+var aggregateSkips = []int{skipNested, skipNested | skipHidden, skipNested | skipErrors,
+	skipNested | skipHidden | skipErrors, 0, skipHidden, skipErrors, skipHidden | skipErrors}
+
+// visible are the arguments of SUBTOTAL and AGGREGATE as the function
+// they call reads them: arrays whose cells left out are blank. Only
+// references are taken when refs.
+func (c *Context) visible(args []Expr, skip int, refs bool) ([]Expr, *Value) {
+	out := make([]Expr, 0, len(args))
+	for _, a := range args {
+		v := c.Eval(a)
+		switch {
+		case v.Type == TypeRange:
+			for _, r := range v.Refs {
+				out = append(out, valueExpr{c.visibleCells(r, skip)})
+			}
+		case refs && v.Type == TypeError:
+			return nil, &v
+		case refs:
+			return nil, &ErrValue
+		case skip&skipErrors != 0 && v.Type == TypeArray:
+			t := &Table{Rows: v.Arr.Rows, Cols: v.Arr.Cols, Cells: slices.Clone(v.Arr.Cells)}
+			for i, x := range t.Cells {
+				if x.Type == TypeError {
+					t.Cells[i] = Value{}
+				}
+			}
+			out = append(out, valueExpr{Value{Type: TypeArray, Arr: t}})
+		case skip&skipErrors != 0 && v.Type == TypeError:
+			out = append(out, valueExpr{})
+		default:
+			out = append(out, valueExpr{v})
+		}
+	}
+	return out, nil
+}
+
+// visibleCells are the values of an area, blank in the cells left out.
+func (c *Context) visibleCells(a Area3, skip int) Value {
+	t := c.table(a)
+	rows, _ := c.Book.(Rows)
+	nested, _ := c.Book.(interface {
+		Subtotal(sheet, row, col int) bool
+	})
+	for i := range t.Rows {
+		row := a.R1 + i
+		out := false
+		if rows != nil && skip&(skipHidden|skipFiltered) != 0 {
+			hidden, filtered := rows.Hidden(a.Sheet, row)
+			out = skip&skipHidden != 0 && hidden || skip&skipFiltered != 0 && filtered
+		}
+		for j := range t.Cols {
+			k := i*t.Cols + j
+			x := t.Cells[k]
+			if x.Type != TypeBlank && (out || skip&skipErrors != 0 && x.Type == TypeError ||
+				skip&skipNested != 0 && nested != nil && nested.Subtotal(a.Sheet, row, a.C1+j)) {
+				t.Cells[k] = Value{}
+			}
+		}
+	}
+	return Value{Type: TypeArray, Arr: t}
+}
 
 // roundWith rounds n to d decimal places with f, on the number as Excel
 // shows it, 15 significant digits, so that 2.675 rounds up.
