@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-09-28
 
 - `xlsx`: list validations shown in the sheets' "lists", moved and
   renamed with the cells and sheets they read.
@@ -13,11 +13,19 @@
   their columns.
 - `formula`: formulas calculated in cells other than the one they were
   written for; `Context.Result`.
+- `formula`: SUBTOTAL leaves out the rows a filter hides, and those hidden
+  by hand from 101 on, and the subtotals it reads; AGGREGATE and its
+  options. A source may tell the rows it hides (`Rows`); a change in
+  column 0 calculates again the subtotals reading the row.
+- `xlsx`: ranges read the cells typed below those they read last, which
+  they left out once the sheet's size was known.
 - Dart: lists of values offered in cells, values out of them refused as
   Excel does; conditional formats painted; filters set, applied and
   cleared from arrows on their first row, Ctrl+Shift+L.
 - Dart: the editors laid out for phones: a ribbon of one row whose tab is
   chosen from a list, slides in a strip under the slide, pinch to zoom.
+- Dart: AutoSum of a filtered list writes SUBTOTAL; the status bar counts
+  the cells shown; AGREGAT.
 
 ## 0.3.1 — 2026-09-28
 
