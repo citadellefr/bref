@@ -162,6 +162,11 @@ class SheetViewState extends State<SheetView> {
   _Drag? _drag;
   final _texts = _TextCache();
 
+  /// The fingers on the sheet, and the gap between two of them and the
+  /// zoom when they came, for a pinch.
+  final _touches = <int, Offset>{};
+  (double, double)? _pinch;
+
   SheetLayout get _layout => widget.book.layout(widget.sheet);
 
   double get _z => widget.zoom;
@@ -351,6 +356,15 @@ class SheetViewState extends State<SheetView> {
       return;
     }
     final touch = e.kind == PointerDeviceKind.touch;
+    if (touch) {
+      _touches[e.pointer] = e.localPosition;
+      if (_touches.length == 2) {
+        final [a, b] = _touches.values.toList();
+        _pinch = ((a - b).distance, _z);
+        _drag = null;
+        return;
+      }
+    }
     final t = _target(e.localPosition);
     final shift = HardwareKeyboard.instance.isShiftPressed;
     final s = widget.selection;
@@ -397,6 +411,13 @@ class SheetViewState extends State<SheetView> {
   }
 
   void _move(PointerMoveEvent e) {
+    if (_touches.containsKey(e.pointer)) _touches[e.pointer] = e.localPosition;
+    final pinch = _pinch;
+    if (pinch != null && _touches.length >= 2) {
+      final [a, b, ...] = _touches.values.toList();
+      if (pinch.$1 > 0) widget.onZoom?.call((pinch.$2 * (a - b).distance / pinch.$1).clamp(0.1, 4));
+      return;
+    }
     final d = _drag;
     if (d == null) return;
     final s = widget.selection;
@@ -434,7 +455,13 @@ class SheetViewState extends State<SheetView> {
     }
   }
 
+  void _lift(PointerEvent e) {
+    _touches.remove(e.pointer);
+    if (_touches.length < 2) _pinch = null;
+  }
+
   void _up(PointerUpEvent e) {
+    _lift(e);
     final d = _drag;
     _drag = null;
     if (d == null) return;
@@ -486,6 +513,7 @@ class SheetViewState extends State<SheetView> {
           onPointerDown: _down,
           onPointerMove: _move,
           onPointerUp: _up,
+          onPointerCancel: _lift,
           child: GestureDetector(
             onDoubleTap: widget.onEdit,
             onLongPressStart: (e) {

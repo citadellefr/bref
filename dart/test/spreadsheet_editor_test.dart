@@ -1,4 +1,6 @@
 import 'package:bref/bref.dart';
+import 'package:bref/src/excel/sheet_view.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -40,8 +42,8 @@ void main() {
     await tester.pump();
   }
 
-  Future<void> open(WidgetTester tester, {bool csv = false}) async {
-    tester.view.physicalSize = const Size(1400, 900);
+  Future<void> open(WidgetTester tester, {bool csv = false, Size size = const Size(1400, 900)}) async {
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     hub = FakeHub.tree(workbook(csv: csv));
@@ -198,6 +200,34 @@ void main() {
     await settle(tester);
     expect(hub.doc['S1']!.attributes['filter'], isNull);
     expect(hub.doc['S1']!.grid!.cell(3, 0), isNull);
+    await finish(tester);
+  });
+
+  testWidgets('zooms with two fingers', (tester) async {
+    await open(tester);
+    expect(find.text('100 %'), findsOneWidget);
+    final center = tester.getCenter(find.byType(SheetView));
+    final a = await tester.startGesture(center - const Offset(50, 0), kind: PointerDeviceKind.touch);
+    final b = await tester.startGesture(center + const Offset(50, 0), kind: PointerDeviceKind.touch);
+    await a.moveBy(const Offset(-50, 0));
+    await b.moveBy(const Offset(50, 0));
+    await a.up();
+    await b.up();
+    await tester.pump();
+    expect(find.text('200 %'), findsOneWidget);
+    await finish(tester);
+  });
+
+  testWidgets('fits a phone, its tabs in a list', (tester) async {
+    await open(tester, size: const Size(390, 844));
+    await tester.tap(find.text('Accueil'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Données').last);
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Filtrer (Ctrl+Maj+L)'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.expand_less));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Filtrer (Ctrl+Maj+L)'), findsNothing);
     await finish(tester);
   });
 

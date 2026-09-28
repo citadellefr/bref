@@ -17,8 +17,8 @@ void main() {
     await tester.pump();
   }
 
-  Future<void> open(WidgetTester tester, String fixture) async {
-    tester.view.physicalSize = const Size(1400, 900);
+  Future<void> open(WidgetTester tester, String fixture, {Size size = const Size(1400, 900)}) async {
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     hub = FakeHub.tree(Edit.fromJson(jsonDecode(File('../testdata/pptx/$fixture.json').readAsStringSync()))!);
@@ -41,6 +41,13 @@ void main() {
     await open(tester, 'shp-shapes');
     expect(find.text('Accueil'), findsOneWidget);
     expect(find.text('Insertion'), findsOneWidget);
+    expect(find.text('Diapositive 1 sur 2'), findsOneWidget);
+    await finish(tester);
+  });
+
+  testWidgets('fits a phone', (tester) async {
+    await open(tester, 'shp-shapes', size: const Size(390, 844));
+    expect(find.text('Accueil'), findsOneWidget);
     expect(find.text('Diapositive 1 sur 2'), findsOneWidget);
     await finish(tester);
   });

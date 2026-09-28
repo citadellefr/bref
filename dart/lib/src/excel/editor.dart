@@ -1465,6 +1465,8 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
         ? _s.saved
         : _s.saving;
     final style = Theme.of(context).textTheme.labelSmall;
+    // a phone shows the sum alone, and zooms with the fingers
+    final phone = MediaQuery.sizeOf(context).width < phoneWidth;
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainer,
       child: SizedBox(
@@ -1478,13 +1480,20 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
           const SizedBox(width: 4),
           Expanded(child: Text(state, style: style, overflow: TextOverflow.ellipsis)),
           if (count > 1) ...[
-            if (numbers > 0) Text('${_s.average} : ${number(sum / numbers)}', style: style),
+            if (numbers > 0 && !phone) Text('${_s.average} : ${number(sum / numbers)}', style: style),
             const SizedBox(width: 16),
-            Text('${_s.countLabel} : $count', style: style),
-            const SizedBox(width: 16),
+            if (!phone) Text('${_s.countLabel} : $count', style: style),
+            if (!phone) const SizedBox(width: 16),
             if (numbers > 0) Text('${_s.sum} : ${number(sum)}', style: style),
             const SizedBox(width: 16),
           ],
+          if (phone) const SizedBox(width: 8) else ..._zoomControls(style),
+        ]),
+      ),
+    );
+  }
+
+  List<Widget> _zoomControls(TextStyle? style) => [
           Text(_s.language, style: style),
           const SizedBox(width: 8),
           SizedBox(
@@ -1498,10 +1507,7 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
           ),
           Text('${(_zoom * 100).round()} %', style: style),
           const SizedBox(width: 12),
-        ]),
-      ),
-    );
-  }
+        ];
 }
 
 /// A number format with a decimal more, or less: 0 becomes 0.0, 0.00 %

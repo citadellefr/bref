@@ -481,6 +481,23 @@ class _PresentationEditorState extends State<PresentationEditor> {
     final deck = _current;
     final slide = _slide;
     _slideId = slide?.id;
+    final canvas = ColoredBox(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: slide == null
+          ? const SizedBox.expand()
+          : SlideCanvas(
+              session: _session,
+              deck: deck,
+              slide: slide,
+              painter: _paint,
+              selection: _selection,
+              focusNode: _canvasFocus,
+              strings: _s,
+              onShortcut: _shortcut,
+            ),
+    );
+    // a phone gives the slide its whole width, the thumbnails in a row below
+    final phone = MediaQuery.sizeOf(context).width < phoneWidth;
     return Focus(
       autofocus: true,
       onKeyEvent: (_, e) => _shortcut(e) ? KeyEventResult.handled : KeyEventResult.ignored,
@@ -493,6 +510,14 @@ class _PresentationEditorState extends State<PresentationEditor> {
               Expanded(
                 child: _sorter
                     ? _Sorter(editor: this)
+                    : phone
+                    ? Column(
+                        children: [
+                          Expanded(child: canvas),
+                          const Divider(height: 1),
+                          SizedBox(height: 88, child: _Thumbnails(editor: this, horizontal: true)),
+                        ],
+                      )
                     : Row(
                         children: [
                           SizedBox(width: 168, child: _Thumbnails(editor: this)),
@@ -500,23 +525,7 @@ class _PresentationEditorState extends State<PresentationEditor> {
                           Expanded(
                             child: Column(
                               children: [
-                                Expanded(
-                                  child: ColoredBox(
-                                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                                    child: slide == null
-                                        ? const SizedBox.expand()
-                                        : SlideCanvas(
-                                            session: _session,
-                                            deck: deck,
-                                            slide: slide,
-                                            painter: _paint,
-                                            selection: _selection,
-                                            focusNode: _canvasFocus,
-                                            strings: _s,
-                                            onShortcut: _shortcut,
-                                          ),
-                                  ),
-                                ),
+                                Expanded(child: canvas),
                                 if (_notes && slide != null) _notesPane(context, slide),
                               ],
                             ),
@@ -845,6 +854,7 @@ class _PresentationEditorState extends State<PresentationEditor> {
         ? _s.saved
         : _s.saving;
     final style = Theme.of(context).textTheme.labelSmall;
+    final phone = MediaQuery.sizeOf(context).width < phoneWidth;
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainer,
       child: SizedBox(
@@ -853,17 +863,18 @@ class _PresentationEditorState extends State<PresentationEditor> {
           const SizedBox(width: 12),
           Text(slides.isEmpty ? '' : _s.slideOf(i + 1, slides.length), style: style),
           const SizedBox(width: 16),
-          Text(_s.language, style: style),
-          const SizedBox(width: 16),
+          if (!phone) ...[Text(_s.language, style: style), const SizedBox(width: 16)],
           Icon(
             _session.saveError != null ? Icons.error_outline : (_session.saved ? Icons.cloud_done_outlined : Icons.cloud_upload_outlined),
             size: 14,
           ),
           const SizedBox(width: 4),
           Expanded(child: Text(state, style: style, overflow: TextOverflow.ellipsis)),
-          IconButton(iconSize: 16, tooltip: _s.notes, onPressed: () => setState(() => _notes = !_notes), icon: const Icon(Icons.notes)),
-          IconButton(iconSize: 16, tooltip: _s.normal, onPressed: () => setState(() => _sorter = false), icon: const Icon(Icons.view_sidebar_outlined)),
-          IconButton(iconSize: 16, tooltip: _s.slideSorter, onPressed: () => setState(() => _sorter = true), icon: const Icon(Icons.grid_view)),
+          if (!phone) ...[
+            IconButton(iconSize: 16, tooltip: _s.notes, onPressed: () => setState(() => _notes = !_notes), icon: const Icon(Icons.notes)),
+            IconButton(iconSize: 16, tooltip: _s.normal, onPressed: () => setState(() => _sorter = false), icon: const Icon(Icons.view_sidebar_outlined)),
+            IconButton(iconSize: 16, tooltip: _s.slideSorter, onPressed: () => setState(() => _sorter = true), icon: const Icon(Icons.grid_view)),
+          ],
           IconButton(iconSize: 16, tooltip: _s.startSlideShow, onPressed: () => _slideshow(fromCurrent: true), icon: const Icon(Icons.slideshow)),
           const SizedBox(width: 8),
         ]),
@@ -959,15 +970,19 @@ class _SlideThumbnailPainter extends CustomPainter {
 
 /// The slides at the left, in order: click to edit one, drag to move it.
 class _Thumbnails extends StatelessWidget {
-  const _Thumbnails({required this.editor});
+  const _Thumbnails({required this.editor, this.horizontal = false});
 
   final _PresentationEditorState editor;
+
+  /// Whether the thumbnails go in a row, as on a phone.
+  final bool horizontal;
 
   @override
   Widget build(BuildContext context) {
     final slides = editor._current.slides;
     final editable = !editor._session.readOnly;
     return ReorderableListView.builder(
+      scrollDirection: horizontal ? Axis.horizontal : Axis.vertical,
       buildDefaultDragHandles: editable,
       itemCount: slides.length,
       onReorderItem: (from, to) => editor._edit(DeckEdits(editor._current).reorder(slides[from], to)),
@@ -978,7 +993,10 @@ class _Thumbnails extends StatelessWidget {
           onTap: () => editor._goTo(slide),
           onSecondaryTapDown: editable ? (d) => _menu(context, d.globalPosition, slide) : null,
           onLongPressStart: editable ? (d) => _menu(context, d.globalPosition, slide) : null,
-          child: _Thumbnail(editor: editor, slide: slide, number: i + 1, selected: slide.id == editor._slide?.id),
+          child: SizedBox(
+            width: horizontal ? 132 : null,
+            child: _Thumbnail(editor: editor, slide: slide, number: i + 1, selected: slide.id == editor._slide?.id),
+          ),
         );
       },
     );

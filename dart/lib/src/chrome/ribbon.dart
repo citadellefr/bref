@@ -17,8 +17,9 @@ class RibbonGroup {
 }
 
 /// The ribbon of Office: File first, which opens the backstage, then the
-/// tabs; the commands of the tab chosen below. On a narrow screen the
-/// groups scroll.
+/// tabs; the commands of the tab chosen below. On a phone, as Office there,
+/// the tab is chosen from a list and its commands are icons in one row
+/// that scrolls, which may be folded away.
 class Ribbon extends StatefulWidget {
   const Ribbon({
     super.key,
@@ -45,11 +46,87 @@ class Ribbon extends StatefulWidget {
   State<Ribbon> createState() => _RibbonState();
 }
 
+/// The width below which the editors are laid out for a phone.
+const phoneWidth = 600.0;
+
 class _RibbonState extends State<Ribbon> {
   late var _tab = widget.initialTab;
+  var _open = true;
 
   @override
   Widget build(BuildContext context) {
+    return LayoutBuilder(builder: (context, box) => box.maxWidth < phoneWidth ? _compact(context) : _full(context));
+  }
+
+  Widget _compact(BuildContext context) {
+    final theme = Theme.of(context);
+    final tab = widget.tabs[_tab.clamp(0, widget.tabs.length - 1)];
+    return Material(
+      color: theme.colorScheme.surfaceContainerLow,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: 44,
+            child: Row(
+              children: [
+                ...widget.leading,
+                PopupMenuButton<int>(
+                  tooltip: '',
+                  onSelected: (i) {
+                    if (i < 0) return widget.onFile();
+                    setState(() {
+                      _tab = i;
+                      _open = true;
+                    });
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(value: -1, child: Text(widget.fileLabel)),
+                    for (var i = 0; i < widget.tabs.length; i++) PopupMenuItem(value: i, child: Text(widget.tabs[i].label)),
+                  ],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(children: [
+                      Text(tab.label, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: theme.colorScheme.primary)),
+                      Icon(Icons.arrow_drop_down, color: theme.colorScheme.primary),
+                    ]),
+                  ),
+                ),
+                const Spacer(),
+                ...widget.trailing,
+                IconButton(
+                  icon: Icon(_open ? Icons.expand_less : Icons.expand_more),
+                  onPressed: () => setState(() => _open = !_open),
+                ),
+              ],
+            ),
+          ),
+          if (_open)
+            Container(
+              height: 48,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface,
+                border: Border(bottom: BorderSide(color: theme.dividerColor)),
+              ),
+              child: _Compact(
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  children: [
+                    for (final (i, g) in tab.groups.indexed) ...[
+                      if (i > 0) const VerticalDivider(width: 9, indent: 8, endIndent: 8),
+                      for (final item in g.items) Center(child: item),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _full(BuildContext context) {
     final theme = Theme.of(context);
     final tab = widget.tabs[_tab.clamp(0, widget.tabs.length - 1)];
     return Material(
@@ -94,6 +171,17 @@ class _RibbonState extends State<Ribbon> {
       ),
     );
   }
+}
+
+/// Tells the commands below to show as on a phone: icons alone, large
+/// enough for a finger.
+class _Compact extends InheritedWidget {
+  const _Compact({required super.child});
+
+  static bool of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<_Compact>() != null;
+
+  @override
+  bool updateShouldNotify(_Compact oldWidget) => false;
 }
 
 class _TabButton extends StatelessWidget {
@@ -184,7 +272,9 @@ class RibbonButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final tip = shortcut == null ? label : '$label ($shortcut)';
     final color = onPressed == null ? scheme.onSurface.withValues(alpha: 0.38) : scheme.onSurface;
-    final content = large
+    final content = _Compact.of(context)
+        ? SizedBox(width: 40, height: 40, child: Center(child: IconTheme(data: IconThemeData(size: 22, color: color), child: icon)))
+        : large
         ? SizedBox(
             width: 64,
             height: 66,
@@ -267,8 +357,8 @@ class RibbonDropdown extends StatelessWidget {
     return Tooltip(
       message: label,
       child: SizedBox(
-        width: width,
-        height: 24,
+        width: _Compact.of(context) ? width.clamp(0, 110) : width,
+        height: _Compact.of(context) ? 36 : 24,
         child: PopupMenuButton<String>(
           enabled: onChanged != null,
           onSelected: onChanged,
