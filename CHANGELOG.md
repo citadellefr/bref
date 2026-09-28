@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1 — 2026-09-28
+
+- Pictures inserted in Word documents: the hub keeps a picture a client
+  sends (`Hub.AddPicture`, PNG, JPEG or GIF of 20 MB at most) and the
+  document writes it with its drawing when one shows it; `WordEditor`
+  inserts it, picked and sent by the host (`onPicture`), no wider than
+  the text.
+
 ## 0.5.0 — 2026-09-28
 
 - `docx`: Word documents read into trees and written back, only the parts
