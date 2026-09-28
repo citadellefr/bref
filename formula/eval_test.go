@@ -397,3 +397,21 @@ func TestEval(t *testing.T) {
 		}
 	}
 }
+
+func TestEvalMoved(t *testing.T) {
+	b := book(map[string]any{"A1": 1, "A2": 2, "B2": 10, "A3": 3})
+	x, err := Parse(`A1*$B$2+ROW()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range []struct{ dr, dc, row int }{{0, 0, 1}, {1, 0, 2}, {2, 0, 3}} {
+		c := &Context{Book: b, Row: m.row, Col: 3, Locale: French, MoveRows: m.dr, MoveCols: m.dc}
+		if got, want := c.scalar(c.Eval(x)).show(), strconv.Itoa((m.dr+1)*10+m.row); got != want {
+			t.Errorf("moved %d rows: %s, want %s", m.dr, got, want)
+		}
+	}
+	c := &Context{Book: b, Row: 1, Col: 1, Locale: French, MoveRows: -1}
+	if got := c.scalar(c.Eval(x)).show(); got != "#REF!" {
+		t.Errorf("moved off the sheet: %s", got)
+	}
+}

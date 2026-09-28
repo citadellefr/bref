@@ -38,22 +38,28 @@ func Translate(f string, dr, dc int) (string, error) {
 		if r.Invalid {
 			return false
 		}
-		a := r.Area
-		ok := true
-		if !a.Cols {
-			ok = move(&a.R1, a.AbsR1, dr, MaxRows) && move(&a.R2, a.AbsR2, dr, MaxRows)
-		}
-		if !a.Rows {
-			ok = ok && move(&a.C1, a.AbsC1, dc, MaxCols) && move(&a.C2, a.AbsC2, dc, MaxCols)
-		}
+		a, ok := r.Area.translate(dr, dc)
 		if !ok {
 			r.Invalid = true
 			return true
 		}
 		changed := a != r.Area
-		r.Area = a.normal()
+		r.Area = a
 		return changed
 	})
+}
+
+// translate is the area copied dr rows down and dc columns right, false
+// when it leaves the sheet.
+func (a Area) translate(dr, dc int) (Area, bool) {
+	ok := true
+	if !a.Cols {
+		ok = move(&a.R1, a.AbsR1, dr, MaxRows) && move(&a.R2, a.AbsR2, dr, MaxRows)
+	}
+	if !a.Rows {
+		ok = ok && move(&a.C1, a.AbsC1, dc, MaxCols) && move(&a.C2, a.AbsC2, dc, MaxCols)
+	}
+	return a.normal(), ok
 }
 
 func move(i *int, abs bool, d, limit int) bool {

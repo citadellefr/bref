@@ -33,7 +33,11 @@ type Context struct {
 	Now             time.Time
 	Rand            func() float64
 	Date1904        bool
-	depth           int
+	// MoveRows and MoveCols move the relative references of a formula
+	// written for another cell, as those of conditional formats are for
+	// the first cell they format.
+	MoveRows, MoveCols int
+	depth              int
 }
 
 // ErrUnsupported is what a formula gives when it calls a function the
@@ -125,9 +129,16 @@ func (c *Context) ref(r *Ref) Value {
 			return ErrRef
 		}
 	}
+	area := r.Area
+	if c.MoveRows != 0 || c.MoveCols != 0 {
+		var ok bool
+		if area, ok = area.translate(c.MoveRows, c.MoveCols); !ok {
+			return ErrRef
+		}
+	}
 	v := Value{Type: TypeRange}
 	for _, s := range sheets {
-		v.Refs = append(v.Refs, Area3{s, r.Area})
+		v.Refs = append(v.Refs, Area3{s, area})
 	}
 	return v
 }
