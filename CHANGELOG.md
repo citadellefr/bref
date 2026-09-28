@@ -1,17 +1,33 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-09-28
 
 - `docx`: Word documents read into trees and written back, only the parts
   that changed: blocks of the body, headers and footers; paragraphs as
   flows (formatting of paragraphs and characters as keys, the XML read
   riding along, hyperlinks, fields, revisions and content controls around
   runs kept); tables, rows and cells; sections; styles, lists, theme and
-  settings for the editor. 2 285 documents of the corpus rewritten and
-  2 257 edited: no error added to the Open XML SDK validator's. The hub
-  serves `.docx`, `.docm` and `.dotx`.
+  settings for the editor; pictures and text boxes described. 2 285
+  documents of the corpus rewritten and 2 257 edited: no error added to
+  the Open XML SDK validator's. The hub serves `.docx`, `.docm` and
+  `.dotx`.
+- `docx`: what a client asks for without XML is written by the server:
+  page breaks, page numbers and other fields, links; the styles and lists
+  of Word a file lacks (Titre 1, puces, numéros) offered, and written into
+  it when a paragraph takes them.
+- Dart: `WordEditor`. Pages laid out as Word lays them out: styles and
+  their inheritance, lists, tab stops and leaders, tables with their
+  styles, merged cells and borders, sections, columns, headers and
+  footers with their page numbers, pictures inline and floating, text
+  boxes, page breaks, widows and orphans, paragraphs kept together.
+  Typing and the keys of Word, formatting of characters and paragraphs,
+  the style gallery, bullets and numbers, tables inserted and edited,
+  margins, orientation, paper size and columns, headers, footers and page
+  numbers, zoom; the carets of the others. A keystroke lays out again
+  only the paragraphs it changed: 30 ms in 150 pages. The 2 276 documents
+  of the corpus laid out without error.
 - The relationships named across parts are shared by `pptx` and `docx`
-  (`internal/partrel`).
+  (`internal/partrel`); the validator compares errors wherever they moved.
 
 ## 0.4.0 — 2026-09-28
 

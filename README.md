@@ -25,7 +25,7 @@ license.
 | Package | Role |
 |---|---|
 | [`bref`](.) | The hub: one room per open document, edits rebased and relayed to everyone connected, saves after a pause. Serves Word documents (`.docx`, `.docm`, `.dotx`), presentations (`.pptx`, `.pptm`, `.ppsx`), workbooks (`.xlsx`, `.xlsm`, `.xltx`) and CSV files (`.csv`), whose formulas it calculates, plain text files (`.txt`), and the pictures of documents. |
-| [`dart`](dart) | The Flutter package: the session with the hub, the same `ot` algorithms, and the editors. |
+| [`dart`](dart) | The Flutter package: the session with the hub, the same `ot` algorithms, and the editors of Word, Excel and PowerPoint documents, Word's with its own page layout. |
 | [`ot`](ot) | Edits and how concurrent edits are reconciled. A document is a tree of nodes (slides, shapes, the body of a text file), each with a type, attributes and possibly text; text is a flow of characters and paragraph marks, changed by deltas. The Dart package runs the same algorithms, checked against shared vectors. |
 | [`drawingml`](drawingml) | The DrawingML of all three formats: colors, fills, lines, geometries, positions and text bodies, read as JSON and text flows, written back as patches of the XML they came from. |
 | [`pptx`](pptx) | Presentations as trees: masters, layouts, slides, shapes and notes. Only what changed is written back; a copied shape keeps its pictures and links. |
