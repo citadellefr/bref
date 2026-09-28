@@ -6,6 +6,8 @@
   French version of Excel reads them (leading zeros kept), written back
   with their separator, quotes, encoding and line breaks: a file saved
   unedited is the same. The hub serves `.csv`.
+- Dart: the Excel editor keeps a CSV file to its one sheet and says that
+  only the values shown are saved.
 - `xlsx`, `formula`, `ot`: a sheet of 100 000 × 20 opens with 40 % less
   memory and in a third less time; 10 000 formulas are calculated again
   in less than half the time. The targets are measured in CI.

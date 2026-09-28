@@ -24,6 +24,7 @@ class Workbook {
       if (theme['major'] is String) majorFont = theme['major']! as String;
     }
     date1904 = tree['book']?.attributes['date1904'] == true;
+    csv = tree['book']?.attributes['csv'] == true;
   }
 
   final Tree tree;
@@ -34,6 +35,10 @@ class Workbook {
   var minorFont = 'Calibri';
   var majorFont = 'Calibri Light';
   var date1904 = false;
+
+  /// Whether the workbook is a CSV file: one sheet, whose values alone are
+  /// saved.
+  var csv = false;
   final _styles = <String, CellStyle>{};
   final _layouts = <String, (Node, SheetLayout)>{};
 

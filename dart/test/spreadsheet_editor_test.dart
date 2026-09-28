@@ -5,18 +5,19 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'fakes.dart';
 
-Edit workbook() => Edit([
-  Change.create(const Node(id: 'book', type: 'book', key: 'V')),
+Edit workbook({bool csv = false}) => Edit([
+  Change.create(Node(id: 'book', type: 'book', key: 'V', attributes: {if (csv) 'csv': true})),
   Change.create(Node(
     id: 'S1',
     type: 'sheet',
     parent: 'book',
     key: 'K',
     attributes: const {'name': 'Feuil1'},
-    grid: Grid(const [
-      Cell(1, 1, {'v': 2}),
-      Cell(2, 1, {'v': 3}),
-      Cell(3, 1, {'f': 'SUM(A1:A2)', 'v': 5}),
+    grid: Grid([
+      const Cell(1, 1, {'v': 2}),
+      const Cell(2, 1, {'v': 3}),
+      const Cell(3, 1, {'f': 'SUM(A1:A2)', 'v': 5}),
+      if (csv) const Cell(1, 2, {'src': '2,0', 'v': 2}),
     ]),
   )),
   Change.create(const Node(id: 'x0', type: 'xf', key: 'V', attributes: {
@@ -33,11 +34,11 @@ void main() {
     await tester.pump();
   }
 
-  Future<void> open(WidgetTester tester) async {
+  Future<void> open(WidgetTester tester, {bool csv = false}) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    hub = FakeHub.tree(workbook());
+    hub = FakeHub.tree(workbook(csv: csv));
     session = DocSession(hub.connect)..start();
     addTearDown(session.dispose);
     await tester.pumpWidget(MaterialApp(home: Scaffold(body: SpreadsheetEditor(session: session, title: 'classeur.xlsx'))));
@@ -103,6 +104,32 @@ void main() {
     await tester.tap(find.byTooltip('Insérer une feuille').last);
     await settle(tester);
     expect(find.text('Feuil2'), findsOneWidget);
+    await finish(tester);
+  });
+
+  testWidgets('keeps a CSV file to one sheet, and says what it saves', (tester) async {
+    await open(tester, csv: true);
+    expect(find.textContaining('Fichier CSV'), findsOneWidget);
+    expect(find.byIcon(Icons.add_circle_outline), findsNothing);
+
+    // a copy leaves behind the text the cell was read from
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String?;
+      return call.method == 'Clipboard.getData' ? {'text': copied} : null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await settle(tester);
+    expect(cell(1, 3), {'v': 2});
     await finish(tester);
   });
 }

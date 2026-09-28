@@ -887,6 +887,7 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
         banner(Icons.cloud_off, _s.offline, scheme.tertiaryContainer, action: _session.retry, label: _s.retry),
       if (_session.status == DocStatus.closed) banner(Icons.block, '${_session.failure ?? ''}', scheme.errorContainer),
       if (_session.readOnly) banner(Icons.visibility_outlined, _s.readOnly, scheme.secondaryContainer),
+      if (_wb.csv) banner(Icons.info_outline, _s.csvNotice, scheme.surfaceContainerHighest),
     ];
   }
 
@@ -1053,7 +1054,7 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
               items: [
                 PopupMenuItem(value: 'rows', child: Text(_s.insertRows)),
                 PopupMenuItem(value: 'cols', child: Text(_s.insertColumns)),
-                PopupMenuItem(value: 'sheet', child: Text(_s.insertSheet)),
+                PopupMenuItem(value: 'sheet', enabled: !_wb.csv, child: Text(_s.insertSheet)),
               ],
               onSelected: (v) => v == 'sheet' ? _newSheet() : _insert(rows: v == 'rows'),
             ),
@@ -1102,7 +1103,7 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
         ]),
         RibbonTab(_s.insert, [
           RibbonGroup(_s.cells, [
-            RibbonButton(icon: const Icon(Icons.post_add), label: _s.insertSheet, large: true, onPressed: editable || !_session.readOnly ? _newSheet : null),
+            RibbonButton(icon: const Icon(Icons.post_add), label: _s.insertSheet, large: true, onPressed: !_session.readOnly && !_wb.csv ? _newSheet : null),
             RibbonButton(icon: const Icon(Icons.table_rows_outlined), label: _s.insertRows, onPressed: editable ? () => _insert(rows: true) : null),
             RibbonButton(icon: const Icon(Icons.view_column_outlined), label: _s.insertColumns, onPressed: editable ? () => _insert(rows: false) : null),
           ]),
@@ -1222,7 +1223,7 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
             },
           ),
         ),
-        IconButton(iconSize: 18, tooltip: _s.insertSheet, onPressed: editable ? _newSheet : null, icon: const Icon(Icons.add_circle_outline)),
+        if (!_wb.csv) IconButton(iconSize: 18, tooltip: _s.insertSheet, onPressed: editable ? _newSheet : null, icon: const Icon(Icons.add_circle_outline)),
       ]),
     );
   }
@@ -1234,7 +1235,7 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
       context: context,
       position: RelativeRect.fromLTRB(at.dx, at.dy, at.dx, at.dy),
       items: [
-        PopupMenuItem(value: 'insert', enabled: editable, child: Text(_s.insertSheet)),
+        PopupMenuItem(value: 'insert', enabled: editable && !_wb.csv, child: Text(_s.insertSheet)),
         PopupMenuItem(value: 'delete', enabled: editable && _visibleSheets.length > 1, child: Text(_s.deleteSheet)),
         PopupMenuItem(value: 'rename', enabled: editable, child: Text(_s.renameSheet)),
         PopupMenuItem(value: 'hide', enabled: editable && _visibleSheets.length > 1, child: Text(_s.hideSheet)),

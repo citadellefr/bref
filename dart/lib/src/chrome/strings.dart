@@ -172,6 +172,7 @@ class BrefStrings {
   String get connecting => 'Connexion…';
   String saveFailed(String reason) => 'Échec de l’enregistrement : $reason';
   String get readOnly => 'Lecture seule';
+  String get csvNotice => 'Fichier CSV : seules les valeurs affichées sont enregistrées, sans formules ni mise en forme';
   String get retry => 'Réessayer';
   String get notesPrompt => 'Cliquez pour ajouter des commentaires';
   String refused(String reason) => 'Modification refusée : $reason';

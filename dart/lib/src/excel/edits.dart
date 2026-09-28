@@ -294,7 +294,8 @@ class SheetEdits {
     final grid = sheet.grid ?? const Grid.empty();
     return Clip(area, [
       for (final c in grid.rows(area.top, area.bottom))
-        if (c.row > 0 && c.col > 0 && area.contains(c.row, c.col)) Cell(c.row - area.top, c.col - area.left, {...c.fields}..remove('m')),
+        if (c.row > 0 && c.col > 0 && area.contains(c.row, c.col))
+          Cell(c.row - area.top, c.col - area.left, {...c.fields}..remove('m')..remove('src')),
     ]);
   }
 
