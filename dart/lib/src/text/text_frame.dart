@@ -362,7 +362,7 @@ class ParagraphLayout {
     if (!empty && bu.isNotEmpty && bu != 'none' && bu != 'blip') {
       var symbol = bu.startsWith('char:') ? bu.substring(5) : _number(bu, number ?? 1);
       final font = para['buFont'];
-      if (font != null && font != 'tx') symbol = _symbol(ctx.fonts.typeface(font), symbol);
+      if (font != null && font != 'tx') symbol = symbolChar(ctx.fonts.typeface(font), symbol);
       final size = ctx.size(lead);
       final buSz = para['buSz'] ?? 'tx';
       final bulletSize = buSz.startsWith('p')
@@ -372,7 +372,7 @@ class ParagraphLayout {
           : size;
       final style = ctx.style({
         ...lead,
-        if (font != null && font != 'tx' && !_symbolFonts.contains(ctx.fonts.typeface(font))) 'font': font,
+        if (font != null && font != 'tx' && !symbolFonts.contains(ctx.fonts.typeface(font))) 'font': font,
       }, lineFactor).copyWith(fontSize: bulletSize, decoration: TextDecoration.none);
       final buClr = para['buClr'];
       final color = buClr == null || buClr == 'tx' ? null : ctx.colors.resolve(_json(buClr));
@@ -529,12 +529,12 @@ String _number(String bullet, int n) {
   return core;
 }
 
-const _symbolFonts = {'Wingdings', 'Wingdings 2', 'Wingdings 3', 'Symbol', 'Webdings'};
+const symbolFonts = {'Wingdings', 'Wingdings 2', 'Wingdings 3', 'Symbol', 'Webdings'};
 
 /// The Unicode character a bullet in a symbol font shows: files name it by
 /// its code in the font, or that code in the private use area.
-String _symbol(String font, String char) {
-  if (!_symbolFonts.contains(font) || char.isEmpty) return char;
+String symbolChar(String font, String char) {
+  if (!symbolFonts.contains(font) || char.isEmpty) return char;
   var code = char.codeUnitAt(0);
   if (code >= 0xF000 && code <= 0xF0FF) code -= 0xF000;
   return (font == 'Symbol' ? _symbolChars : _wingdingsChars)[code] ?? '•';
