@@ -88,6 +88,8 @@ type Document struct {
 	spaces map[string]string
 	// parts are the headers and footers, by node id.
 	parts map[string]*part
+	// fileStyles are the ids of the styles styles.xml defines.
+	fileStyles map[string]bool
 }
 
 type part struct {

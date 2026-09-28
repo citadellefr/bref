@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"net/url"
 	"reflect"
 	"slices"
 	"strconv"
@@ -49,6 +50,13 @@ type writer struct {
 	// headerRef is the relationship id of the part of a header or footer
 	// node, from the main part.
 	headerRef func(id string) string
+	// rels are those of the part being written.
+	rels *partrel.Writer
+	// styles are the builtin styles paragraphs took, lists the builtin
+	// lists they started by the numbers given them, in numbering.
+	styles    []string
+	lists     map[string]string
+	numbering *xmldom.Document
 	// force rewrites every part, for tests.
 	force bool
 }
@@ -81,10 +89,12 @@ func (w *writer) save() error {
 			return err
 		}
 	}
-	if len(created) == 0 && w.same("body") && w.sameAttrs("doc") {
-		return nil
+	if len(created) > 0 || !w.same("body") || !w.sameAttrs("doc") {
+		if err := w.document(); err != nil {
+			return err
+		}
 	}
-	return w.document()
+	return w.definitions()
 }
 
 func (w *writer) freeName(pattern string) string {
@@ -164,12 +174,17 @@ func (w *writer) put(doc *xmldom.Document, name, contentType string, rels *partr
 	if !rw.Changed && (rels != nil || len(rw.List) == 0) {
 		return nil
 	}
-	relsName := opc.RelsName(name)
+	return w.putRels(rw)
+}
+
+// putRels writes the relationships of a part.
+func (w *writer) putRels(rw *partrel.Writer) error {
+	name := opc.RelsName(rw.Source)
 	out := opc.MarshalRelationships(rw.List)
-	if w.pkg.Has(relsName) {
-		return w.pkg.Set(relsName, out)
+	if w.pkg.Has(name) {
+		return w.pkg.Set(name, out)
 	}
-	return w.pkg.Add(relsName, typeRels, out)
+	return w.pkg.Add(name, typeRels, out)
 }
 
 // revisions are the elements of tracked changes, whose ids Word wants
@@ -277,11 +292,12 @@ func (w *writer) header(n *ot.Node, name string, rels *partrel.Rels) error {
 		doc = &xmldom.Document{Prolog: []byte(xmlHeader), Root: root}
 	}
 	doc.Root.Content = nil
+	w.rels = partrel.NewWriter(name, rels, w.d.names.Lookup)
 	w.blocks(n.ID, doc.Root, w.marks(n.ID))
 	if rels == nil && len(doc.Root.Content) == 0 {
 		doc.Root.Append(newW(doc.Root, "p"))
 	}
-	return w.put(doc, name, contentType, rels, spaces, nil, read)
+	return w.put(doc, name, contentType, rels, spaces, w.rels, read)
 }
 
 // document rewrites the body of the main part and its last section.
@@ -306,6 +322,7 @@ func (w *writer) document() error {
 	}
 	sect := child(body, "sectPr")
 	body.Content = nil
+	w.rels = rw
 	w.blocks("body", body, w.marks("body"))
 	root := w.tree.Node("doc")
 	if s := w.section(str(root.Attrs, "sx"), root.Attrs["sect"], body); s != nil {
@@ -458,7 +475,7 @@ func (w *writer) paragraph(para paragraph, in *xmldom.Element, ids marks) *xmldo
 	}
 	var items []item
 	for _, o := range para.ops {
-		items = append(items, item{text: o.Insert, attrs: o.Attrs, wrap: wraps(o.Attrs)})
+		items = append(items, item{text: o.Insert, attrs: o.Attrs, wrap: wrapsOf(o.Attrs)})
 	}
 	w.inline(p, items, 0, false)
 	return p
@@ -494,6 +511,12 @@ func (w *writer) pPr(mark ot.Attrs, in *xmldom.Element) *xmldom.Element {
 			run[k] = v
 		}
 	}
+	if id := para["pstyle"]; id != "" && !w.d.fileStyles[id] {
+		w.useStyle(id)
+	}
+	if n := para["num"]; builtinLists[n] != "" {
+		para["num"] = w.list(n)
+	}
 	writeProps(pPr, paraProps, old, para)
 	rPr := child(pPr, "rPr")
 	if rPr == nil && len(run) > 0 {
@@ -523,12 +546,76 @@ type item struct {
 	wrap  []string
 }
 
-func wraps(a ot.Attrs) []string {
+// wrapsOf are the elements around an item: those it was read in, or those
+// a client asks for with "field" and "link" and the writer makes, named
+// after a NUL.
+func wrapsOf(a ot.Attrs) []string {
 	var out []string
 	if s := a["wrap"]; s != "" {
 		_ = json.Unmarshal([]byte(s), &out)
+		return out
 	}
-	return out
+	if f := fieldInstr(a["field"]); f != "" {
+		return []string{"\x00field" + f}
+	}
+	if l := a["link"]; linkTarget(l) != "" || anchorOf(l) != "" {
+		return []string{"\x00link" + l}
+	}
+	return nil
+}
+
+// fields are the fields a client may put in a document.
+var fields = map[string]bool{"PAGE": true, "NUMPAGES": true, "SECTIONPAGES": true, "DATE": true, "TIME": true, "FILENAME": true, "AUTHOR": true, "TITLE": true}
+
+// fieldInstr are the instructions of a field a client asks for, "" unless
+// they are one of fields with switches only.
+func fieldInstr(s string) string {
+	s = strings.TrimSpace(s)
+	name, _, _ := strings.Cut(s, " ")
+	if !fields[strings.ToUpper(name)] || len(s) > 200 || strings.ContainsAny(s, "<>&\"\x00\n") {
+		return ""
+	}
+	return " " + s + " "
+}
+
+// linkTarget is the URL of a link a client asks for, "" unless it is one
+// of the web or of mail.
+func linkTarget(s string) string {
+	u, err := url.Parse(s)
+	if err != nil || len(s) > 2000 || u.Host == "" && u.Scheme != "mailto" {
+		return ""
+	}
+	switch u.Scheme {
+	case "http", "https", "mailto", "ftp":
+		return u.String()
+	}
+	return ""
+}
+
+// anchorOf is the bookmark a link inside the document goes to.
+func anchorOf(s string) string {
+	if a, ok := strings.CutPrefix(s, "#"); ok && name(a) && len(a) <= 40 {
+		return a
+	}
+	return ""
+}
+
+// shell is the element a wrap stands for, without content.
+func (w *writer) shell(wrap string, in *xmldom.Element) *xmldom.Element {
+	switch {
+	case strings.HasPrefix(wrap, "\x00field"):
+		return newW(in, "fldSimple", "instr", strings.TrimPrefix(wrap, "\x00field"))
+	case strings.HasPrefix(wrap, "\x00link"):
+		target := strings.TrimPrefix(wrap, "\x00link")
+		h := newW(in, "hyperlink")
+		if a := anchorOf(target); a != "" {
+			setAttr(h, "anchor", a)
+		} else if w.rels != nil {
+			h.Set("r:id", w.rels.Ensure(partrel.Rel{Type: relHyperlink, Target: linkTarget(target), External: true}))
+		}
+		return h
+	}
+	return w.d.fragment(wrap)
 }
 
 // described are the keys that describe an Object or its wrappers, which
@@ -566,7 +653,7 @@ func (w *writer) inline(parent *xmldom.Element, items []item, depth int, deleted
 			for j < len(items) && len(items[j].wrap) > depth && items[j].wrap[depth] == it.wrap[depth] {
 				j++
 			}
-			shell := w.d.fragment(it.wrap[depth])
+			shell := w.shell(it.wrap[depth], parent)
 			if shell == nil {
 				w.inline(parent, items[i:j], depth+1, deleted)
 			} else {
@@ -650,6 +737,17 @@ func (w *writer) run(items []item, in *xmldom.Element, deleted bool) *xmldom.Ele
 				if e := w.d.fragment(o); e != nil {
 					r.Append(e)
 				}
+			}
+			continue
+		}
+		if br := it.attrs["br"]; br == "page" || br == "column" || br == "textWrapping" {
+			flush()
+			for range utf8.RuneCountInString(it.text) {
+				e := newW(r, "br")
+				if br != "textWrapping" {
+					setAttr(e, "type", br)
+				}
+				r.Append(e)
 			}
 			continue
 		}

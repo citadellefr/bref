@@ -380,3 +380,94 @@ func TestMedia(t *testing.T) {
 		t.Error("unknown media served")
 	}
 }
+
+// What a client asks for by keys, without XML: breaks, fields and links
+// the writer makes.
+func TestClientObjects(t *testing.T) {
+	d, tree := open(t, `<w:p><w:r><w:t>A</w:t></w:r></w:p>`)
+	n := firstText(t, tree)
+	apply(t, d, tree, ot.Edit{{Op: ot.OpTxt, ID: n.ID, Text: ot.Delta{
+		{Insert: Object, Attrs: ot.Attrs{"br": "page"}},
+		{Insert: "1", Attrs: ot.Attrs{"field": "PAGE", "b": "1"}},
+		{Insert: "site", Attrs: ot.Attrs{"link": "https://example.org/a?b=1"}},
+		{Insert: "ici", Attrs: ot.Attrs{"link": "#_Toc1"}},
+		{Insert: "x", Attrs: ot.Attrs{"field": `INCLUDETEXT "c:\\secret"`}},
+		{Insert: "y", Attrs: ot.Attrs{"link": "javascript:alert(1)"}},
+	}}})
+	saved, err := d.Save(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := partOf(t, saved, "word/document.xml")
+	for _, want := range []string{
+		`<w:r><w:br w:type="page"/></w:r>`,
+		`<w:fldSimple w:instr=" PAGE "><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t>1</w:t></w:r></w:fldSimple>`,
+		`<w:hyperlink r:id="rId5"><w:r><w:t>site</w:t></w:r></w:hyperlink>`,
+		`<w:hyperlink w:anchor="_Toc1"><w:r><w:t>ici</w:t></w:r></w:hyperlink>`,
+		`<w:r><w:t>xyA</w:t></w:r>`,
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("missing %s in\n%s", want, doc)
+		}
+	}
+	if rels := partOf(t, saved, "word/_rels/document.xml.rels"); !strings.Contains(rels, `Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.org/a?b=1" TargetMode="External"`) {
+		t.Errorf("rels\n%s", rels)
+	}
+	_, again, err := Open(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flow := firstText(t, again).Text.Delta()
+	if flow[0].Attrs["br"] != "page" || flow[1].Attrs["field"] != "PAGE" || flow[2].Attrs["link"] != "https://example.org/a?b=1" {
+		t.Errorf("read back %v", flow)
+	}
+}
+
+func TestBuiltinStylesAndLists(t *testing.T) {
+	d, tree := open(t, `<w:p><w:r><w:t>A</w:t></w:r></w:p>`)
+	var styles map[string]Style
+	json.Unmarshal(tree.Node("doc").Attrs["styles"], &styles)
+	if !styles["Title"].Builtin || styles["Heading1"].Builtin {
+		t.Fatalf("builtin styles: Title %+v, Heading1 %+v", styles["Title"], styles["Heading1"])
+	}
+	var lists map[string]Numbering
+	json.Unmarshal(tree.Node("doc").Attrs["numbering"], &lists)
+	if lists["bullet"].Levels[0].Fmt != "bullet" || lists["decimal"].Levels[1].Fmt != "lowerLetter" {
+		t.Fatalf("builtin lists %+v", lists)
+	}
+	n := firstText(t, tree)
+	apply(t, d, tree, ot.Edit{{Op: ot.OpTxt, ID: n.ID, Text: ot.Delta{
+		{Insert: "Titre\nUn", Attrs: nil},
+		{Insert: "\n", Attrs: ot.Attrs{"num": "bullet", "lvl": "0"}},
+		{Insert: "Deux", Attrs: nil},
+		{Insert: "\n", Attrs: ot.Attrs{"num": "bullet", "lvl": "1"}},
+		{Retain: 1},
+		{Retain: 1, Attrs: ot.Attrs{"pstyle": "Title"}},
+	}}})
+	saved, err := d.Save(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := partOf(t, saved, "word/document.xml")
+	if strings.Count(doc, `<w:numId w:val="1"/>`) != 2 || !strings.Contains(doc, `<w:pStyle w:val="Title"/>`) {
+		t.Errorf("document\n%s", doc)
+	}
+	numbering := partOf(t, saved, "word/numbering.xml")
+	if !strings.Contains(numbering, `<w:abstractNum w:abstractNumId="0">`) || !strings.Contains(numbering, `<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>`) {
+		t.Errorf("numbering\n%s", numbering)
+	}
+	if !strings.Contains(partOf(t, saved, "word/styles.xml"), `w:styleId="Title"`) {
+		t.Error("the style was not written")
+	}
+	if !strings.Contains(partOf(t, saved, "word/_rels/document.xml.rels"), `relationships/numbering" Target="numbering.xml"`) {
+		t.Error("no relationship to the numbering")
+	}
+	_, again, err := Open(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	json.Unmarshal(again.Node("doc").Attrs["styles"], &styles)
+	if styles["Title"].Builtin {
+		t.Error("the style written is still builtin")
+	}
+}

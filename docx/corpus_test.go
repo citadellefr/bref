@@ -233,7 +233,14 @@ func edits(tree *ot.Tree) ot.Edit {
 			mark[k] = v
 		}
 	}
-	delta := ot.Delta{{Insert: "Bref ", Attrs: ot.Attrs{"b": "1", "color": "C00000"}}}
+	delta := ot.Delta{
+		{Insert: "Bref ", Attrs: ot.Attrs{"b": "1", "color": "C00000", "link": "https://citadelle.fr/"}},
+		{Insert: "1", Attrs: ot.Attrs{"field": "PAGE"}},
+		{Insert: Object, Attrs: ot.Attrs{"br": "page"}},
+		{Insert: "\n", Attrs: ot.Attrs{"pstyle": "Title"}},
+		{Insert: "•", Attrs: nil},
+		{Insert: "\n", Attrs: ot.Attrs{"num": "bullet", "lvl": "0"}},
+	}
 	if first := len([]rune(strings.SplitN(concat(flow), "\n", 2)[0])); first > 6 {
 		delta = append(delta, ot.Op{Retain: 3, Attrs: ot.Attrs{"i": "1", "u": "single"}}, ot.Op{Insert: "\n", Attrs: mark})
 	}

@@ -29,6 +29,9 @@ type Style struct {
 	Tc       map[string]json.RawMessage `json:"tc,omitempty"`
 	// Cond is the formatting of parts of tables: "firstRow", "band1Horz"…
 	Cond map[string]*Style `json:"cond,omitempty"`
+	// Builtin is a style of Word the file does not define, written into it
+	// when a paragraph takes it.
+	Builtin bool `json:"builtin,omitempty"`
 }
 
 // Level is a level of a list.
@@ -90,11 +93,25 @@ func (r *reader) styles(attrs ot.Values, rels *partrel.Rels) {
 			styles[attr(s, "styleId")] = readStyle(s)
 		}
 	}
+	r.d.fileStyles = map[string]bool{}
+	for id := range styles {
+		r.d.fileStyles[id] = true
+	}
+	for _, b := range builtinStyles {
+		if styles[b.id] == nil {
+			st := readStyle(builtin(b.xml))
+			st.Builtin = true
+			styles[b.id] = st
+		}
+	}
 	put("styles", styles)
 
 	numbering := map[string]*Numbering{}
 	if root := r.optional(rels.OfType(r.d.main, relNumbering)); root != nil {
 		numbering = readNumbering(root, styles)
+	}
+	for name, xml := range builtinLists {
+		numbering[name] = &Numbering{Abstract: "bref-" + name, Levels: levelsOf(builtin(xml))}
 	}
 	put("numbering", numbering)
 
@@ -207,6 +224,19 @@ func readLevel(l *xmldom.Element) *Level {
 	return lv
 }
 
+// levelsOf reads the levels of an abstract numbering.
+func levelsOf(a *xmldom.Element) []*Level {
+	out := make([]*Level, 9)
+	for _, l := range a.Elements() {
+		if l.Space == NS && l.Local == "lvl" {
+			if i, err := strconv.Atoi(attr(l, "ilvl")); err == nil && 0 <= i && i < 9 {
+				out[i] = readLevel(l)
+			}
+		}
+	}
+	return out
+}
+
 // readNumbering reads the lists, their overrides applied, and those whose
 // abstract numbering is a numbering style's resolved.
 func readNumbering(root *xmldom.Element, styles map[string]*Style) map[string]*Numbering {
@@ -238,15 +268,7 @@ func readNumbering(root *xmldom.Element, styles map[string]*Style) map[string]*N
 				}
 			}
 		}
-		out := make([]*Level, 9)
-		for _, l := range a.Elements() {
-			if l.Space == NS && l.Local == "lvl" {
-				if i, err := strconv.Atoi(attr(l, "ilvl")); err == nil && 0 <= i && i < 9 {
-					out[i] = readLevel(l)
-				}
-			}
-		}
-		return id, out
+		return id, levelsOf(a)
 	}
 	out := map[string]*Numbering{}
 	for id, n := range nums {
