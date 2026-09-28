@@ -24,8 +24,8 @@ func cell(r, c int, fields string) ot.Cell {
 }
 
 // Every workbook of the corpus takes the same edits: cells set, a format
-// made, cells merged, rows frozen, a sheet renamed, one added before the
-// others and the last one deleted. When BREF_EDITED is set, the packages
+// made, cells merged, rows frozen, a filter set, a sheet renamed, one added
+// before the others and the last one deleted. When BREF_EDITED is set, the packages
 // are written there for the validator.
 func TestCorpusEdits(t *testing.T) {
 	out := os.Getenv("BREF_EDITED")
@@ -64,7 +64,8 @@ func TestCorpusEdits(t *testing.T) {
 				cell(4, 4, `{"m":[2,2],"v":"fusion","f":null,"e":null,"s":null,"rich":null}`),
 			}},
 			{Op: ot.OpSet, ID: first, Attrs: ot.Values{"name": json.RawMessage(`"Édité"`), "frozen": json.RawMessage(`{"r":1}`),
-				"tab": json.RawMessage(`{"rgb":"00B050"}`), "zoom": json.RawMessage(`150`)}},
+				"tab": json.RawMessage(`{"rgb":"00B050"}`), "zoom": json.RawMessage(`150`),
+				filterKey: json.RawMessage(`{"ref":"A1:E6","cols":[{"col":1,"vals":["3,5","x"],"blank":true}]}`)}},
 			{Op: ot.OpNew, ID: "added", Type: "sheet", Parent: "book", Key: ot.KeyBetween("", all[0].Key),
 				Attrs: ot.Values{"name": json.RawMessage(`"Nouvelle"`)}, Cells: []ot.Cell{
 					cell(1, 1, `{"v":"a\r\nb <&> _x0041_"}`),
@@ -115,6 +116,9 @@ func TestCorpusEdits(t *testing.T) {
 		}
 		if got := string(ed.Grid.Cell(4, 4)); got != `{"m":[2,2],"v":"fusion"}` {
 			t.Fatalf("%s: merged cell read back as %s", f, got)
+		}
+		if got := string(ed.Attrs[filterKey]); got != `{"ref":"A1:E6","cols":[{"col":1,"vals":["3,5","x"],"blank":true}]}` {
+			t.Fatalf("%s: filter read back as %s", f, got)
 		}
 		if out != "" {
 			rel, _ := filepath.Rel(filepath.Join("..", "corpus", "files"), f)

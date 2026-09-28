@@ -23,7 +23,7 @@ const (
 // editable are the attributes a change may set, by node type.
 var editable = map[string]map[string]bool{
 	"book":  {"names": true},
-	"sheet": {"name": true, "state": true, "frozen": true, "grid": true, "rtl": true, "zoom": true, "tab": true, "dw": true, "dh": true},
+	"sheet": {"name": true, "state": true, "frozen": true, "grid": true, "rtl": true, "zoom": true, "tab": true, "dw": true, "dh": true, "filter": true},
 	"kept":  {"name": true, "state": true},
 }
 
@@ -136,6 +136,8 @@ func (d *Document) checkAttrs(typ string, attrs ot.Values) bool {
 			ok = json.Unmarshal(v, &h) == nil && h > 0 && h <= maxHeight
 		case "names":
 			ok = true
+		case filterKey:
+			ok = checkFilter(v)
 		}
 		if !ok {
 			return false

@@ -132,6 +132,9 @@ func (w *writer) settings(root *xmldom.Element, old, attrs ot.Values) {
 			pr.Insert(colorElement(pr, "tabColor", &c), sheetPrOrder)
 		}
 	}
+	if changed(filterKey) {
+		writeFilter(root, old[filterKey], attrs[filterKey])
+	}
 	if changed("dw") || changed("dh") {
 		f := child(root, "sheetFormatPr", worksheetOrder)
 		var dw, dh float64

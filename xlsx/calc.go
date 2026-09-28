@@ -171,15 +171,35 @@ func (f *follow) attr(id, key string, v any) {
 	_ = json.Unmarshal(raw, v)
 }
 
-// setList sets a list attribute of a sheet, removed when it is empty.
-func setList[T any](f *follow, id, key string, v []T) {
+// set sets an attribute of a sheet.
+func (f *follow) set(id, key string, raw json.RawMessage) {
 	if f.sheets[id] == nil {
 		f.sheets[id] = ot.Values{}
 	}
-	f.sheets[id][key] = json.RawMessage("null")
+	f.sheets[id][key] = raw
+}
+
+// setList sets a list attribute of a sheet, removed when it is empty.
+func setList[T any](f *follow, id, key string, v []T) {
+	raw := json.RawMessage("null")
 	if len(v) > 0 {
-		f.sheets[id][key] = mustJSON(v)
+		raw = mustJSON(v)
 	}
+	f.set(id, key, raw)
+}
+
+// shiftFilter moves the filter of a sheet with rows or columns inserted
+// or removed.
+func (f *follow) shiftFilter(id, sheet string, rows bool, at, n int) {
+	var filter *AutoFilter
+	if f.attr(id, filterKey, &filter); filter == nil {
+		return
+	}
+	raw := json.RawMessage("null")
+	if g := filter.shifted(sheet, rows, at, n); g != nil {
+		raw = mustJSON(g)
+	}
+	f.set(id, filterKey, raw)
 }
 
 func (f *follow) setCell(sheet string, row, col int, key string, v any) {
@@ -417,6 +437,7 @@ func (f *follow) shift(ch ot.Change) {
 		}
 		setList(f, ch.ID, conditionalKey, kept)
 	}
+	f.shiftFilter(ch.ID, sheet, rows, ch.At, n)
 	if looks := looksID(ch.ID); c.tree.Node(looks) != nil {
 		mv := ot.Edit{{Op: ch.Op, ID: looks, Dim: ch.Dim, At: ch.At, N: ch.N}}
 		if c.tree.Apply(mv) == nil {
@@ -500,8 +521,8 @@ func (f *follow) restyle(e ot.Edit, all bool) {
 	}
 }
 
-// rebased moves the formulas an edit sets with the rows and columns the
-// edits it was rebased over inserted or removed.
+// rebased moves the formulas and the filters an edit sets with the rows
+// and columns the edits it was rebased over inserted or removed.
 func (f *follow) rebased(e ot.Edit, since []ot.Edit) {
 	var shifts []ot.Change
 	for _, h := range since {
@@ -515,6 +536,17 @@ func (f *follow) rebased(e ot.Edit, since []ot.Edit) {
 		return
 	}
 	for _, ch := range e {
+		if ch.Op == ot.OpSet && ch.Attrs[filterKey] != nil {
+			for _, s := range shifts {
+				n := s.N
+				if s.Op == ot.OpRem {
+					n = -n
+				}
+				if s.ID == ch.ID {
+					f.shiftFilter(ch.ID, f.c.names[ch.ID], s.Dim == ot.DimRows, s.At, n)
+				}
+			}
+		}
 		if ch.Op != ot.OpCel && !(ch.Op == ot.OpNew && ch.Cells != nil) {
 			continue
 		}

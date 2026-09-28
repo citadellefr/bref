@@ -105,6 +105,9 @@ func (r *reader) sheet(s *xmldom.Element, key string) (string, error) {
 	if c := d.conditionals(root); len(c) > 0 {
 		attrs[conditionalKey] = mustJSON(c)
 	}
+	if f := autoFilter(root); f != nil {
+		attrs[filterKey] = mustJSON(f)
+	}
 	if f := root.Child(mainNS, "sheetFormatPr"); f != nil {
 		if w := parseFloat(f.Get("defaultColWidth")); w > 0 {
 			attrs["dw"] = mustJSON(w)
