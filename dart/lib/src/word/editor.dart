@@ -237,10 +237,13 @@ class _WordEditorState extends State<WordEditor> {
     _formatParagraphs({'pstyle': id});
   }
 
-  /// The quick styles of the document, in the order Word shows them.
+  /// The quick styles of the document, in the order Word shows them: the
+  /// default paragraph style first.
   List<MapEntry<String, WordStyle>> get _quickStyles {
-    final list = _document.styles.entries.where((e) => e.value.type == 'paragraph' && e.value.quick && !e.value.hidden).toList();
-    list.sort((a, b) => (a.value.priority ?? 99).compareTo(b.value.priority ?? 99));
+    final doc = _document;
+    final list = doc.styles.entries.where((e) => e.value.type == 'paragraph' && (e.value.quick || e.key == doc.paragraphStyle) && !e.value.hidden).toList();
+    int rank(MapEntry<String, WordStyle> e) => e.key == doc.paragraphStyle ? -1 : e.value.priority ?? 99;
+    list.sort((a, b) => rank(a).compareTo(rank(b)));
     return list;
   }
 
