@@ -12,6 +12,7 @@ import '../session.dart';
 import 'edits.dart';
 import 'formula_text.dart';
 import 'input.dart';
+import 'lists.dart';
 import 'number_format.dart';
 import 'sheet_view.dart';
 import 'workbook.dart';
@@ -53,6 +54,9 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
   Workbook? _book;
   String? _sheetId;
   var _editing = false;
+
+  /// The cell being edited.
+  var _editCell = (1, 1);
   var _zoom = 1.0;
   var _backstage = false;
   Clip? _clip;
@@ -153,6 +157,7 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
 
   void _startEdit({String? typed, bool bar = false}) {
     if (_session.readOnly || _sheet?.grid == null) return;
+    _editCell = _selection.active;
     setState(() => _editing = true);
     if (typed != null) {
       _text.value = TextEditingValue(text: typed, selection: TextSelection.collapsed(offset: typed.length));
@@ -169,23 +174,126 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
     _gridFocus.requestFocus();
   }
 
-  void _commit() {
+  /// Ends editing: what was typed goes into its cell once the list that
+  /// validates the cell takes it. Tells whether it went in.
+  bool _commit() {
     final sheet = _sheet;
-    if (!_editing || sheet == null) return;
+    if (!_editing || sheet == null) return true;
     _editing = false;
-    final (r, c) = _selection.active;
-    final input = parseInput(_text.text, locale: _locale, date1904: _wb.date1904);
-    final current = _fields(r, c);
+    final (r, c) = _editCell;
+    final typed = _text.text;
+    final rule = _wb.layout(sheet).listAt(r, c);
+    final items = rule?.error == null || typed.startsWith('=') ? null : rule!.items(_wb, sheet, _locale);
+    if (items != null && !rule!.takes(typed, items)) {
+      unawaited(_refuse(rule, sheet, r, c, typed));
+      setState(() {});
+      return false;
+    }
+    _write(sheet, r, c, typed);
+    setState(() {});
+    return true;
+  }
+
+  void _write(Node sheet, int r, int c, String typed) {
+    final input = parseInput(typed, locale: _locale, date1904: _wb.date1904);
+    final current = sheet.grid?.cell(r, c) ?? const {};
     final changed = input.fields.entries.any((e) => current[e.key] != e.value);
     if (changed) _edit(_edits.setCells(sheet, [(r, c, input.fields)], format: input.format));
-    setState(() {});
+  }
+
+  /// Says, as Excel does, that a value is not one of the list's, and
+  /// writes it, edits it again or lets it go as the list and the user say.
+  Future<void> _refuse(ListRule rule, Node sheet, int r, int c, String typed) async {
+    final warning = rule.error == 'warning';
+    final text = rule.errorText.isEmpty ? _s.notInList : rule.errorText;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: Icon(switch (rule.error) {
+          'warning' => Icons.warning_amber,
+          'information' => Icons.info_outline,
+          _ => Icons.cancel_outlined,
+        }),
+        title: Text(rule.errorTitle.isEmpty ? _s.dataValidation : rule.errorTitle),
+        content: Text(warning ? '$text\n\n${_s.continueQuestion}' : text),
+        actions: [
+          for (final (value, label) in switch (rule.error) {
+            'warning' => [('write', _s.yes), ('retry', _s.no), ('cancel', _s.cancel)],
+            'information' => [('write', _s.ok), ('cancel', _s.cancel)],
+            _ => [('retry', _s.retry), ('cancel', _s.cancel)],
+          })
+            TextButton(onPressed: () => Navigator.pop(context, value), child: Text(label)),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    switch (choice) {
+      case 'write':
+        _write(sheet, r, c, typed);
+      case 'retry':
+        setState(() => _sheetId = sheet.id);
+        _selection.select(r, c);
+        _startEdit(typed: typed);
+      default:
+        _loadText();
+        _gridFocus.requestFocus();
+    }
   }
 
   /// Ends editing and moves the active cell, as Enter and Tab do.
   void _commitAndStep(int rows, int cols) {
-    _commit();
-    _selection.step(rows, cols);
+    if (_commit()) _selection.step(rows, cols);
     _gridFocus.requestFocus();
+  }
+
+  /// The list validating the active cell, when it has values to offer.
+  (ListRule, List<String>)? get _activeList {
+    final sheet = _sheet;
+    if (sheet == null || _session.readOnly) return null;
+    final (r, c) = _selection.active;
+    final rule = _wb.layout(sheet).listAt(r, c);
+    final items = rule != null && rule.arrow ? rule.items(_wb, sheet, _locale) : null;
+    return items == null ? null : (rule!, items);
+  }
+
+  /// Opens the values of the active cell's list under it; the one picked
+  /// goes into the cell.
+  Future<void> _openList(Rect cell) async {
+    final list = _activeList;
+    final sheet = _sheet;
+    if (list == null || sheet == null) return;
+    final (r, c) = _selection.active;
+    final screen = MediaQuery.sizeOf(context);
+    final picked = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(cell.left, cell.bottom, screen.width - cell.right, 0),
+      constraints: BoxConstraints(minWidth: math.max(cell.width, 80), maxHeight: 8 * 32.0),
+      items: [for (final v in list.$2) PopupMenuItem(value: v, height: 32, child: Text(v))],
+    );
+    if (picked == null || !mounted) return;
+    _write(sheet, r, c, picked);
+    _gridFocus.requestFocus();
+  }
+
+  /// What the list of the active cell asks to be typed, as Excel shows it
+  /// beside the cell.
+  Widget? get _prompt {
+    final sheet = _sheet;
+    if (sheet == null) return null;
+    final (r, c) = _selection.active;
+    final rule = _wb.layout(sheet).listAt(r, c);
+    if (rule == null || rule.prompt.isEmpty && rule.promptTitle.isEmpty) return null;
+    return IgnorePointer(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 240),
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(color: const Color(0xFFFFFFE1), border: Border.all(color: const Color(0xFF767676))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          if (rule.promptTitle.isNotEmpty) Text(rule.promptTitle, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.black)),
+          if (rule.prompt.isNotEmpty) Text(rule.prompt, style: const TextStyle(fontSize: 12, color: Colors.black)),
+        ]),
+      ),
+    );
   }
 
   KeyEventResult _editorKey(FocusNode _, KeyEvent e) {
@@ -283,6 +391,9 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
       return KeyEventResult.handled;
     }
     switch (key) {
+      case LogicalKeyboardKey.arrowDown when keys.isAltPressed:
+        final view = _view.currentState;
+        if (view != null) unawaited(_openList(view.activeScreenRect));
       case LogicalKeyboardKey.arrowDown:
         go(r + 1, c);
       case LogicalKeyboardKey.arrowUp:
@@ -767,6 +878,8 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
                       onZoom: (z) => setState(() => _zoom = z),
                       onMenu: (at, {rows = false, cols = false}) => _cellsMenu(at, rows: rows, cols: cols),
                       onFill: _session.readOnly ? null : (from, to) => _edit(_edits.fill(sheet, from, to)),
+                      onList: _activeList == null ? null : _openList,
+                      prompt: _prompt,
                     ),
                   ),
                 ),

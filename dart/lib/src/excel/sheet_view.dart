@@ -106,6 +106,8 @@ class SheetView extends StatefulWidget {
     this.onZoom,
     this.onMenu,
     this.onFill,
+    this.onList,
+    this.prompt,
   });
 
   final Workbook book;
@@ -133,6 +135,13 @@ class SheetView extends StatefulWidget {
 
   /// Fills from the selection to an area, as the fill handle does.
   final void Function(CellArea from, CellArea to)? onFill;
+
+  /// Opens the list of values of the active cell, under its rectangle on
+  /// screen: an arrow beside the cell shows it is there.
+  final ValueChanged<Rect>? onList;
+
+  /// What the active cell asks to be typed, shown under it.
+  final Widget? prompt;
 
   @override
   State<SheetView> createState() => SheetViewState();
@@ -218,6 +227,21 @@ class SheetViewState extends State<SheetView> {
   /// The rectangle of the active cell, where its editor goes.
   Rect get activeRect => areaRect(CellArea.cell(widget.selection.active.$1, widget.selection.active.$2));
 
+  /// The rectangle of the active cell on the screen.
+  Rect get activeScreenRect {
+    final box = context.findRenderObject() as RenderBox?;
+    final r = activeRect;
+    return box == null ? r : box.localToGlobal(r.topLeft) & r.size;
+  }
+
+  /// Where the arrow of the active cell's list goes, beside the cell.
+  Rect? get _arrowRect {
+    if (widget.onList == null || widget.editing) return null;
+    final r = activeRect;
+    final side = math.min(r.height, 20 * _z);
+    return Rect.fromLTWH(r.right + 1, r.bottom - side, side, side);
+  }
+
   /// Scrolls the active cell into view.
   void _followActive() {
     if (!mounted || _size.isEmpty) return;
@@ -289,6 +313,7 @@ class SheetViewState extends State<SheetView> {
   }
 
   void _down(PointerDownEvent e) {
+    if (_arrowRect?.contains(e.localPosition) ?? false) return;
     if (e.buttons == kSecondaryMouseButton) {
       final t = _target(e.localPosition);
       if (t.kind == _Kind.cell && !widget.selection.area.contains(t.row, t.col)) {
@@ -463,6 +488,24 @@ class SheetViewState extends State<SheetView> {
               ),
               if (widget.editing && widget.editor != null)
                 Positioned.fromRect(rect: activeRect.inflate(1), child: widget.editor!),
+              if (_arrowRect case final arrow?)
+                Positioned.fromRect(
+                  rect: arrow,
+                  child: Material(
+                    color: const Color(0xFFF3F3F3),
+                    shape: const Border.fromBorderSide(BorderSide(color: Color(0xFFABABAB))),
+                    // on the press, as Excel opens it, and past the double tap of the grid
+                    child: MouseRegion(
+                      cursor: SystemMouseCursors.basic,
+                      child: Listener(
+                        onPointerDown: (_) => widget.onList!(activeScreenRect),
+                        child: FittedBox(child: Icon(Icons.arrow_drop_down, color: Colors.grey.shade800)),
+                      ),
+                    ),
+                  ),
+                ),
+              if (widget.prompt != null)
+                Positioned(left: activeRect.left + 12, top: activeRect.bottom + 6, child: widget.prompt!),
             ]),
           ),
         ),

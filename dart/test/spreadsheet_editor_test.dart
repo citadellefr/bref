@@ -12,7 +12,13 @@ Edit workbook({bool csv = false}) => Edit([
     type: 'sheet',
     parent: 'book',
     key: 'K',
-    attributes: const {'name': 'Feuil1'},
+    attributes: const {
+      'name': 'Feuil1',
+      'lists': [
+        {'ref': 'D1:D5', 'src': '"Oui,Non"', 'err': 'stop', 'prompt': 'Oui ou non'},
+        {'ref': 'E1', 'src': r'Feuil1!$A$1:$A$3', 'err': 'warning'},
+      ],
+    },
     grid: Grid([
       const Cell(1, 1, {'v': 2}),
       const Cell(2, 1, {'v': 3}),
@@ -104,6 +110,57 @@ void main() {
     await tester.tap(find.byTooltip('Insérer une feuille').last);
     await settle(tester);
     expect(find.text('Feuil2'), findsOneWidget);
+    await finish(tester);
+  });
+
+  testWidgets('offers the values of lists and refuses the others', (tester) async {
+    await open(tester);
+    for (var i = 0; i < 3; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    }
+    await tester.pump();
+    expect(find.text('Oui ou non'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.arrow_drop_down).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Non').last);
+    await settle(tester);
+    expect(cell(1, 4)?['v'], 'Non');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.sendKeyEvent(LogicalKeyboardKey.f2);
+    await tester.pump();
+    await tester.enterText(find.byType(EditableText).last, 'Peut-être');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('ne correspond pas'), findsOneWidget);
+    await tester.tap(find.text('Réessayer'));
+    await tester.pumpAndSettle();
+    expect(cell(2, 4), isNull);
+    await tester.enterText(find.byType(EditableText).last, 'oui');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await settle(tester);
+    expect(cell(2, 4)?['v'], 'oui');
+
+    // the values of cells, and a warning that lets a value in
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.pumpAndSettle();
+    expect(find.text('5'), findsOneWidget);
+    await tester.tapAt(Offset.zero);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.f2);
+    await tester.pump();
+    await tester.enterText(find.byType(EditableText).last, '7');
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Continuer ?'), findsOneWidget);
+    await tester.tap(find.text('Oui'));
+    await settle(tester);
+    expect(cell(1, 5)?['v'], 7);
     await finish(tester);
   });
 

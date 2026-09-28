@@ -5,6 +5,7 @@ import 'package:flutter/painting.dart';
 import '../ot/grid.dart';
 import '../ot/tree.dart';
 import 'formula_text.dart';
+import 'lists.dart';
 import 'number_format.dart';
 
 /// The theme colors of a workbook in the order its cells count them.
@@ -384,6 +385,11 @@ class SheetLayout {
   }
 
   List<CellArea> get merges => _merges;
+
+  late final List<ListRule> lists = ListRule.of(sheet);
+
+  /// The list validating a cell, if any.
+  ListRule? listAt(int row, int col) => lists.where((l) => l.contains(row, col)).firstOrNull;
 }
 
 /// A rectangle of cells, from [top] [left] to [bottom] [right] included.
@@ -461,15 +467,29 @@ String cellName(int row, int col) => '${columnName(col)}$row';
   return (row, col);
 }
 
-/// Reads an area: A1, A1:B3.
+/// Reads an area: A1, A1:B3, A:C, 1:3.
 CellArea? parseArea(String s) {
   final parts = s.split(':');
   if (parts.length > 2) return null;
+  if (parts.length == 2) {
+    final (a, b) = (parts[0].trim(), parts[1].trim());
+    if (_letters.hasMatch(a) && _letters.hasMatch(b)) {
+      final (x, y) = (parseCell('${a}1'), parseCell('${b}1'));
+      return x == null || y == null ? null : CellArea(1, x.$2, maxRows, y.$2);
+    }
+    if (_digits.hasMatch(a) && _digits.hasMatch(b)) {
+      final (x, y) = (parseCell('A$a'), parseCell('A$b'));
+      return x == null || y == null ? null : CellArea(x.$1, 1, y.$1, maxCols);
+    }
+  }
   final a = parseCell(parts.first);
   final b = parts.length == 2 ? parseCell(parts.last) : a;
   if (a == null || b == null) return null;
   return CellArea(a.$1, a.$2, b.$1, b.$2);
 }
+
+final _letters = RegExp(r'^\$?[A-Za-z]{1,3}$');
+final _digits = RegExp(r'^\$?[0-9]{1,7}$');
 
 /// What a cell shows: its text, where it goes, and its color.
 class CellText {

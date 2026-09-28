@@ -102,5 +102,8 @@ void main() {
     expect(parseCell(r'$B$7'), (7, 2));
     expect(const CellArea(3, 2, 1, 1).name, 'A1:B3');
     expect(const CellArea(1, 2, maxRows, 3).name, 'B:C');
+    expect(parseArea(r'$B:C'), const CellArea(1, 2, maxRows, 3));
+    expect(parseArea('2:4'), const CellArea(2, 1, 4, maxCols));
+    expect(parseArea('A:4'), isNull);
   });
 }

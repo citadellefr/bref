@@ -142,6 +142,11 @@ class BrefStrings {
   String get unhide => 'Afficher';
   String get chartSheet => 'Cette feuille contient un graphique, qui ne s’affiche pas encore ici.';
   String get calculating => 'Calcul…';
+  String get dataValidation => 'Validation des données';
+  String get notInList => 'Cette valeur ne correspond pas aux restrictions de validation des données définies pour cette cellule.';
+  String get continueQuestion => 'Continuer ?';
+  String get yes => 'Oui';
+  String get no => 'Non';
   String deleteSheetConfirm(String name) => 'Supprimer la feuille « $name » ? Ses données seront perdues.';
   List<(String, String)> get numberFormats => const [
     ('General', 'Standard'),
