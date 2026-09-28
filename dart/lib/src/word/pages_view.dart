@@ -226,8 +226,8 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
     } else if (_clicks >= 3) {
       final (s, t) = editing.paragraphAt(offset);
       _selection.set(flow, s, t + 1 > node.text!.length - 1 ? t : t + 1, page, area);
-    } else if (HardwareKeyboard.instance.isShiftPressed && _selection.flow == flow) {
-      _selection.set(flow, _selection.base, offset, page, area);
+    } else if (HardwareKeyboard.instance.isShiftPressed && _selection.flow != null && area == _selection.area) {
+      _selection.extendTo(flow, offset, page);
     } else {
       _selection.set(flow, offset, null, page, area);
     }
@@ -239,8 +239,8 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
     final flow = _selection.flow;
     if (flow == null) return;
     final hit = _layout.hit(page, local / _scale, area: _selection.area);
-    if (hit == null || hit.$1 != flow) return;
-    _selection.set(flow, _selection.base, hit.$2, page);
+    if (hit == null) return;
+    _selection.extendTo(hit.$1, hit.$2, page);
   }
 
   // keys
@@ -271,8 +271,8 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
     final s = _selection;
     void caret(String id, int to, {bool keepGoal = false}) {
       if (!keepGoal) _goalX = null;
-      if (_shift && id == s.flow) {
-        s.set(id, s.base, to);
+      if (_shift) {
+        s.extendTo(id, to);
       } else {
         s.set(id, to);
       }
@@ -298,7 +298,7 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
       case LogicalKeyboardKey.arrowLeft:
         if (!_shift && !s.collapsed) {
           caret(flow.id, s.start);
-        } else if (s.extent == 0 && !_shift) {
+        } else if (s.extent == 0) {
           across(-1);
         } else {
           caret(flow.id, editing.previous(s.extent, word: _ctrl));
@@ -307,7 +307,7 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
       case LogicalKeyboardKey.arrowRight:
         if (!_shift && !s.collapsed) {
           caret(flow.id, s.end);
-        } else if (s.extent >= last && !_shift) {
+        } else if (s.extent >= last) {
           across(1);
         } else {
           caret(flow.id, editing.next(s.extent, word: _ctrl));
@@ -340,6 +340,10 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
     if (_session.readOnly) {
       if (_ctrl && (key == LogicalKeyboardKey.keyC || key == LogicalKeyboardKey.keyA)) return clipboard(flow, key);
       return false;
+    }
+    if (s.spans && (key == LogicalKeyboardKey.backspace || key == LogicalKeyboardKey.delete)) {
+      _deleteSpan();
+      return true;
     }
     if (_ctrl) {
       switch (key) {
@@ -423,7 +427,6 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
     }
     final hit = _layout.hit(page, Offset(_goalX!, y), area: s.area);
     if (hit == null) return;
-    if (_shift && hit.$1 != s.flow) return;
     s.page = page;
     caret(hit.$1, hit.$2, keepGoal: true);
   }
@@ -434,7 +437,17 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
     final editing = wordEditing(flow);
     switch (key) {
       case LogicalKeyboardKey.keyA:
-        s.set(flow.id, 0, flow.text!.length - 1);
+        final flows = _flows;
+        if (flows.isEmpty) return true;
+        s.set(flows.first.id, 0);
+        s.extendTo(flows.last.id, flows.last.text!.length - 1);
+      case LogicalKeyboardKey.keyC || LogicalKeyboardKey.keyX when s.spans:
+        _copied = null;
+        final text = [
+          for (final (f, a, b) in s.ranges(_session.document, _flows)) wordEditing(f).text.substring(a, b),
+        ].join('\n');
+        unawaited(Clipboard.setData(ClipboardData(text: text.replaceAll('\v', '\n').replaceAll('￼', ''))));
+        if (key == LogicalKeyboardKey.keyX && !_session.readOnly) _deleteSpan();
       case LogicalKeyboardKey.keyC || LogicalKeyboardKey.keyX:
         if (!s.collapsed) {
           _copied = _sliceOf(flow.text!, s.start, s.end);
@@ -474,6 +487,7 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
   }
 
   void _pasteRich(Node flow, Delta content) {
+    if (_selection.spans) flow = _deleteSpan() ?? flow;
     final s = _selection;
     final d = Delta()..retain(s.start);
     if (s.end > s.start) d.delete(s.end - s.start);
@@ -484,8 +498,30 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
     _text(flow, d.chop(), caret, caret);
   }
 
-  /// Replaces a range of a flow by what was typed.
+  /// Deletes what a selection across flows covers, the caret left where it
+  /// started; the flow of the caret, null when there is none.
+  Node? _deleteSpan() {
+    final s = _selection;
+    final ranges = s.ranges(_session.document, _flows);
+    if (ranges.isEmpty) return null;
+    final (first, at, _) = ranges.first;
+    _local = true;
+    _session.edit(deleteRanges(_session.document, ranges));
+    _local = false;
+    final node = _session.document[first.id];
+    if (node != null) s.set(node.id, at.clamp(0, node.text!.length - 1));
+    _input?.setEditingState(currentTextEditingValue);
+    return node;
+  }
+
+  /// Replaces a range of a flow by what was typed, or the selection across
+  /// flows.
   void replace(Node flow, int start, int end, String text) {
+    if (_selection.spans) {
+      final node = _deleteSpan();
+      if (node == null || text.isEmpty) return;
+      (flow, start, end) = (node, _selection.start, _selection.start);
+    }
     final editing = wordEditing(flow);
     final attributes = _selection.typing ?? editing.typingAttributes(start);
     final d = text.isEmpty ? editing.delete(start, end) : editing.replace(start, end, text, attributes);
@@ -495,6 +531,11 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
 
   /// Replaces a range by an object the writer makes: a page break.
   void replaceWith(Node flow, int start, int end, String char, Attributes attributes) {
+    if (_selection.spans) {
+      final node = _deleteSpan();
+      if (node == null) return;
+      (flow, start, end) = (node, _selection.start, _selection.start);
+    }
     final d = Delta()..retain(start);
     if (end > start) d.delete(end - start);
     d.insert(char, attributes);
@@ -546,9 +587,10 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
     final node = _flow;
     if (node == null) return TextEditingValue.empty;
     final text = node.text!.text;
+    final s = _selection;
     return TextEditingValue(
       text: text.substring(0, text.length - 1),
-      selection: TextSelection(baseOffset: _selection.base, extentOffset: _selection.extent),
+      selection: s.spans ? TextSelection.collapsed(offset: s.extent) : TextSelection(baseOffset: s.base, extentOffset: s.extent),
     );
   }
 
@@ -739,8 +781,10 @@ class _PagePainter extends CustomPainter {
     final flow = s.flow;
     if (flow != null) {
       if (!s.collapsed) {
-        for (final (p, r) in layout.selection(flow, s.start, s.end)) {
-          if (p == index) canvas.drawRect(r, Paint()..color = colors.primary.withValues(alpha: 0.28));
+        for (final (node, a, b) in s.ranges(state._session.document, state._flows)) {
+          for (final (p, r) in layout.selection(node.id, a, b)) {
+            if (p == index) canvas.drawRect(r, Paint()..color = colors.primary.withValues(alpha: 0.28));
+          }
         }
       }
       final caret = layout.caret(flow, s.extent, page: s.page);

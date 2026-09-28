@@ -157,6 +157,13 @@ class _WordEditorState extends State<WordEditor> {
   void _formatRuns(Attributes attributes) {
     final flow = _flow;
     if (flow == null) return;
+    if (_selection.spans) {
+      _edit(Edit([
+        for (final (node, a, b) in _ranges)
+          if (wordEditing(node).formatRuns(a, b, attributes) case final d?) Change.text(node.id, d),
+      ]));
+      return;
+    }
     final editing = wordEditing(flow);
     if (_selection.collapsed) {
       _selection.typing = {...(_selection.typing ?? editing.typingAttributes(_selection.start)), ...attributes}
@@ -168,9 +175,20 @@ class _WordEditorState extends State<WordEditor> {
     if (d != null) _edit(Edit([Change.text(flow.id, d)]));
   }
 
+  /// The ranges of the flows the selection covers, in reading order.
+  List<(Node, int, int)> get _ranges {
+    final tree = _session.document;
+    final root = _selection.area == PageArea.body ? 'body' : headerNodeOf(tree, _selection.flow ?? '');
+    return _selection.ranges(tree, root == null ? const [] : flowsOf(tree, root));
+  }
+
   void _formatParagraphs(Attributes attributes) {
     final flow = _flow;
     if (flow == null) return;
+    if (_selection.spans) {
+      _edit(Edit([for (final (node, a, b) in _ranges) Change.text(node.id, wordEditing(node).formatParagraphs(a, b, attributes))]));
+      return;
+    }
     _edit(Edit([Change.text(flow.id, wordEditing(flow).formatParagraphs(_selection.start, _selection.end, attributes))]));
   }
 

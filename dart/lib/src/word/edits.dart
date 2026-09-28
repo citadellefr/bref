@@ -15,10 +15,15 @@ const wordKeys = FlowKeys(paragraph: wordParagraphKeys, own: wordOwnKeys, object
 /// Edits of the flows of a Word document.
 FlowEditing wordEditing(Node text) => FlowEditing(text.text!, keys: wordKeys);
 
-/// Where the caret and selection are: a range of one flow, and the page it
-/// was put on for a flow drawn on several, a header's.
+/// Where the caret and selection are: a range of one flow, or from a
+/// place of a flow to one of a later or earlier flow; and the page it was
+/// put on, for a flow drawn on several, a header's.
 class WordSelection extends ChangeNotifier {
+  /// The flow of the caret, the extent's.
   String? flow;
+
+  /// The flow the selection started in: [flow] but when it spans several.
+  String? baseFlow;
   var base = 0;
   var extent = 0;
 
@@ -30,13 +35,19 @@ class WordSelection extends ChangeNotifier {
   /// buttons of the ribbon.
   Attributes? typing;
 
-  bool get collapsed => base == extent;
+  /// Whether the selection goes from a flow to another.
+  bool get spans => baseFlow != null && baseFlow != flow;
+
+  bool get collapsed => !spans && base == extent;
+
+  /// The start and end in the flow of the caret, when it is the only one.
   int get start => base < extent ? base : extent;
   int get end => base < extent ? extent : base;
 
   void set(String flow, int base, [int? extent, int? page, PageArea? area]) {
-    final same = flow == this.flow && base == this.base && (extent ?? base) == this.extent;
+    final same = flow == this.flow && !spans && base == this.base && (extent ?? base) == this.extent;
     this.flow = flow;
+    baseFlow = flow;
     this.base = base;
     this.extent = extent ?? base;
     if (page != null) this.page = page;
@@ -45,11 +56,38 @@ class WordSelection extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Moves the extent, the start staying where it is: to another flow
+  /// when [flow] differs.
+  void extendTo(String flow, int extent, [int? page]) {
+    this.flow = flow;
+    this.extent = extent;
+    if (page != null) this.page = page;
+    typing = null;
+    notifyListeners();
+  }
+
   void clear() {
-    flow = null;
+    flow = baseFlow = null;
     base = extent = 0;
     typing = null;
     notifyListeners();
+  }
+
+  /// The ranges of the flows the selection covers, in reading order: the
+  /// flows of [order] between its two ends, whole in between.
+  List<(Node, int, int)> ranges(Tree tree, List<Node> order) {
+    final a = baseFlow == null ? null : tree[baseFlow!];
+    final b = flow == null ? null : tree[flow!];
+    if (a == null || b == null) return const [];
+    if (!spans) return [(b, start, end)];
+    var ia = order.indexWhere((n) => n.id == a.id), ib = order.indexWhere((n) => n.id == b.id);
+    if (ia < 0 || ib < 0) return [(b, extent, extent)];
+    var (from, to) = (base, extent);
+    if (ia > ib) (ia, ib, from, to) = (ib, ia, extent, base);
+    return [
+      for (var i = ia; i <= ib; i++)
+        (order[i], i == ia ? from : 0, i == ib ? to : order[i].text!.length - 1),
+    ];
   }
 }
 
@@ -313,6 +351,30 @@ class WordEdits {
     }
     return Edit(changes);
   }
+}
+
+/// Deletes what a selection across flows covers: the end of the first,
+/// the start of the last, the text of the flows between and the blocks
+/// of the body between them; the flows at its two ends stay apart.
+Edit deleteRanges(Tree tree, List<(Node, int, int)> ranges) {
+  if (ranges.isEmpty) return Edit();
+  final changes = <Change>[];
+  final first = ranges.first.$1, last = ranges.last.$1;
+  final between = <String>{};
+  if (first.parent == last.parent) {
+    final kids = tree.children(first.parent);
+    final a = kids.indexWhere((n) => n.id == first.id), b = kids.indexWhere((n) => n.id == last.id);
+    for (var i = a + 1; i < b; i++) {
+      between.add(kids[i].id);
+      changes.add(Change.delete(kids[i].id));
+    }
+  }
+  for (final (flow, start, end) in ranges) {
+    if (between.any((id) => tree.isUnder(flow.id, id))) continue;
+    final d = wordEditing(flow).delete(start, end);
+    if (!d.isEmpty) changes.add(Change.text(flow.id, d));
+  }
+  return Edit(changes);
 }
 
 Map<String, Object?> _without(Map<String, Object?> attrs, Set<String> keys) => {

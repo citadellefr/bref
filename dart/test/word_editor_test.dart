@@ -105,6 +105,34 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('selects all, across the tables, and bolds it', (tester) async {
+    await open(tester, 'tbl-having-applied-style');
+    await clickText(tester);
+    await ctrl(tester, LogicalKeyboardKey.keyA);
+    await ctrl(tester, LogicalKeyboardKey.keyG);
+    for (final flow in flowsOf(hub.doc)) {
+      if (flow.text!.length > 1) expect(wordEditing(flow).attributesAt(0)?['b'], '1', reason: flow.id);
+    }
+    await finish(tester);
+  });
+
+  test('deletes across flows: the ends trimmed, the blocks between gone', () {
+    final tree = Tree.fromEdit(Edit.fromJson(jsonDecode(File('../testdata/docx/tbl-having-applied-style.json').readAsStringSync()))!)!;
+    final body = tree.children('body');
+    final first = body.firstWhere((n) => n.type == 'text');
+    final last = body.lastWhere((n) => n.type == 'text');
+    final selection = WordSelection()
+      ..set(first.id, 0)
+      ..extendTo(last.id, 0);
+    final ranges = selection.ranges(tree, flowsOf(tree));
+    expect(ranges.first.$1.id, first.id);
+    expect(ranges.last, (last, 0, 0));
+    expect(tree.apply(deleteRanges(tree, ranges)), isNotNull);
+    // the table before the first flow stays, those between go
+    expect(tree.children('body').map((n) => n.type), ['tbl', 'text', 'text']);
+    expect(tree[first.id]!.text!.text, '\n');
+  });
+
   test('inserts a table after the paragraph, the flow cut there', () {
     final tree = Tree.fromEdit(Edit.fromJson(jsonDecode(File('../testdata/docx/par-known-styles.json').readAsStringSync()))!)!;
     final doc = WordDocument(tree);
