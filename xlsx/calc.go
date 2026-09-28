@@ -96,7 +96,7 @@ func (c *Calc) Formulas() int {
 // was rebased over: the formulas it sets are moved by the rows they
 // inserted or removed.
 func (c *Calc) Follow(e ot.Edit, since []ot.Edit) ot.Edit {
-	f := &follow{c: c, cells: map[string]map[[2]int]map[string]json.RawMessage{}}
+	f := &follow{c: c, cells: map[string]map[[2]int]map[string]json.RawMessage{}, lists: map[string][]List{}}
 	// whether sheets came, went, moved or were renamed, or names changed
 	books := false
 	for _, ch := range e {
@@ -139,6 +139,20 @@ type follow struct {
 	cells map[string]map[[2]int]map[string]json.RawMessage
 	// book are the attributes of the book to set.
 	book ot.Values
+	// lists are the list validations to set, by sheet.
+	lists map[string][]List
+}
+
+// listsOf are the list validations of a sheet, those to set if any.
+func (f *follow) listsOf(id string) []List {
+	if l, ok := f.lists[id]; ok {
+		return l
+	}
+	var l []List
+	if n := f.c.tree.Node(id); n != nil {
+		_ = json.Unmarshal(n.Attrs[listsKey], &l)
+	}
+	return l
 }
 
 func (f *follow) setCell(sheet string, row, col int, key string, v any) {
@@ -174,10 +188,17 @@ func (f *follow) flush() {
 		}
 		e = append(e, ot.Change{Op: ot.OpCel, ID: id, Cells: cells})
 	}
+	for _, id := range slices.Sorted(mapKeys(f.lists)) {
+		v := json.RawMessage("null")
+		if l := f.lists[id]; len(l) > 0 {
+			v = mustJSON(l)
+		}
+		e = append(e, ot.Change{Op: ot.OpSet, ID: id, Attrs: ot.Values{listsKey: v}})
+	}
 	if len(f.book) > 0 {
 		e = append(e, ot.Change{Op: ot.OpSet, ID: "book", Attrs: f.book})
 	}
-	f.cells, f.book = map[string]map[[2]int]map[string]json.RawMessage{}, nil
+	f.cells, f.book, f.lists = map[string]map[[2]int]map[string]json.RawMessage{}, nil, map[string][]List{}
 	if len(e) == 0 {
 		return
 	}
@@ -217,7 +238,7 @@ func mapKeys[K comparable, V any](m map[K]V) func(func(K) bool) {
 }
 
 // formulas calls rewrite with every formula of the workbook, those of the
-// defined names included, and sets those it changes.
+// defined names and list validations included, and sets those it changes.
 func (f *follow) formulas(rewrite func(text, sheet string) string) {
 	c := f.c
 	for _, id := range c.sheets {
@@ -238,6 +259,17 @@ func (f *follow) formulas(rewrite func(text, sheet string) string) {
 			}
 			return true
 		})
+		lists := slices.Clone(f.listsOf(id))
+		changed := false
+		for i, l := range lists {
+			if g := rewrite(l.Src, id); g != l.Src {
+				lists[i].Src = g
+				changed = true
+			}
+		}
+		if changed {
+			f.lists[id] = lists
+		}
 	}
 	changed := false
 	names := slices.Clone(c.defined)
@@ -301,7 +333,7 @@ func (f *follow) sheetsChanged() {
 
 // shift follows rows or columns inserted or removed on a sheet: the
 // formulas that point there move, as do the merged cells and array
-// formulas that span them.
+// formulas that span them and the cells lists validate.
 func (f *follow) shift(ch ot.Change) {
 	c := f.c
 	sheet := c.names[ch.ID]
@@ -320,6 +352,15 @@ func (f *follow) shift(ch ot.Change) {
 		}
 		return g
 	})
+	if lists := f.listsOf(ch.ID); len(lists) > 0 {
+		var kept []List
+		for _, l := range lists {
+			if l.Ref = shiftRef(l.Ref, sheet, rows, ch.At, n); l.Ref != "" {
+				kept = append(kept, l)
+			}
+		}
+		f.lists[ch.ID] = kept
+	}
 	node := c.tree.Node(ch.ID)
 	if node != nil && node.Grid != nil {
 		node.Grid.Each(1, formula.MaxRows, func(row, col int, raw json.RawMessage) bool {

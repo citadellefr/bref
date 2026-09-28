@@ -99,6 +99,9 @@ func (r *reader) sheet(s *xmldom.Element, key string) (string, error) {
 			attrs["tab"] = mustJSON(d.styles.color(c))
 		}
 	}
+	if l := validationLists(root); len(l) > 0 {
+		attrs[listsKey] = mustJSON(l)
+	}
 	if f := root.Child(mainNS, "sheetFormatPr"); f != nil {
 		if w := parseFloat(f.Get("defaultColWidth")); w > 0 {
 			attrs["dw"] = mustJSON(w)
