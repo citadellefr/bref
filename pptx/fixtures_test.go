@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/citadellefr/bref/internal/partrel"
 )
 
 var update = flag.Bool("update", false, "rewrite the trees in testdata/pptx")
@@ -73,8 +75,8 @@ func TestDump(t *testing.T) {
 		if err := os.MkdirAll(base, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		for n, r := range d.rels {
-			if r.typ != relImage || r.external {
+		for n, r := range d.names.All() {
+			if r.Type != partrel.Image || r.External {
 				continue
 			}
 			picture, _, err := d.Media(strings.TrimPrefix(n, "@"))

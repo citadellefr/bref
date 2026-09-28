@@ -3,6 +3,7 @@ package pptx
 import (
 	"errors"
 
+	"github.com/citadellefr/bref/internal/partrel"
 	"github.com/citadellefr/bref/ot"
 )
 
@@ -101,15 +102,15 @@ func (d *Document) inSlide(tree *ot.Tree, created map[string]string, id string) 
 // Media is a picture of the document, by the name its blips give it, and
 // its content type.
 func (d *Document) Media(name string) ([]byte, string, error) {
-	r, ok := d.rels["@"+name]
-	if !ok || r.typ != relImage || r.external {
+	r, ok := d.names.Lookup("@" + name)
+	if !ok || r.Type != partrel.Image || r.External {
 		return nil, "", ErrNoMedia
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	data, err := d.pkg.Read(r.target)
+	data, err := d.pkg.Read(r.Target)
 	if err != nil {
 		return nil, "", errors.Join(ErrNoMedia, err)
 	}
-	return data, d.pkg.ContentType(r.target), nil
+	return data, d.pkg.ContentType(r.Target), nil
 }

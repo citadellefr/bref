@@ -34,6 +34,7 @@ import (
 	"sync"
 
 	"github.com/citadellefr/bref/drawingml"
+	"github.com/citadellefr/bref/internal/partrel"
 	"github.com/citadellefr/bref/internal/xmldom"
 	"github.com/citadellefr/bref/opc"
 	"github.com/citadellefr/bref/ot"
@@ -58,10 +59,8 @@ type Document struct {
 	original []byte
 	mu       sync.Mutex // guards pkg once open
 	pkg      *opc.Package
-	// rels are the relationships elements point to, by name, and names
-	// the names given so far.
-	rels  map[string]rel
-	names map[rel]string
+	// names are the relationships elements point to, by name.
+	names *partrel.Names
 	// trusted are the hashes of the XML the nodes carry: only that may
 	// be written back. The seed is secret, so that no client can forge
 	// XML with the hash of some it was sent.
@@ -70,7 +69,7 @@ type Document struct {
 	loaded  *ot.Tree
 
 	presName string
-	presRels *partRels
+	presRels *partrel.Rels
 	slides   map[string]*slidePart // by node id
 	layouts  map[string]string     // part name of each layout node
 	// layoutNodes are the layout node ids by part name.
@@ -79,7 +78,7 @@ type Document struct {
 
 type slidePart struct {
 	name  string
-	rels  *partRels
+	rels  *partrel.Rels
 	notes string
 	// sldID is the id of the slide in the presentation.
 	sldID int64
@@ -94,19 +93,18 @@ func Open(data []byte) (*Document, *ot.Tree, error) {
 	d := &Document{
 		original:    data,
 		pkg:         pkg,
-		rels:        map[string]rel{},
-		names:       map[rel]string{},
+		names:       partrel.NewNames(pkg),
 		trusted:     map[uint64]bool{},
 		seed:        maphash.MakeSeed(),
 		slides:      map[string]*slidePart{},
 		layouts:     map[string]string{},
 		layoutNodes: map[string]string{},
 	}
-	root, err := d.readRels("")
+	root, err := partrel.Read(pkg, "")
 	if err != nil {
 		return nil, nil, err
 	}
-	d.presName = root.ofType("", relOfficeDocument)
+	d.presName = root.OfType("", relOfficeDocument)
 	if d.presName == "" {
 		return nil, nil, ErrNotPresentation
 	}
@@ -139,7 +137,7 @@ func (r *reader) add(id, typ, parent, key string, attrs ot.Values, text ot.Delta
 
 // part reads an XML part, its relationships named, and the prefixes its
 // root declares.
-func (r *reader) part(name string) (*xmldom.Element, *partRels, map[string]string, error) {
+func (r *reader) part(name string) (*xmldom.Element, *partrel.Rels, map[string]string, error) {
 	data, err := r.d.pkg.Read(name)
 	if err != nil {
 		return nil, nil, nil, err
@@ -148,7 +146,7 @@ func (r *reader) part(name string) (*xmldom.Element, *partRels, map[string]strin
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("pptx: %s: %w", name, err)
 	}
-	rels, err := r.d.readRels(name)
+	rels, err := partrel.Read(r.d.pkg, name)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -156,7 +154,7 @@ func (r *reader) part(name string) (*xmldom.Element, *partRels, map[string]strin
 	for k, v := range doc.Root.Spaces() {
 		spaces[k] = v
 	}
-	r.d.nameRels(doc.Root, name, rels, spaces)
+	r.d.names.NameAll(doc.Root, name, rels, spaces)
 	return doc.Root, rels, spaces, nil
 }
 
@@ -249,8 +247,8 @@ func (r *reader) presentation() error {
 
 // targetOf is the part an element points to by its r:id, once named.
 func (d *Document) targetOf(e *xmldom.Element) string {
-	if r, ok := d.rels[e.Get("r:id")]; ok && !r.external {
-		return r.target
+	if r, ok := d.names.Lookup(e.Get("r:id")); ok && !r.External {
+		return r.Target
 	}
 	return ""
 }
@@ -261,7 +259,7 @@ func (r *reader) master(name, id, key string, layoutCount *int) error {
 		return err
 	}
 	attrs := ot.Values{}
-	if theme := rels.ofType(name, relTheme); theme != "" {
+	if theme := rels.OfType(name, relTheme); theme != "" {
 		if t, _, _, err := r.part(theme); err == nil {
 			putJSON(attrs, "theme", readTheme(t, r.d.media))
 		}
@@ -324,12 +322,12 @@ func (r *reader) slide(name string, sldID int64, key string) error {
 		return fmt.Errorf("pptx: %s is not a slide", name)
 	}
 	id := "s" + strconv.FormatInt(sldID, 10)
-	part := &slidePart{name: name, rels: rels, sldID: sldID, notes: rels.ofType(name, relNotesSlide)}
+	part := &slidePart{name: name, rels: rels, sldID: sldID, notes: rels.OfType(name, relNotesSlide)}
 	r.d.slides[id] = part
 
 	cSld := s.Child(pNS, "cSld")
 	attrs := ot.Values{}
-	putString(attrs, "layout", r.d.layoutNodes[rels.ofType(name, relSlideLayout)])
+	putString(attrs, "layout", r.d.layoutNodes[rels.OfType(name, relSlideLayout)])
 	putString(attrs, "name", cSld.Get("name"))
 	if v, ok := s.Attr("show"); ok && (v == "0" || v == "false") {
 		attrs["hidden"] = json.RawMessage("true")
@@ -411,15 +409,15 @@ func (r *reader) flow(body *xmldom.Element) ot.Delta {
 
 // link is the URL of an external relationship name.
 func (d *Document) link(name string) string {
-	if r, ok := d.rels[name]; ok && r.external {
-		return r.target
+	if r, ok := d.names.Lookup(name); ok && r.External {
+		return r.Target
 	}
 	return ""
 }
 
 // media is the picture a name points to, without its "@".
 func (d *Document) media(name string) string {
-	if r, ok := d.rels[name]; ok && r.typ == relImage && !r.external {
+	if r, ok := d.names.Lookup(name); ok && r.Type == partrel.Image && !r.External {
 		return strings.TrimPrefix(name, "@")
 	}
 	return ""

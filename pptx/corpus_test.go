@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/citadellefr/bref/internal/partrel"
 	"github.com/citadellefr/bref/internal/xmlcanon"
 	"github.com/citadellefr/bref/internal/xmldom"
 	"github.com/citadellefr/bref/opc"
@@ -38,7 +39,7 @@ func save(d *Document, tree *ot.Tree, force bool) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	w := &writer{d: d, pkg: pkg, tree: tree, names: map[string]rel{}, fresh: map[*xmldom.Element]bool{}, force: force}
+	w := &writer{d: d, pkg: pkg, tree: tree, fresh: map[*xmldom.Element]bool{}, force: force}
 	if err := w.save(); err != nil {
 		return nil, err
 	}
@@ -166,20 +167,15 @@ func targets(t *testing.T, pkg *opc.Package, name string) []byte {
 	if err != nil {
 		return data
 	}
-	list, err := pkg.Relationships(name)
+	rels, err := partrel.Read(pkg, name)
 	if err != nil {
 		t.Fatal(err)
-	}
-	rels := &partRels{byID: map[string]opc.Relationship{}}
-	for _, x := range list {
-		rels.byID[x.ID] = x
 	}
 	spaces := standardSpaces()
 	for k, v := range doc.Root.Spaces() {
 		spaces[k] = v
 	}
-	d := &Document{pkg: pkg, rels: map[string]rel{}, names: map[rel]string{}}
-	d.nameRels(doc.Root, name, rels, spaces)
+	partrel.NewNames(pkg).NameAll(doc.Root, name, rels, spaces)
 	return doc.Bytes()
 }
 

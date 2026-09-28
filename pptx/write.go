@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/citadellefr/bref/drawingml"
+	"github.com/citadellefr/bref/internal/partrel"
 	"github.com/citadellefr/bref/internal/xmldom"
 	"github.com/citadellefr/bref/opc"
 	"github.com/citadellefr/bref/ot"
@@ -29,7 +30,7 @@ func (d *Document) Save(tree *ot.Tree) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	w := &writer{d: d, pkg: pkg, tree: tree, names: map[string]rel{}, fresh: map[*xmldom.Element]bool{}}
+	w := &writer{d: d, pkg: pkg, tree: tree, fresh: map[*xmldom.Element]bool{}}
 	if err := w.save(); err != nil {
 		return nil, err
 	}
@@ -37,10 +38,9 @@ func (d *Document) Save(tree *ot.Tree) ([]byte, error) {
 }
 
 type writer struct {
-	d     *Document
-	pkg   *opc.Package
-	tree  *ot.Tree
-	names map[string]rel // given while writing
+	d    *Document
+	pkg  *opc.Package
+	tree *ot.Tree
 	// fresh are the ids of the shapes created since the document was
 	// read, which may need new ones.
 	fresh map[*xmldom.Element]bool
@@ -48,21 +48,8 @@ type writer struct {
 	force bool
 }
 
-// lookup is the relationship a name stands for.
-func (w *writer) lookup(name string) (rel, bool) {
-	if r, ok := w.names[name]; ok {
-		return r, true
-	}
-	r, ok := w.d.rels[name]
-	return r, ok
-}
-
-func (w *writer) rels(source string, rels *partRels) *relsWriter {
-	rw := &relsWriter{names: w.lookup, source: source}
-	if rels != nil {
-		rw.list = slices.Clone(rels.list)
-	}
-	return rw
+func (w *writer) rels(source string, rels *partrel.Rels) *partrel.Writer {
+	return partrel.NewWriter(source, rels, w.d.names.Lookup)
 }
 
 // slide is a slide as the presentation lists it.
@@ -198,11 +185,11 @@ func (w *writer) put(name, contentType string, data []byte) error {
 	return w.pkg.Add(name, contentType, data)
 }
 
-func (w *writer) putRels(rw *relsWriter, isNew bool) error {
-	if !rw.changed && !isNew {
+func (w *writer) putRels(rw *partrel.Writer, isNew bool) error {
+	if !rw.Changed && !isNew {
 		return nil
 	}
-	return w.put(opc.RelsName(rw.source), "application/vnd.openxmlformats-package.relationships+xml", opc.MarshalRelationships(rw.list))
+	return w.put(opc.RelsName(rw.Source), "application/vnd.openxmlformats-package.relationships+xml", opc.MarshalRelationships(rw.List))
 }
 
 // str is a string attribute of a node, "" if it has none.
@@ -214,7 +201,7 @@ func str(n *ot.Node, key string) string {
 	return s
 }
 
-func (w *writer) slide(n *ot.Node, name string, rels *partRels, isNew bool) error {
+func (w *writer) slide(n *ot.Node, name string, rels *partrel.Rels, isNew bool) error {
 	root := w.d.fragment(str(n, "xml"))
 	if root == nil || root.Space != pNS || root.Local != "sld" {
 		root = newSlide()
@@ -256,11 +243,11 @@ func (w *writer) slide(n *ot.Node, name string, rels *partRels, isNew bool) erro
 
 	rw := w.rels(name, rels)
 	if layout := w.d.layouts[str(n, "layout")]; layout != "" {
-		r := rel{typ: relSlideLayout, target: layout}
-		rw.drop(relSlideLayout, r)
-		rw.ensure(r)
+		r := partrel.Rel{Type: relSlideLayout, Target: layout}
+		rw.Drop(relSlideLayout, r)
+		rw.Ensure(r)
 	}
-	rw.resolve(root, standardSpaces())
+	rw.Resolve(root, standardSpaces())
 	if err := w.put(name, typeSlide, append([]byte(xmlHeader), root.Bytes()...)); err != nil {
 		return err
 	}
@@ -393,7 +380,7 @@ func mustJSON(x any) json.RawMessage {
 
 // embed is the name of a picture, known to the document.
 func (w *writer) embed(media string) string {
-	if r, ok := w.lookup("@" + media); ok && r.typ == relImage {
+	if r, ok := w.d.names.Lookup("@" + media); ok && r.Type == partrel.Image {
 		return "@" + media
 	}
 	return ""
@@ -640,20 +627,20 @@ func (w *writer) notes(id, name string) error {
 	if err != nil {
 		return err
 	}
-	rels, err := w.d.readRels(name)
+	rels, err := partrel.Read(w.pkg, name)
 	if err != nil {
 		return err
 	}
 	spaces := standardSpaces()
 	maps.Copy(spaces, doc.Root.Spaces())
-	w.d.nameRels(doc.Root, name, rels, spaces)
+	w.d.names.NameAll(doc.Root, name, rels, spaces)
 	body := notesBody(doc.Root)
 	if body == nil {
 		return nil
 	}
 	drawingml.SetFlow(body, n.Text.Delta(), w.d.fragment)
 	rw := w.rels(name, rels)
-	rw.resolve(doc.Root, spaces)
+	rw.Resolve(doc.Root, spaces)
 	if err := w.pkg.Set(name, doc.Bytes()); err != nil {
 		return err
 	}
@@ -681,7 +668,7 @@ func (w *writer) presentation(slides []slide) error {
 	}
 	var list []opc.Relationship
 	gone := map[string]bool{}
-	for _, x := range rw.list {
+	for _, x := range rw.List {
 		if x.Type == relSlide {
 			if name, err := opc.Resolve(w.d.presName, x.Target); err == nil && !kept[name] {
 				gone[x.ID] = true
@@ -690,7 +677,7 @@ func (w *writer) presentation(slides []slide) error {
 		}
 		list = append(list, x)
 	}
-	rw.list, rw.changed = list, len(gone) > 0
+	rw.List, rw.Changed = list, len(gone) > 0
 
 	ids := pres.Child(pNS, "sldIdLst")
 	if ids == nil {
@@ -699,7 +686,7 @@ func (w *writer) presentation(slides []slide) error {
 	}
 	ids.Content = nil
 	for _, s := range slides {
-		rid := rw.ensure(rel{typ: relSlide, target: s.part})
+		rid := rw.Ensure(partrel.Rel{Type: relSlide, Target: s.part})
 		ids.Append(xmldom.New(pNS, "p:sldId", "id", strconv.FormatInt(s.id, 10), "r:id", rid))
 	}
 	if len(slides) == 0 {
