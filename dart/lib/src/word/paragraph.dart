@@ -238,9 +238,11 @@ class ParaBox {
     final rule = para['sp.rule'] ?? 'auto';
     final line = double.tryParse(para['sp.line'] ?? '');
     final factor = rule == 'auto' && line != null ? math.max(line / 240, 0.06) : 1.0;
-    final strut = rule == 'exact' && line != null
+    final strut = line == null || line <= 0
+        ? null
+        : rule == 'exact'
         ? StrutStyle(fontSize: line / 20, height: 1, forceStrutHeight: true, leading: 0)
-        : rule == 'atLeast' && line != null
+        : rule == 'atLeast'
         ? StrutStyle(fontSize: line / 20, height: 1, leading: 0)
         : null;
     final left = twips(para['ind.left']), right = twips(para['ind.right']), first = twips(para['ind.first']);
@@ -767,25 +769,35 @@ _Piece _layoutPiece(
   var painter = paint();
   final tabs = [for (var i = 0; i < slots.length; i++) if (slots[i].kind == _SlotKind.tab) i];
   final left = twips(para['ind.left']), firstIndent = twips(para['ind.first']);
-  for (var k = 0; k < tabs.length; k++) {
-    final i = tabs[k];
+  // the tabs of a line are set one after the other, each moving those
+  // after it; laid out again until the lines stay as they are
+  for (var pass = 0; pass < 5 && tabs.isNotEmpty; pass++) {
     final boxes = painter.inlinePlaceholderBoxes ?? const [];
-    if (i >= boxes.length) break;
-    final box = boxes[i];
-    final at = x + box.left;
-    final stop = _stopAfter(at, stops, left, firstIndent, ctx.defaultTab);
-    // the text after the tab, up to the next tab or the end of its line
-    final nextTab = k + 1 < tabs.length && tabs[k + 1] < boxes.length && (boxes[tabs[k + 1]].top - box.top).abs() < 1 ? x + boxes[tabs[k + 1]].left : null;
-    final lineEnd = x + _lineRight(painter, box.top, box.bottom);
-    final segment = math.max((nextTab ?? lineEnd) - at, 0.0);
-    var w = switch (stop.kind) {
-      'right' || 'end' || 'decimal' => stop.pos - at - segment,
-      'center' => stop.pos - at - segment / 2,
-      _ => stop.pos - at,
-    };
-    if (w < 0) w = 0;
-    slots[i].width = w;
-    slots[i].leader = stop.leader;
+    var changed = false;
+    var shift = 0.0;
+    double? line;
+    for (var k = 0; k < tabs.length; k++) {
+      final i = tabs[k];
+      if (i >= boxes.length) break;
+      final box = boxes[i];
+      if (line == null || (box.top - line).abs() > 0.5) shift = 0;
+      line = box.top;
+      final at = x + box.left + shift;
+      final stop = _stopAfter(at, stops, left, firstIndent, ctx.defaultTab);
+      // the text after the tab, up to the next tab or the end of its line
+      final next = k + 1 < tabs.length && tabs[k + 1] < boxes.length && (boxes[tabs[k + 1]].top - box.top).abs() < 0.5 ? boxes[tabs[k + 1]].left : null;
+      final segment = math.max((next ?? _lineRight(painter, box.top, box.bottom)) - box.right, 0.0);
+      final w = math.max(switch (stop.kind) {
+        'right' || 'end' || 'decimal' => stop.pos - at - segment,
+        'center' => stop.pos - at - segment / 2,
+        _ => stop.pos - at,
+      }, 0.0);
+      shift += w - slots[i].width;
+      if ((w - slots[i].width).abs() > 0.1) changed = true;
+      slots[i].width = w;
+      slots[i].leader = stop.leader;
+    }
+    if (!changed) break;
     painter = paint();
   }
   return _Piece(painter, x, y, from, lead.length, slots);
