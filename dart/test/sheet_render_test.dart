@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:bref/src/excel/filter.dart';
 import 'package:bref/src/excel/number_format.dart';
 import 'package:bref/src/excel/sheet_view.dart';
 import 'package:bref/src/excel/workbook.dart';
@@ -32,7 +33,7 @@ void main() {
         await tester.pumpWidget(MaterialApp(
           home: RepaintBoundary(
             key: key,
-            child: SheetView(book: book, sheet: sheets[i], selection: SheetSelection(), locale: NumberLocale.fr),
+            child: SheetView(book: book, sheet: sheets[i], selection: SheetSelection(), locale: NumberLocale.fr, filter: SheetFilter.of(sheets[i])),
           ),
         ));
         await tester.pump();

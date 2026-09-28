@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../ot/grid.dart';
 import '../ot/tree.dart';
 import 'conditional.dart';
+import 'filter.dart';
 import 'number_format.dart';
 import 'workbook.dart';
 
@@ -109,6 +110,8 @@ class SheetView extends StatefulWidget {
     this.onFill,
     this.onList,
     this.prompt,
+    this.filter,
+    this.onFilter,
   });
 
   final Workbook book;
@@ -143,6 +146,11 @@ class SheetView extends StatefulWidget {
 
   /// What the active cell asks to be typed, shown under it.
   final Widget? prompt;
+
+  /// The filter of the sheet, whose arrows open [onFilter] with their
+  /// column and their rectangle on screen.
+  final SheetFilter? filter;
+  final void Function(int col, Rect at)? onFilter;
 
   @override
   State<SheetView> createState() => SheetViewState();
@@ -229,10 +237,28 @@ class SheetViewState extends State<SheetView> {
   Rect get activeRect => areaRect(CellArea.cell(widget.selection.active.$1, widget.selection.active.$2));
 
   /// The rectangle of the active cell on the screen.
-  Rect get activeScreenRect {
+  Rect get activeScreenRect => _onScreen(activeRect);
+
+  Rect _onScreen(Rect r) {
     final box = context.findRenderObject() as RenderBox?;
-    final r = activeRect;
     return box == null ? r : box.localToGlobal(r.topLeft) & r.size;
+  }
+
+  /// The arrows of the filter on the columns in view, where they go.
+  List<(int, Rect)> get _filterArrows {
+    final f = widget.filter;
+    if (f == null || _size.isEmpty) return const [];
+    final l = _layout;
+    final first = cellAt(Offset(_rowHeader + _frozen.dx * _z + 1, _colHeader + 1)).$2;
+    final last = cellAt(Offset(_size.width - 1, _colHeader + 1)).$2;
+    final out = <(int, Rect)>[];
+    for (var col = f.area.left; col <= f.area.right; col++) {
+      if (col > l.frozenCols && (col < first || col > last)) continue;
+      final r = areaRect(CellArea.cell(f.area.top, col));
+      final side = math.min(r.height - 2, 17 * _z);
+      if (side > 6) out.add((col, Rect.fromLTWH(r.right - side - 1, r.bottom - side - 1, side, side)));
+    }
+    return out;
   }
 
   /// Where the arrow of the active cell's list goes, beside the cell.
@@ -315,6 +341,7 @@ class SheetViewState extends State<SheetView> {
 
   void _down(PointerDownEvent e) {
     if (_arrowRect?.contains(e.localPosition) ?? false) return;
+    if (_filterArrows.any((a) => a.$2.contains(e.localPosition))) return;
     if (e.buttons == kSecondaryMouseButton) {
       final t = _target(e.localPosition);
       if (t.kind == _Kind.cell && !widget.selection.area.contains(t.row, t.col)) {
@@ -490,19 +517,13 @@ class SheetViewState extends State<SheetView> {
               if (widget.editing && widget.editor != null)
                 Positioned.fromRect(rect: activeRect.inflate(1), child: widget.editor!),
               if (_arrowRect case final arrow?)
+                Positioned.fromRect(rect: arrow, child: _Arrow(icon: Icons.arrow_drop_down, onDown: () => widget.onList!(activeScreenRect))),
+              for (final (col, r) in _filterArrows)
                 Positioned.fromRect(
-                  rect: arrow,
-                  child: Material(
-                    color: const Color(0xFFF3F3F3),
-                    shape: const Border.fromBorderSide(BorderSide(color: Color(0xFFABABAB))),
-                    // on the press, as Excel opens it, and past the double tap of the grid
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.basic,
-                      child: Listener(
-                        onPointerDown: (_) => widget.onList!(activeScreenRect),
-                        child: FittedBox(child: Icon(Icons.arrow_drop_down, color: Colors.grey.shade800)),
-                      ),
-                    ),
+                  rect: r,
+                  child: _Arrow(
+                    icon: widget.filter!.filters(col) ? Icons.filter_alt : Icons.arrow_drop_down,
+                    onDown: widget.onFilter == null ? null : () => widget.onFilter!(col, _onScreen(r)),
                   ),
                 ),
               if (widget.prompt != null)
@@ -513,6 +534,28 @@ class SheetViewState extends State<SheetView> {
       );
     });
   }
+}
+
+/// The button of a list or a filter, opened on the press as Excel opens
+/// them, past the double tap of the grid.
+class _Arrow extends StatelessWidget {
+  const _Arrow({required this.icon, this.onDown});
+
+  final IconData icon;
+  final VoidCallback? onDown;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: const Color(0xFFF3F3F3),
+    shape: const Border.fromBorderSide(BorderSide(color: Color(0xFFABABAB))),
+    child: MouseRegion(
+      cursor: SystemMouseCursors.basic,
+      child: Listener(
+        onPointerDown: onDown == null ? null : (_) => onDown!(),
+        child: FittedBox(child: Icon(icon, color: Colors.grey.shade800)),
+      ),
+    ),
+  );
 }
 
 enum _Kind { cell, col, row, colEdge, rowEdge, all, fill }

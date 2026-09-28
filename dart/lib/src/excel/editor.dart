@@ -10,6 +10,8 @@ import '../ot/grid.dart';
 import '../ot/tree.dart';
 import '../session.dart';
 import 'edits.dart';
+import 'filter.dart';
+import 'filter_panel.dart';
 import 'formula_text.dart';
 import 'input.dart';
 import 'lists.dart';
@@ -358,6 +360,8 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
           _toggleFont('i', _activeStyle.font.italic);
         case LogicalKeyboardKey.keyU:
           _setFont('u', _activeStyle.font.underline ? null : 'single');
+        case LogicalKeyboardKey.keyL when shift:
+          _toggleFilter();
         case LogicalKeyboardKey.home:
           go(1, 1);
         case LogicalKeyboardKey.end:
@@ -759,6 +763,57 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
     _edit(_edits.sort(sheet, a, _selection.active.$2, descending: descending));
   }
 
+  // filters
+
+  void _toggleFilter() {
+    final sheet = _sheet;
+    if (sheet == null) return;
+    if (SheetFilter.of(sheet) != null) {
+      _edit(filterEdit(_wb, sheet, null, _locale));
+      return;
+    }
+    final a = _selection.area;
+    _edit(filterEdit(_wb, sheet, SheetFilter(a.single ? currentRegion(sheet, a.top, a.left) : a), _locale));
+  }
+
+  /// Applies the filter of the sheet again, its columns cleared when
+  /// [clear].
+  void _refilter({bool clear = false}) {
+    final sheet = _sheet;
+    final f = sheet == null ? null : SheetFilter.of(sheet);
+    if (f == null) return;
+    _edit(filterEdit(_wb, sheet!, clear ? SheetFilter(f.area) : f, _locale));
+  }
+
+  Future<void> _openFilter(int col, Rect at) async {
+    final sheet = _sheet;
+    final f = sheet == null ? null : SheetFilter.of(sheet);
+    if (f == null) return;
+    final (values, blanks) = columnValues(_wb, sheet!, f, col, _locale);
+    final header = shownText(_wb, sheet.grid?.cell(f.area.top, col), _locale);
+    final choice = await showFilterPanel(
+      context,
+      at: at,
+      name: header.isEmpty ? columnName(col) : header,
+      values: values,
+      blanks: blanks,
+      current: f.columns[col - f.area.left],
+      strings: _s,
+    );
+    if (choice == null || !mounted) return;
+    switch (choice.action) {
+      case FilterAction.sortAscending || FilterAction.sortDescending:
+        final (first, last) = f.rows;
+        _edit(_edits.sort(sheet, CellArea(first, f.area.left, last, f.area.right), col, descending: choice.action == FilterAction.sortDescending));
+        _refilter();
+      case FilterAction.clear:
+        _edit(filterEdit(_wb, sheet, f.withColumn(col, null), _locale));
+      case FilterAction.show:
+        _edit(filterEdit(_wb, sheet, f.withColumn(col, choice.column), _locale));
+    }
+    _gridFocus.requestFocus();
+  }
+
   void _goToName() {
     final area = parseArea(_nameBox.text.trim().toUpperCase());
     if (area != null) _selection.selectArea(area);
@@ -880,6 +935,8 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
                       onFill: _session.readOnly ? null : (from, to) => _edit(_edits.fill(sheet, from, to)),
                       onList: _activeList == null ? null : _openList,
                       prompt: _prompt,
+                      filter: SheetFilter.of(sheet),
+                      onFilter: _session.readOnly ? null : _openFilter,
                     ),
                   ),
                 ),
@@ -1006,6 +1063,7 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
 
   Widget _ribbon(BuildContext context) {
     final editable = !_session.readOnly && _sheet?.grid != null;
+    final hasFilter = _sheet != null && SheetFilter.of(_sheet!) != null;
     final style = _activeStyle;
     final font = style.font;
     final colors = {for (var i = 0; i < 10; i++) themeNames[i]: _wb.themeColors[i]};
@@ -1193,8 +1251,10 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
               items: [
                 PopupMenuItem(value: 'asc', child: Text(_s.sortAscending)),
                 PopupMenuItem(value: 'desc', child: Text(_s.sortDescending)),
+                const PopupMenuDivider(),
+                PopupMenuItem(value: 'filter', child: Text(_s.filter)),
               ],
-              onSelected: (v) => _sort(descending: v == 'desc'),
+              onSelected: (v) => v == 'filter' ? _toggleFilter() : _sort(descending: v == 'desc'),
             ),
             RibbonMenu<String>(
               icon: const Icon(Icons.cleaning_services_outlined),
@@ -1231,6 +1291,16 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
           RibbonGroup(_s.sortAndFilter, [
             RibbonButton(icon: const Icon(Icons.arrow_downward), label: _s.sortAscending, large: true, onPressed: editable ? () => _sort(descending: false) : null),
             RibbonButton(icon: const Icon(Icons.arrow_upward), label: _s.sortDescending, large: true, onPressed: editable ? () => _sort(descending: true) : null),
+            RibbonButton(
+              icon: const Icon(Icons.filter_alt_outlined),
+              label: _s.filter,
+              large: true,
+              shortcut: 'Ctrl+Maj+L',
+              selected: hasFilter,
+              onPressed: editable ? _toggleFilter : null,
+            ),
+            RibbonButton(icon: const Icon(Icons.filter_alt_off_outlined), label: _s.clearFilters, onPressed: editable && hasFilter ? () => _refilter(clear: true) : null),
+            RibbonButton(icon: const Icon(Icons.refresh), label: _s.reapply, onPressed: editable && hasFilter ? _refilter : null),
           ]),
         ]),
         RibbonTab(_s.view, [

@@ -126,6 +126,13 @@ class BrefStrings {
   String get zoom => 'Zoom';
   String get window => 'Fenêtre';
   String get sortAndFilter => 'Trier et filtrer';
+  String get filter => 'Filtrer';
+  String get clearFilters => 'Effacer';
+  String get reapply => 'Réappliquer';
+  String clearFilterFrom(String column) => 'Effacer le filtre de « $column »';
+  String get selectAll => '(Sélectionner tout)';
+  String get blanks => '(Vides)';
+  String get search => 'Rechercher';
   String get insertFunction => 'Insérer une fonction';
   String get functionLibrary => 'Bibliothèque de fonctions';
   String get nameBox => 'Zone Nom';

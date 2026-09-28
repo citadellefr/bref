@@ -164,6 +164,43 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('filters rows and takes the filter away', (tester) async {
+    await open(tester);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await settle(tester);
+    expect(hub.doc['S1']!.attributes['filter'], {'ref': 'A1:A3'});
+
+    await tester.tap(find.byIcon(Icons.arrow_drop_down).last);
+    await tester.pumpAndSettle();
+    expect(find.text('(Sélectionner tout)'), findsOneWidget);
+    await tester.tap(find.widgetWithText(CheckboxListTile, '5'));
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await settle(tester);
+    expect(hub.doc['S1']!.attributes['filter'], {
+      'ref': 'A1:A3',
+      'cols': [
+        {'col': 0, 'vals': ['3']},
+      ],
+    });
+    expect(hub.doc['S1']!.grid!.cell(3, 0), {'hide': true});
+    expect(find.byIcon(Icons.filter_alt), findsOneWidget);
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await settle(tester);
+    expect(hub.doc['S1']!.attributes['filter'], isNull);
+    expect(hub.doc['S1']!.grid!.cell(3, 0), isNull);
+    await finish(tester);
+  });
+
   testWidgets('keeps a CSV file to one sheet, and says what it saves', (tester) async {
     await open(tester, csv: true);
     expect(find.textContaining('Fichier CSV'), findsOneWidget);
