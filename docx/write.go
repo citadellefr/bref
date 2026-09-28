@@ -511,7 +511,9 @@ func (w *writer) pPr(mark ot.Attrs, in *xmldom.Element) *xmldom.Element {
 			run[k] = v
 		}
 	}
-	if id := para["pstyle"]; id != "" && !w.d.fileStyles[id] {
+	// a builtin style goes into the file when a client applies it, not for
+	// a paragraph that named a style the file lacks
+	if id := para["pstyle"]; id != "" && id != old["pstyle"] && !w.d.fileStyles[id] {
 		w.useStyle(id)
 	}
 	if n := para["num"]; builtinLists[n] != "" {
