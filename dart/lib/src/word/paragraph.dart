@@ -530,7 +530,7 @@ class _Builder {
       final color = revision == null ? null : revisionColor(revision);
       final style = ctx.style({...run, if (attrs['del'] != null) 'del': '1', if (attrs['ins'] != null) 'ins': '1'}, factor: factor, mark: color);
       final text = op.insert!;
-      if (attrs.containsKey('o') || attrs.containsKey('po')) {
+      if (attrs.containsKey('o') || attrs.containsKey('po') || attrs.containsKey('br')) {
         for (var i = 0; i < text.length; i++) {
           _object(attrs, run, style, offset + i);
         }
@@ -627,8 +627,10 @@ class _Builder {
     final field = _fields.lastOrNull;
     final simple = attrs['field'];
     final simpleValue = simple == null ? null : fields.of(simple);
-    final firstOfSimple = simple != null && attrs['wrap'] != _simpleWrap;
-    _simpleWrap = simple == null ? null : attrs['wrap'];
+    // a field the client made has no wrap: its runs follow one another
+    final wrap = simple == null ? null : attrs['wrap'] ?? 'field:$simple';
+    final firstOfSimple = simple != null && wrap != _simpleWrap;
+    _simpleWrap = wrap;
     if (run['caps'] == '1') {
       final upper = text.toUpperCase();
       if (upper.length == text.length) text = upper;

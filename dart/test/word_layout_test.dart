@@ -75,6 +75,30 @@ void main() {
     expect(layout.pages[1].lines.first.top, 72);
   });
 
+  test('a page break the editor inserted breaks the page too', () {
+    final flow = Delta()
+      ..insert('Avant')
+      ..insert('￼', {'br': 'page'})
+      ..insert('Après\n');
+    expect(lay(document([text('t', 'V', flow)])).pages, hasLength(2));
+  });
+
+  test('a page number the editor inserted reads the page', () {
+    final doc = document([text('t', 'V', plain('Texte'))]);
+    final source = ParaSource(
+      flow: 't',
+      start: 0,
+      ops: [const Op.insert('1', {'field': 'PAGE'})],
+      mark: const {},
+      para: const {},
+      runBase: const {'sz': '20'},
+    );
+    final ctx = WordContext(doc);
+    final one = ParaBox.layout(source, ctx, 400, fields: const FieldValues(page: '1'));
+    final many = ParaBox.layout(source, ctx, 400, fields: const FieldValues(page: '12345'));
+    expect(many.caretAt(1).left, greaterThan(one.caretAt(1).left + 20));
+  });
+
   test('text flows onto the next pages, lines kept whole', () {
     final long = List.filled(200, 'Ligne').join('\n');
     final layout = lay(document([text('t', 'V', plain(long, {'widowControl': '1'}))]));
