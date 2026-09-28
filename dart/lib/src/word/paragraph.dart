@@ -329,18 +329,18 @@ class ParaBox {
   int get length => source.length;
   Props get para => source.para;
 
-  double get height => lines.isEmpty ? 0 : lines.last.bottom;
 
-  double get spaceBefore => source.para['sp.beforeAuto'] == '1' ? 14 : twips(source.para['sp.before']);
-  double get spaceAfter => source.para['sp.afterAuto'] == '1' ? 14 : twips(source.para['sp.after']);
-  bool get autoBefore => source.para['sp.beforeAuto'] == '1';
-  bool get autoAfter => source.para['sp.afterAuto'] == '1';
-  bool get contextual => source.para['contextualSpacing'] == '1';
-  bool get keepNext => source.para['keepNext'] == '1';
-  bool get keepLines => source.para['keepLines'] == '1';
-  bool get widowControl => source.para['widowControl'] == '1';
-  bool get breakBefore => source.para['pageBreakBefore'] == '1';
-  String? get style => source.mark['pstyle'];
+  late final double spaceBefore = autoBefore ? 14 : twips(source.para['sp.before']);
+  late final double spaceAfter = autoAfter ? 14 : twips(source.para['sp.after']);
+  late final bool autoBefore = source.para['sp.beforeAuto'] == '1';
+  late final bool autoAfter = source.para['sp.afterAuto'] == '1';
+  late final bool contextual = source.para['contextualSpacing'] == '1';
+  late final bool keepNext = source.para['keepNext'] == '1';
+  late final bool keepLines = source.para['keepLines'] == '1';
+  late final bool widowControl = source.para['widowControl'] == '1';
+  late final bool breakBefore = source.para['pageBreakBefore'] == '1';
+  late final String? style = source.mark['pstyle'];
+  late final double height = lines.isEmpty ? 0 : lines.last.bottom;
 
   /// The left and right of the text area the paragraph's shading and
   /// borders cover.

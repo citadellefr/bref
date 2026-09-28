@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+
 import '../ot/tree.dart';
 import '../text/text_frame.dart' show Props;
 
@@ -181,9 +183,13 @@ class WordDocument {
       paragraphStyle = previous.paragraphStyle;
       tableStyle = previous.tableStyle;
       _chains = previous._chains;
+      _paragraphs = previous._paragraphs;
+      _runs = previous._runs;
       return;
     }
     _chains = {};
+    _paragraphs = {};
+    _runs = {};
     final a = _node?.attributes ?? const <String, Object?>{};
     styles = {
       for (final e in _map(a['styles']).entries)
@@ -278,7 +284,11 @@ class WordDocument {
   /// the default paragraph style, the table's style, the paragraph's own
   /// style, its list level, then the mark's own keys. Tab stops add up, a
   /// "clear" taking one away.
-  Props paragraph(Props mark, {Props table = const {}}) {
+  Props paragraph(Props mark, {Props table = const {}}) => _paragraphs[_Pair(mark, table)] ??= _paragraph(mark, table);
+
+  late final Map<_Pair, Props> _paragraphs, _runs;
+
+  Props _paragraph(Props mark, Props table) {
     final (under, over) = _layers(styleOf(mark));
     final style = styleProps(styleOf(mark), 'p');
     final num = mark['num'] ?? style['num'];
@@ -301,7 +311,7 @@ class WordDocument {
   /// The run formatting a paragraph's runs start from: the defaults, the
   /// default paragraph style, the table's style and the paragraph's own
   /// style.
-  Props paragraphRun(Props mark, {Props table = const {}}) {
+  Props paragraphRun(Props mark, {Props table = const {}}) => _runs[_Pair(mark, table)] ??= () {
     final (under, over) = _layers(styleOf(mark));
     return {
       ...defaultRun,
@@ -309,7 +319,7 @@ class WordDocument {
       ...table,
       for (final s in over) ...s.r,
     };
-  }
+  }();
 
   /// The run formatting in effect for the attributes of a run, from [base]
   /// the paragraph's.
@@ -371,6 +381,22 @@ class WordDocument {
     out.add((lastSection, null, null));
     return out;
   }
+}
+
+/// Two maps of keys, equal when they hold the same: what formatting is
+/// resolved from, found again whatever map holds it.
+class _Pair {
+  _Pair(this.a, this.b) : hashCode = Object.hash(_hash(a), _hash(b));
+
+  final Props a, b;
+
+  @override
+  final int hashCode;
+
+  static int _hash(Props m) => Object.hashAllUnordered([for (final e in m.entries) Object.hash(e.key, e.value)]);
+
+  @override
+  bool operator ==(Object other) => other is _Pair && mapEquals(other.a, a) && mapEquals(other.b, b);
 }
 
 Props _props(Object? v) => {
