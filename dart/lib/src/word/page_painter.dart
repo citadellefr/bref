@@ -27,7 +27,7 @@ class PagePainter {
     for (final l in page.lines) {
       _band(canvas, l);
     }
-    for (final l in page.lines) {
+    for (final l in page.lines.where((l) => l.area != PageArea.drawing)) {
       final dim = dimHeaders && l.area != PageArea.body;
       if (dim) canvas.saveLayer(null, Paint()..color = const Color(0x80FFFFFF));
       l.box.paint(canvas, l.origin, l.from, l.to, images: images);
@@ -39,6 +39,10 @@ class PagePainter {
     for (final p in page.pictures.where((p) => !p.behind)) {
       _picture(canvas, p);
     }
+    // the text of text boxes, over their fill
+    for (final l in page.lines.where((l) => l.area == PageArea.drawing)) {
+      l.box.paint(canvas, l.origin, l.from, l.to, images: images);
+    }
   }
 
   void _picture(Canvas canvas, PlacedPicture p) {
@@ -46,11 +50,22 @@ class PagePainter {
     final image = media == null ? null : images?.call(media);
     if (image != null) {
       drawPicture(canvas, image, p.rect);
-    } else {
-      canvas.drawRect(p.rect, Paint()
-        ..style = PaintingStyle.stroke
-        ..color = const Color(0xFFB0B0B0));
+      return;
     }
+    if (p.picture['text'] != null) {
+      final fill = hexColor(p.picture['fill']), line = hexColor(p.picture['line']);
+      if (fill != null) canvas.drawRect(p.rect, Paint()..color = fill);
+      if (line != null) {
+        canvas.drawRect(p.rect, Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.75
+          ..color = line);
+      }
+      return;
+    }
+    canvas.drawRect(p.rect, Paint()
+      ..style = PaintingStyle.stroke
+      ..color = const Color(0xFFB0B0B0));
   }
 
   /// The shading and borders of a paragraph behind its lines.

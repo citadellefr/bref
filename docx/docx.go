@@ -447,7 +447,7 @@ func (r *reader) object(flow ot.Delta, key string, e *xmldom.Element, wrap []str
 		attrs = ot.Attrs{}
 	}
 	attrs[key] = r.d.raw(e)
-	describe(e, attrs)
+	r.describe(e, attrs)
 	return flow.Push(ot.Op{Insert: Object, Attrs: clean(attrs)})
 }
 
@@ -529,7 +529,7 @@ func (r *reader) run(e *xmldom.Element, wrap []string, flow ot.Delta) ot.Delta {
 			with[k] = v
 		}
 		with["o"] = r.d.raw(c)
-		describe(c, with)
+		r.describe(c, with)
 		flow = flow.Push(ot.Op{Insert: Object, Attrs: clean(with)})
 	}
 	return flow

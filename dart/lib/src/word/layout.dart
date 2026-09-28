@@ -2,13 +2,15 @@ import 'dart:math' as math;
 
 import 'package:flutter/painting.dart';
 
+import '../ot/delta.dart';
 import '../ot/tree.dart';
 import 'blocks.dart';
 import 'document.dart';
 import 'paragraph.dart';
 
-/// Where text is on a page: the body, or a header or footer.
-enum PageArea { body, header, footer }
+/// Where text is on a page: the body, a header or footer, or a text box,
+/// which is drawn but not edited.
+enum PageArea { body, header, footer, drawing }
 
 /// Lines of a paragraph drawn on a page.
 class PlacedLines {
@@ -202,6 +204,10 @@ class _Paginator {
   ParaBox? _prev;
   var _started = false;
 
+  /// The heights of the page the text may not run over: those of pictures
+  /// it goes around.
+  final _bands = <(double, double)>[];
+
   WordPage get _page => pages.last;
 
   static double _columnWidth(WordSection s) {
@@ -290,6 +296,7 @@ class _Paginator {
       ..header = header
       ..footer = footer;
     pages.add(page);
+    _bands.clear();
     _column = 0;
     _natural = natural;
     _setColumn();
@@ -356,14 +363,17 @@ class _Paginator {
     while (i < lines.length) {
       var n = 0;
       var y = _y + space;
+      double? below;
       while (i + n < lines.length && y + lines[i + n].height <= _bottom + 0.01) {
+        below = _below(y, y + lines[i + n].height);
+        if (below != null) break;
         y += lines[i + n].height;
         n++;
         if (lines[i + n - 1].breakAfter != null) break;
       }
       final hard = n > 0 ? lines[i + n - 1].breakAfter : null;
-      if (hard == null && i + n < lines.length) n = _keep(p, i, n);
-      if (n == 0 && _atTop) n = 1;
+      if (hard == null && below == null && i + n < lines.length) n = _keep(p, i, n);
+      if (n == 0 && _atTop && below == null) n = 1;
       if (n > 0) {
         _place(lp, i, i + n, space);
         final h = lines[i + n - 1].bottom - lines[i].top;
@@ -372,6 +382,11 @@ class _Paginator {
         space = 0;
       }
       i += n;
+      if (below != null) {
+        // the text goes on under a picture it may not run over
+        _y = below;
+        continue;
+      }
       if (hard == 'page') {
         _newPage(natural: false);
       } else if (hard == 'column') {
@@ -465,11 +480,34 @@ class _Paginator {
         'top' || 'inside' => ry.top,
         _ => ry.top + ((fl['y'] as num?) ?? 0) / 12700,
       };
-      page.pictures.add(PlacedPicture(pic, Rect.fromLTWH(x, y, w, h), fl['behind'] == true));
+      final rect = Rect.fromLTWH(x, y, w, h);
+      page.pictures.add(PlacedPicture(pic, rect, fl['behind'] == true));
+      final wrap = fl['wrap'];
+      final wide = w >= _colWidth * 0.6;
+      if (fl['behind'] != true && (wrap == 'topAndBottom' || wide && (wrap == 'square' || wrap == 'tight' || wrap == 'through'))) {
+        _bands.add((rect.top, rect.bottom));
+      }
+      final text = Delta.fromJson(pic['text']);
+      if (text != null && text.length > 0) {
+        final box = Node(id: 'drawing:${lp.flow}:${lp.start + f.offset}', type: 'text', key: 'V', text: text);
+        final width = math.max(w - 14.4, 1.0);
+        final blocks = [for (final (source, _) in builder.sources(box)) LaidPara(cache.get(source, ctx, width, FieldValues.none), box.id, source.start, null)];
+        _placeBlocks(page, blocks, Offset(x + 7.2, y + 3.6), PageArea.drawing);
+      }
     }
   }
 
   // tables
+
+  /// The bottom of the picture the text between [top] and [bottom] would
+  /// run over, null when it runs over none.
+  double? _below(double top, double bottom) {
+    double? out;
+    for (final (a, b) in _bands) {
+      if (top < b && bottom > a) out = math.max(out ?? b, b);
+    }
+    return out;
+  }
 
   void _table(LaidTable t) {
     if (_prev != null && !_atTop) _y += _prev!.spaceAfter;
@@ -491,6 +529,11 @@ class _Paginator {
   }
 
   void _row(LaidTable t, LaidRow row, int r) {
+    final below = _below(_y, _y + row.height);
+    if (below != null) {
+      _y = below;
+      if (_y + row.height > _bottom + 0.01) _nextColumn(natural: true);
+    }
     _placeRow(_page, t, row, r, Offset(_colLeft + t.x, _y));
     _y += row.height;
     _atTop = false;

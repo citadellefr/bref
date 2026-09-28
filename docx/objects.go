@@ -27,6 +27,11 @@ type Picture struct {
 	Crop  map[string]int `json:"crop,omitempty"`
 	Float *Float         `json:"float,omitempty"`
 	Descr string         `json:"descr,omitempty"`
+	// Text is what a text box holds, a flow drawn but not edited; Fill
+	// and Line its colors, "RRGGBB".
+	Text ot.Delta `json:"text,omitempty"`
+	Fill string   `json:"fill,omitempty"`
+	Line string   `json:"line,omitempty"`
 }
 
 // Float is the position of an anchored drawing.
@@ -55,14 +60,14 @@ type Float struct {
 //	comment the id of a comment referred to
 //	bm      the name of a bookmark starting
 //	math    "1", an equation
-func describe(e *xmldom.Element, attrs ot.Attrs) {
+func (r *reader) describe(e *xmldom.Element, attrs ot.Attrs) {
 	switch e.Space {
 	case NS:
 	case mcNS:
 		if e.Local == "AlternateContent" {
 			if c := e.Child(mcNS, "Choice"); c != nil {
 				for _, inner := range c.Elements() {
-					describe(inner, attrs)
+					r.describe(inner, attrs)
 				}
 			}
 		}
@@ -75,12 +80,12 @@ func describe(e *xmldom.Element, attrs ot.Attrs) {
 	}
 	switch e.Local {
 	case "drawing":
-		if p := drawing(e); p != nil {
+		if p := r.drawing(e); p != nil {
 			data, _ := json.Marshal(p)
 			attrs["img"] = string(data)
 		}
 	case "pict", "object":
-		if p := vml(e); p != nil {
+		if p := r.vml(e); p != nil {
 			data, _ := json.Marshal(p)
 			attrs["img"] = string(data)
 		}
@@ -108,7 +113,7 @@ func describe(e *xmldom.Element, attrs ot.Attrs) {
 }
 
 // drawing reads a w:drawing.
-func drawing(e *xmldom.Element) *Picture {
+func (r *reader) drawing(e *xmldom.Element) *Picture {
 	for _, c := range e.Elements() {
 		if c.Space != wpNS || c.Local != "inline" && c.Local != "anchor" {
 			continue
@@ -138,6 +143,7 @@ func drawing(e *xmldom.Element) *Picture {
 		if c.Local == "anchor" {
 			p.Float = anchor(c)
 		}
+		r.textBox(c, p)
 		return p
 	}
 	return nil
@@ -171,6 +177,40 @@ func anchor(a *xmldom.Element) *Float {
 	return f
 }
 
+// textBox reads the text a shape holds, and its fill and outline.
+func (r *reader) textBox(shape *xmldom.Element, p *Picture) {
+	content := find(shape, NS, "txbxContent")
+	if content == nil {
+		return
+	}
+	var flow ot.Delta
+	for _, c := range content.Elements() {
+		if c.Space == NS && c.Local == "p" {
+			flow = r.paragraph(c, flow)
+		}
+	}
+	p.Text = flow
+	if sp := find(shape, "http://schemas.microsoft.com/office/word/2010/wordprocessingShape", "spPr"); sp != nil {
+		if f := sp.Child(aNS, "solidFill"); f != nil {
+			p.Fill = srgb(f)
+		}
+		if ln := sp.Child(aNS, "ln"); ln != nil && ln.Child(aNS, "noFill") == nil {
+			if f := ln.Child(aNS, "solidFill"); f != nil {
+				p.Line = srgb(f)
+			}
+		}
+	}
+}
+
+// srgb is the color of a solid fill given in RGB, "" for one of the
+// theme.
+func srgb(fill *xmldom.Element) string {
+	if c := fill.Child(aNS, "srgbClr"); c != nil && hexColor.MatchString(c.Get("val")) {
+		return c.Get("val")
+	}
+	return ""
+}
+
 // find is the first descendant of e with that name.
 func find(e *xmldom.Element, space, local string) *xmldom.Element {
 	for _, c := range e.Elements() {
@@ -187,7 +227,7 @@ func find(e *xmldom.Element, space, local string) *xmldom.Element {
 var vmlDimension = regexp.MustCompile(`(width|height):\s*([\d.]+)(pt|in|px|cm|mm)?`)
 
 // vml reads an inline VML shape: its size and picture.
-func vml(e *xmldom.Element) *Picture {
+func (r *reader) vml(e *xmldom.Element) *Picture {
 	var shape *xmldom.Element
 	for _, local := range []string{"shape", "rect", "group", "roundrect", "oval"} {
 		if shape = find(e, vmlNS, local); shape != nil {
@@ -223,6 +263,7 @@ func vml(e *xmldom.Element) *Picture {
 	if img := find(shape, vmlNS, "imagedata"); img != nil {
 		p.Media = strings.TrimPrefix(img.Get("r:id"), "@")
 	}
+	r.textBox(shape, p)
 	if p.W == 0 || p.H == 0 {
 		return nil
 	}
