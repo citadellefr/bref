@@ -56,6 +56,12 @@ const (
 	relHyperlink      = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
 )
 
+// relNotes are the relationships of the parts of footnotes and endnotes.
+var relNotes = map[string]string{
+	"footnote": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes",
+	"endnote":  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes",
+}
+
 // Characters of a flow that stand for something other than text.
 const (
 	LineBreak = "\v"
@@ -86,8 +92,10 @@ type Document struct {
 	mainRels *partrel.Rels
 	// spaces are the prefixes the main part declares.
 	spaces map[string]string
-	// parts are the headers and footers, by node id.
+	// parts are the headers and footers, by node id; notes the parts of
+	// footnotes and endnotes, by kind.
 	parts map[string]*part
+	notes map[string]*part
 	// fileStyles are the ids of the styles styles.xml defines.
 	fileStyles map[string]bool
 }
@@ -110,6 +118,7 @@ func Open(data []byte) (*Document, *ot.Tree, error) {
 		trusted:  map[uint64]bool{},
 		seed:     maphash.MakeSeed(),
 		parts:    map[string]*part{},
+		notes:    map[string]*part{},
 	}
 	root, err := partrel.Read(pkg, "")
 	if err != nil {
@@ -296,7 +305,46 @@ func (r *reader) document() error {
 	if s := child(body, "sectPr"); s != nil {
 		r.section(r.nodes[0].Attrs, s)
 	}
+	last := keys[1]
+	for _, h := range hkeys {
+		last = max(last, h)
+	}
+	for _, kind := range []string{"footnote", "endnote"} {
+		name := rels.OfType(r.d.main, relNotes[kind])
+		if name == "" || !r.d.pkg.Has(name) {
+			continue
+		}
+		var err error
+		if last, err = r.notes(kind, name, last); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// notes reads the footnotes or endnotes of a part, each into a "note" node
+// keyed after [last]; the separators Word draws them under are only kept.
+func (r *reader) notes(kind, partName, last string) (string, error) {
+	root, rels, _, err := r.part(partName)
+	if err != nil {
+		return last, err
+	}
+	r.d.notes[kind] = &part{name: partName, rels: rels}
+	seen := map[string]bool{}
+	for _, n := range root.Elements() {
+		if n.Space != NS || n.Local != kind || attr(n, "type") != "" && attr(n, "type") != "normal" {
+			continue
+		}
+		id := kind[:1] + "n" + attr(n, "id")
+		if !name(id) || seen[id] {
+			continue
+		}
+		seen[id] = true
+		last = ot.KeyBetween(last, "")
+		r.addID(id, "note", "doc", last, ot.Values{"kind": json.RawMessage(`"` + kind + `"`)}, nil)
+		r.blocks(n, id)
+	}
+	return last, nil
 }
 
 // header reads a header or footer part into a node of its own.

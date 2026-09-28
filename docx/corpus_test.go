@@ -250,6 +250,18 @@ func edits(tree *ot.Tree) ot.Edit {
 			e = append(e, ot.Change{Op: ot.OpSet, ID: t.ID, Attrs: ot.Values{"jc": json.RawMessage(`"center"`)}})
 		}
 	}
+	for _, note := range tree.Children("doc") {
+		if note.Type != "note" {
+			continue
+		}
+		for _, t := range tree.Children(note.ID) {
+			if t.Type == "text" {
+				e = append(e, ot.Change{Op: ot.OpTxt, ID: t.ID, Text: ot.Delta{{Insert: "Note ", Attrs: ot.Attrs{"i": "1"}}}})
+				break
+			}
+		}
+		break
+	}
 	if s := tree.Node("doc").Attrs["sect"]; s != nil {
 		var sect Section
 		json.Unmarshal(s, &sect)

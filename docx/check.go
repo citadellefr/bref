@@ -13,7 +13,7 @@ var (
 )
 
 // holders are the nodes blocks go in.
-var holders = map[string]bool{"body": true, "tc": true, "sdt": true, "hdr": true, "ftr": true}
+var holders = map[string]bool{"body": true, "tc": true, "sdt": true, "hdr": true, "ftr": true, "note": true}
 
 var blockTypes = map[string]bool{"text": true, "tbl": true, "sdt": true, "other": true}
 
@@ -60,7 +60,7 @@ func (d *Document) Check(tree *ot.Tree, e ot.Edit) error {
 			created[c.ID] = c.Type
 		case ot.OpDel:
 			switch typeOf(c.ID) {
-			case "doc", "body", "hdr", "ftr":
+			case "doc", "body", "hdr", "ftr", "note":
 				return ErrReadOnly
 			}
 		case ot.OpSet:

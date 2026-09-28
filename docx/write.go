@@ -89,6 +89,11 @@ func (w *writer) save() error {
 			return err
 		}
 	}
+	for kind, p := range w.d.notes {
+		if err := w.notes(kind, p); err != nil {
+			return err
+		}
+	}
 	if len(created) > 0 || !w.same("body") || !w.sameAttrs("doc") {
 		if err := w.document(); err != nil {
 			return err
@@ -298,6 +303,41 @@ func (w *writer) header(n *ot.Node, name string, rels *partrel.Rels) error {
 		doc.Root.Append(newW(doc.Root, "p"))
 	}
 	return w.put(doc, name, contentType, rels, spaces, w.rels, read)
+}
+
+// notes rewrites the footnotes or endnotes whose nodes changed, in their
+// part; the others and the separators stay as they are.
+func (w *writer) notes(kind string, p *part) error {
+	var changed []*ot.Node
+	for _, n := range w.tree.Children("doc") {
+		if n.Type == "note" && strings.HasPrefix(n.ID, kind[:1]+"n") && !w.same(n.ID) {
+			changed = append(changed, n)
+		}
+	}
+	if len(changed) == 0 {
+		return nil
+	}
+	doc, spaces, err := w.open(p.name, p.rels)
+	if err != nil {
+		return err
+	}
+	read := revisionIDs(doc.Root)
+	w.rels = partrel.NewWriter(p.name, p.rels, w.d.names.Lookup)
+	for _, e := range doc.Root.Elements() {
+		if e.Space != NS || e.Local != kind {
+			continue
+		}
+		id := kind[:1] + "n" + attr(e, "id")
+		if !slices.ContainsFunc(changed, func(n *ot.Node) bool { return n.ID == id }) {
+			continue
+		}
+		e.Content = nil
+		w.blocks(id, e, w.marks(id))
+		if len(e.Content) == 0 {
+			e.Append(newW(e, "p"))
+		}
+	}
+	return w.put(doc, p.name, "", p.rels, spaces, w.rels, read)
 }
 
 // document rewrites the body of the main part and its last section.

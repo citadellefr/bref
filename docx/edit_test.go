@@ -11,7 +11,8 @@ import (
 	"github.com/citadellefr/bref/ot"
 )
 
-// build is a Word document of that body, with a header and a picture.
+// build is a Word document of that body, with a header, a picture and
+// footnotes.
 func build(t *testing.T, body string) []byte {
 	t.Helper()
 	const ns = `xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" ` +
@@ -19,11 +20,13 @@ func build(t *testing.T, body string) []byte {
 		`xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"`
 	parts := map[string]string{
 		"[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>`,
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>`,
 		"_rels/.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`,
 		"word/_rels/document.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/" TargetMode="External"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/></Relationships>`,
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/" TargetMode="External"/><Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/><Relationship Id="rId6" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>`,
+		"word/footnotes.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:footnotes ` + ns + `><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:id="1"><w:p><w:r><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> Source.</w:t></w:r></w:p></w:footnote></w:footnotes>`,
 		"word/styles.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles ` + ns + `><w:docDefaults><w:rPrDefault><w:rPr><w:sz w:val="22"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="259" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:keepNext/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="32"/></w:rPr></w:style></w:styles>`,
 		"word/header1.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -34,7 +37,7 @@ func build(t *testing.T, body string) []byte {
 	}
 	var b bytes.Buffer
 	z := zip.NewWriter(&b)
-	for _, name := range []string{"[Content_Types].xml", "_rels/.rels", "word/_rels/document.xml.rels", "word/styles.xml", "word/header1.xml", "word/document.xml", "word/media/image1.png"} {
+	for _, name := range []string{"[Content_Types].xml", "_rels/.rels", "word/_rels/document.xml.rels", "word/styles.xml", "word/header1.xml", "word/footnotes.xml", "word/document.xml", "word/media/image1.png"} {
 		f, err := z.Create(name)
 		if err != nil {
 			t.Fatal(err)
@@ -267,7 +270,7 @@ func TestNewHeader(t *testing.T) {
 	if rels := partOf(t, saved, "word/_rels/document.xml.rels"); !strings.Contains(rels, `relationships/footer" Target="footer1.xml"`) {
 		t.Errorf("rels\n%s", rels)
 	}
-	if doc := partOf(t, saved, "word/document.xml"); !strings.Contains(doc, `<w:footerReference w:type="default" r:id="rId5"/>`) {
+	if doc := partOf(t, saved, "word/document.xml"); !strings.Contains(doc, `<w:footerReference w:type="default" r:id="rId7"/>`) {
 		t.Errorf("document\n%s", doc)
 	}
 	if types := partOf(t, saved, "[Content_Types].xml"); !strings.Contains(types, `/word/footer1.xml`) {
@@ -402,7 +405,7 @@ func TestClientObjects(t *testing.T) {
 	for _, want := range []string{
 		`<w:r><w:br w:type="page"/></w:r>`,
 		`<w:fldSimple w:instr=" PAGE "><w:r><w:rPr><w:b/><w:bCs/></w:rPr><w:t>1</w:t></w:r></w:fldSimple>`,
-		`<w:hyperlink r:id="rId5"><w:r><w:t>site</w:t></w:r></w:hyperlink>`,
+		`<w:hyperlink r:id="rId7"><w:r><w:t>site</w:t></w:r></w:hyperlink>`,
 		`<w:hyperlink w:anchor="_Toc1"><w:r><w:t>ici</w:t></w:r></w:hyperlink>`,
 		`<w:r><w:t>xyA</w:t></w:r>`,
 	} {
@@ -410,7 +413,7 @@ func TestClientObjects(t *testing.T) {
 			t.Errorf("missing %s in\n%s", want, doc)
 		}
 	}
-	if rels := partOf(t, saved, "word/_rels/document.xml.rels"); !strings.Contains(rels, `Id="rId5" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.org/a?b=1" TargetMode="External"`) {
+	if rels := partOf(t, saved, "word/_rels/document.xml.rels"); !strings.Contains(rels, `Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.org/a?b=1" TargetMode="External"`) {
 		t.Errorf("rels\n%s", rels)
 	}
 	_, again, err := Open(saved)
@@ -469,5 +472,32 @@ func TestBuiltinStylesAndLists(t *testing.T) {
 	json.Unmarshal(again.Node("doc").Attrs["styles"], &styles)
 	if styles["Title"].Builtin {
 		t.Error("the style written is still builtin")
+	}
+}
+
+func TestFootnotes(t *testing.T) {
+	d, tree := open(t, `<w:p><w:r><w:t>Texte</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>`)
+	note := tree.Node("fn1")
+	if note == nil || note.Type != "note" || string(note.Attrs["kind"]) != `"footnote"` {
+		t.Fatalf("note %+v", note)
+	}
+	if tree.Node("fn-1") != nil {
+		t.Fatal("the separator was read as a note")
+	}
+	text := tree.Children("fn1")[0]
+	apply(t, d, tree, ot.Edit{{Op: ot.OpTxt, ID: text.ID, Text: ot.Delta{{Retain: 1}, {Insert: " Voir"}}}})
+	if err := d.Check(tree, ot.Edit{{Op: ot.OpDel, ID: "fn1"}}); err == nil {
+		t.Error("a note deleted")
+	}
+	saved, err := d.Save(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes := partOf(t, saved, "word/footnotes.xml")
+	if !strings.Contains(notes, `<w:t xml:space="preserve"> Voir Source.</w:t>`) || !strings.Contains(notes, `<w:separator/>`) {
+		t.Errorf("footnotes\n%s", notes)
+	}
+	if partOf(t, saved, "word/document.xml") != partOf(t, build(t, `<w:p><w:r><w:t>Texte</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>`), "word/document.xml") {
+		t.Error("the document was rewritten")
 	}
 }
