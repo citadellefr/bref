@@ -169,6 +169,98 @@ class BrefStrings {
     ('@', 'Texte'),
   ];
 
+  // Word
+  String get styles => 'Styles';
+  String get layoutTab => 'Mise en page';
+  String get margins => 'Marges';
+  String get orientation => 'Orientation';
+  String get portrait => 'Portrait';
+  String get landscape => 'Paysage';
+  String get size => 'Taille';
+  String get columns => 'Colonnes';
+  String get breaks => 'Sauts de page';
+  String get pageBreak => 'Saut de page';
+  String get pageSetup => 'Mise en page';
+  String get pages => 'Pages';
+  String get tables => 'Tableaux';
+  String get insertTable => 'Insérer un tableau';
+  String tableSize(int columns, int rows) => 'Tableau $columns x $rows';
+  String get insertRowAbove => 'Insérer une ligne au-dessus';
+  String get insertRowBelow => 'Insérer une ligne en dessous';
+  String get insertColumnLeft => 'Insérer une colonne à gauche';
+  String get insertColumnRight => 'Insérer une colonne à droite';
+  String get deleteRow => 'Supprimer la ligne';
+  String get deleteColumn => 'Supprimer la colonne';
+  String get deleteTable => 'Supprimer le tableau';
+  String get lineSpacing => 'Interligne et espacement de paragraphe';
+  String get addSpaceBefore => 'Ajouter un espace avant le paragraphe';
+  String get removeSpaceBefore => 'Supprimer l’espace avant le paragraphe';
+  String get addSpaceAfter => 'Ajouter un espace après le paragraphe';
+  String get removeSpaceAfter => 'Supprimer l’espace après le paragraphe';
+  String get increaseIndent => 'Augmenter le retrait';
+  String get decreaseIndent => 'Diminuer le retrait';
+  String get clearFormatting => 'Effacer toute la mise en forme';
+  String get superscript => 'Exposant';
+  String get subscript => 'Indice';
+  String pageOf(int n, int of) => 'Page $n sur $of';
+  String words(int n) => n == 1 ? '1 mot' : '$n mots';
+  String pageCount(int n) => n == 1 ? '1 page' : '$n pages';
+  String get headerFooter => 'En-tête et pied de page';
+  String get header => 'En-tête';
+  String get footer => 'Pied de page';
+  String get pageNumber => 'Numéro de page';
+  String get closeHeaderFooter => 'Fermer l’en-tête et le pied de page';
+  String get normalMargins => 'Normales';
+  String get narrowMargins => 'Étroites';
+  String get moderateMargins => 'Modérées';
+  String get wideMargins => 'Larges';
+  String get onePage => 'Une page';
+  String get pageWidth => 'Largeur de la page';
+  List<(String, int, int)> get paperSizes => const [
+    ('A4', 11906, 16838),
+    ('A5', 8391, 11906),
+    ('Lettre US', 12240, 15840),
+    ('Légal US', 12240, 20160),
+  ];
+
+  /// The name Word shows for a style, those it defines in French.
+  String styleName(String name) => _styleNames[name.toLowerCase()] ?? _heading(name) ?? name;
+
+  String? _heading(String name) {
+    final m = RegExp(r'^heading (\d)$', caseSensitive: false).firstMatch(name);
+    if (m != null) return 'Titre ${m[1]}';
+    final t = RegExp(r'^toc (\d)$', caseSensitive: false).firstMatch(name);
+    if (t != null) return 'TM ${t[1]}';
+    return null;
+  }
+
+  static const _styleNames = {
+    'normal': 'Normal',
+    'title': 'Titre',
+    'subtitle': 'Sous-titre',
+    'quote': 'Citation',
+    'intense quote': 'Citation intense',
+    'list paragraph': 'Paragraphe de liste',
+    'no spacing': 'Sans interligne',
+    'subtle emphasis': 'Accentuation légère',
+    'emphasis': 'Accentuation',
+    'intense emphasis': 'Accentuation intense',
+    'strong': 'Élevé',
+    'subtle reference': 'Référence légère',
+    'intense reference': 'Référence intense',
+    'book title': 'Titre du livre',
+    'caption': 'Légende',
+    'header': 'En-tête',
+    'footer': 'Pied de page',
+    'toc heading': 'En-tête de table des matières',
+    'hyperlink': 'Lien hypertexte',
+    'table grid': 'Grille du tableau',
+    'footnote text': 'Note de bas de page',
+    'default paragraph font': 'Police par défaut',
+    'list bullet': 'Liste à puces',
+    'list number': 'Liste numérotée',
+  };
+
   // backstage
   String get info => 'Informations';
   String get close => 'Fermer';

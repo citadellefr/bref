@@ -8,7 +8,6 @@ import 'package:bref/src/word/document.dart';
 import 'package:bref/src/word/layout.dart';
 import 'package:bref/src/word/page_painter.dart';
 import 'package:bref/src/word/paragraph.dart';
-import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'fonts.dart';

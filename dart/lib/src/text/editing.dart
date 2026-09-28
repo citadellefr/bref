@@ -3,12 +3,25 @@ import 'package:characters/characters.dart';
 import '../ot/delta.dart';
 import 'text_frame.dart';
 
+/// The keys of a kind of flow: those of paragraphs, those a mark keeps to
+/// itself when its paragraph is split or joined, and those that describe an
+/// object, which text typed after it does not take.
+class FlowKeys {
+  const FlowKeys({required this.paragraph, this.own = const {}, this.objects = const {'fld', 'o'}});
+
+  final Set<String> paragraph, own, objects;
+
+  /// The keys of the text bodies of DrawingML.
+  static const drawing = FlowKeys(paragraph: paraKeys);
+}
+
 /// Edits of a flow as PowerPoint and Word make them, each a delta to send.
 /// Offsets count UTF-16 units; an edit never splits a character.
 class FlowEditing {
-  FlowEditing(this.flow) : text = flow.text;
+  FlowEditing(this.flow, {this.keys = FlowKeys.drawing}) : text = flow.text;
 
   final Delta flow;
+  final FlowKeys keys;
 
   /// The flow as text: paragraph marks are "\n", line breaks "\v".
   final String text;
@@ -34,7 +47,7 @@ class FlowEditing {
         : (end > start ? attributesAt(start) : attributesAt(end));
     return {
       for (final e in (source ?? const <String, String>{}).entries)
-        if (!paraKeys.contains(e.key) && e.key != 'fld' && e.key != 'o') e.key: e.value,
+        if (!keys.paragraph.contains(e.key) && !keys.objects.contains(e.key)) e.key: e.value,
     };
   }
 
@@ -53,7 +66,7 @@ class FlowEditing {
   Delta replace(int start, int end, String inserted, Attributes attributes) {
     final d = Delta()..retain(start);
     if (end > start) d.delete(end - start);
-    final mark = {...attributes, ..._paragraphKeys(markAt(start))};
+    final mark = {...attributes, ..._paragraphKeys(markAt(start))}..removeWhere((k, _) => keys.own.contains(k));
     final parts = inserted.split('\n');
     for (var i = 0; i < parts.length; i++) {
       if (parts[i].isNotEmpty) d.insert(parts[i], attributes.isEmpty ? null : attributes);
@@ -94,9 +107,9 @@ class FlowEditing {
       ..retain(start)
       ..delete(end - start);
     if (!text.substring(start, end).contains('\n')) return d.chop();
-    final first = _paragraphKeys(markAt(start));
+    final first = _paragraphKeys(markAt(start))..removeWhere((k, _) => keys.own.contains(k));
     final (_, mark) = paragraphAt(end);
-    final last = _paragraphKeys(attributesAt(mark) ?? const {});
+    final last = _paragraphKeys(attributesAt(mark) ?? const {})..removeWhere((k, _) => keys.own.contains(k));
     final change = <String, String>{
       for (final k in {...first.keys, ...last.keys})
         if (first[k] != last[k]) k: first[k] ?? '',
@@ -185,9 +198,9 @@ class FlowEditing {
   }
 
   static bool _space(int c) => c == 0x20 || c == 0x0A || c == 0x0B || c == 0x09 || c == 0xA0;
-}
 
-Attributes _paragraphKeys(Attributes attrs) => {
-  for (final e in attrs.entries)
-    if (paraKeys.contains(e.key)) e.key: e.value,
-};
+  Attributes _paragraphKeys(Attributes attrs) => {
+    for (final e in attrs.entries)
+      if (keys.paragraph.contains(e.key)) e.key: e.value,
+  };
+}

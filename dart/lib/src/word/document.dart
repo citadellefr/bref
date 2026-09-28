@@ -166,8 +166,25 @@ class WordSettings {
 /// A Word document as the Go package docx reads it: the styles, lists and
 /// settings of its "doc" node, and the formatting in effect anywhere.
 class WordDocument {
-  WordDocument(this.tree) {
-    final a = tree['doc']?.attributes ?? const <String, Object?>{};
+  /// Reads the document of a tree; what [previous] read of the same "doc"
+  /// node is taken as it is.
+  WordDocument(this.tree, {WordDocument? previous}) : _node = tree['doc'] {
+    if (previous != null && identical(previous._node, _node)) {
+      styles = previous.styles;
+      defaultParagraph = previous.defaultParagraph;
+      defaultRun = previous.defaultRun;
+      numbering = previous.numbering;
+      themeFonts = previous.themeFonts;
+      themeColors = previous.themeColors;
+      settings = previous.settings;
+      lastSection = previous.lastSection;
+      paragraphStyle = previous.paragraphStyle;
+      tableStyle = previous.tableStyle;
+      _chains = previous._chains;
+      return;
+    }
+    _chains = {};
+    final a = _node?.attributes ?? const <String, Object?>{};
     styles = {
       for (final e in _map(a['styles']).entries)
         if (e.value is Map<String, Object?>) e.key: WordStyle.fromJson(e.value as Map<String, Object?>),
@@ -190,6 +207,7 @@ class WordDocument {
   }
 
   final Tree tree;
+  final Node? _node;
   late final Map<String, WordStyle> styles;
   late final Props defaultParagraph;
   late final Props defaultRun;
@@ -205,7 +223,7 @@ class WordDocument {
   late final String? paragraphStyle;
   late final String? tableStyle;
 
-  final _chains = <(String, String), Props>{};
+  late final Map<(String, String), Props> _chains;
 
   /// A style and those it is based on, the style first.
   List<WordStyle> _chain(String? id) {

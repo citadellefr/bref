@@ -422,6 +422,26 @@ class ColorPalette extends StatelessWidget {
     ];
   }
 
+  /// The color a value of the palette stands for, with the colors of the
+  /// theme.
+  static Color resolve(Map<String, Color> theme, Map<String, Object?> value) {
+    final rgb = value['rgb'];
+    if (rgb is String) return Color(0xFF000000 | (int.tryParse(rgb, radix: 16) ?? 0));
+    final base = theme[value['scheme']] ?? const Color(0xFF808080);
+    final mods = value['mods'];
+    return mods is List ? _shade(base, [for (final m in mods) (m as List).cast<Object>()]) : base;
+  }
+
+  static Color _shade(Color base, List<List<Object>> mods) {
+    final hsl = HSLColor.fromColor(base);
+    var l = hsl.lightness;
+    for (final m in mods) {
+      final v = (m[1] as int) / 100000;
+      l = m[0] == 'lumMod' ? l * v : l + v;
+    }
+    return hsl.withLightness(l.clamp(0, 1)).toColor();
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget swatch(Color color, Map<String, Object?> value) => InkWell(
@@ -433,16 +453,6 @@ class ColorPalette extends StatelessWidget {
         decoration: BoxDecoration(color: color, border: Border.all(color: const Color(0x33000000))),
       ),
     );
-    Color shade(Color base, List<List<Object>> mods) {
-      final hsl = HSLColor.fromColor(base);
-      var l = hsl.lightness;
-      for (final m in mods) {
-        final v = (m[1] as int) / 100000;
-        l = m[0] == 'lumMod' ? l * v : l + v;
-      }
-      return hsl.withLightness(l.clamp(0, 1)).toColor();
-    }
-
     return Padding(
       padding: const EdgeInsets.all(8),
       child: Column(
@@ -457,7 +467,7 @@ class ColorPalette extends StatelessWidget {
           for (var row = 0; row < 5; row++)
             Row(children: [
               for (final s in schemes)
-                swatch(shade(theme[s] ?? const Color(0xFF808080), shades(s)[row]), {'scheme': s, 'mods': shades(s)[row]}),
+                swatch(_shade(theme[s] ?? const Color(0xFF808080), shades(s)[row]), {'scheme': s, 'mods': shades(s)[row]}),
             ]),
           const SizedBox(height: 8),
           Text(standardLabel, style: Theme.of(context).textTheme.labelMedium),
