@@ -18,7 +18,7 @@ import (
 type treeFile struct{}
 
 func init() {
-	formats[".tree"] = func(data []byte) (*ot.Tree, format, error) {
+	formats[".tree"] = func(_ string, data []byte) (*ot.Tree, format, error) {
 		var nodes ot.Edit
 		if err := json.Unmarshal(data, &nodes); err != nil {
 			return nil, nil, err

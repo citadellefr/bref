@@ -109,8 +109,8 @@ func (v Value) String() string {
 // formatGeneral writes a number as Excel turns it into text: 15
 // significant digits, in exponent notation past them or below 1E-9.
 func formatGeneral(n float64) string {
-	if n == 0 {
-		return "0"
+	if n == math.Trunc(n) && math.Abs(n) < 1e15 {
+		return strconv.FormatInt(int64(n), 10)
 	}
 	mant, exp, _ := strings.Cut(strconv.FormatFloat(n, 'e', 14, 64), "e")
 	e, _ := strconv.Atoi(exp)

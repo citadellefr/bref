@@ -90,3 +90,27 @@ func unzipped(b *testing.B, data []byte) int64 {
 	}
 	return n
 }
+
+// BenchmarkOpenCSV opens a CSV file of 100 000 lines of 20 fields, half
+// numbers and half texts.
+func BenchmarkOpenCSV(b *testing.B) {
+	var data []byte
+	for r := 1; r <= 100000; r++ {
+		for c := 1; c <= 20; c++ {
+			if c > 1 {
+				data = append(data, ';')
+			}
+			if c%2 == 0 {
+				data = append(data, "Ligne "+strconv.Itoa(r)...)
+			} else {
+				data = append(data, strconv.Itoa(r*c)+",25"...)
+			}
+		}
+		data = append(data, "\r\n"...)
+	}
+	for b.Loop() {
+		if _, _, err := OpenCSV(data, "large.csv"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

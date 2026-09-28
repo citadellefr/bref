@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- `xlsx`: CSV files read as workbooks of one sheet, fields read as the
+  French version of Excel reads them (leading zeros kept), written back
+  with their separator, quotes, encoding and line breaks: a file saved
+  unedited is the same. The hub serves `.csv`.
+- `xlsx`, `formula`, `ot`: a sheet of 100 000 × 20 opens with 40 % less
+  memory and in a third less time; 10 000 formulas are calculated again
+  in less than half the time. The targets are measured in CI.
+- `internal/charset`: Windows-1252, shared by text and CSV files.
+
 ## 0.3.0 — 2026-09-27
 
 - `ot`: grids of cells in nodes: cells set field by field, rows and

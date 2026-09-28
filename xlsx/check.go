@@ -188,7 +188,7 @@ func (d *Document) checkCells(typeOf func(string) string, cells []ot.Cell) bool 
 		}
 		for k, v := range f {
 			if bytes.Equal(v, []byte("null")) {
-				if !slices.Contains(cellKeys, k) && !slices.Contains(lineKeys, k) {
+				if !slices.Contains(cellKeys, k) && !slices.Contains(lineKeys, k) && !(d.csv && k == "src") {
 					return false
 				}
 				continue
@@ -274,6 +274,8 @@ func (d *Document) checkCell(k string, v json.RawMessage, typeOf func(string) st
 		return typeOf(unquote(v)) == "xf"
 	case "rich", "fx":
 		return json.Unmarshal(v, &s) == nil && d.isTrusted(s)
+	case "src":
+		return d.csv && json.Unmarshal(v, &s) == nil && len(s) <= 2*maxText+2
 	}
 	return false
 }

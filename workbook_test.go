@@ -60,3 +60,24 @@ func TestWorkbooksAreCalculatedAndSaved(t *testing.T) {
 	a.leave()
 	b.leave()
 }
+
+func TestCSVFilesAreCalculatedAndSaved(t *testing.T) {
+	store := newMemStore()
+	store.data["ventes.csv"] = []byte("Article;Prix\r\nCafé;2,50\r\nThé;1,5\r\n")
+	h := NewHub(store, fastOptions())
+	a, _, _ := join(t, h, "ventes.csv", Peer{ID: "1"})
+	a.send(`{"t":"op","n":1,"v":0,"d":[{"o":"cel","id":"S1","c":[[4,2,{"f":"SUM(B2:B3)"}]]}]}`)
+	a.expect("ack")
+	if f := a.expect("op"); string(f.D) != `[{"o":"cel","id":"S1","c":[[4,2,{"v":4}]]}]` {
+		t.Fatalf("follow-up: %s", f.D)
+	}
+	a.send(`{"t":"op","n":2,"v":2,"d":[{"o":"new","id":"S2","t":"sheet","p":"book","k":"W","a":{"name":"Deux"},"c":[]}]}`)
+	if f := a.expect("nack"); f.Error != xlsx.ErrCSVSheets.Error() {
+		t.Fatalf("a second sheet: %+v", f)
+	}
+	<-store.saves
+	if got := store.file("ventes.csv"); got != "Article;Prix\r\nCafé;2,50\r\nThé;1,5\r\n;4\r\n" {
+		t.Fatalf("saved %q", got)
+	}
+	a.leave()
+}

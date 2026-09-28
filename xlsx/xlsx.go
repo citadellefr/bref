@@ -104,6 +104,9 @@ type Document struct {
 	// with the hash of some it was sent.
 	trusted map[uint64]bool
 	seed    maphash.Seed
+	// csv is set for the workbook of a CSV file, whose cells may keep the
+	// text they were read from.
+	csv bool
 }
 
 type sheetPart struct {

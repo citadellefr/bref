@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/citadellefr/bref/internal/charset"
 	"github.com/citadellefr/bref/ot"
 )
 
@@ -25,12 +26,12 @@ var (
 	errTextNodes = errors.New("a text file only has its text")
 )
 
-func openText(data []byte) (*ot.Tree, format, error) {
+func openText(_ string, data []byte) (*ot.Tree, format, error) {
 	var f textFile
 	data, f.bom = bytes.CutPrefix(data, bom)
 	text := string(data)
 	if !utf8.Valid(data) {
-		text = windows1252(data)
+		text = charset.Decode(data)
 	}
 	if i := strings.IndexByte(text, '\n'); i > 0 && text[i-1] == '\r' {
 		f.crlf = true
@@ -73,22 +74,4 @@ func (f textFile) encode(doc *ot.Tree) ([]byte, error) {
 		}
 	}
 	return b.Bytes(), nil
-}
-
-// windows1252 differs from Latin-1 in 0x80–0x9F.
-var windows1252High = [32]rune{
-	'€', 0x81, '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', 0x8D, 'Ž', 0x8F,
-	0x90, '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', 0x9D, 'ž', 'Ÿ',
-}
-
-func windows1252(data []byte) string {
-	var b strings.Builder
-	for _, c := range data {
-		if 0x80 <= c && c < 0xA0 {
-			b.WriteRune(windows1252High[c-0x80])
-		} else {
-			b.WriteRune(rune(c))
-		}
-	}
-	return b.String()
 }

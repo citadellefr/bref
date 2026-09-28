@@ -17,7 +17,7 @@ func TestTextFiles(t *testing.T) {
 		{"old\rmac", "old\rmac\n", "old\rmac"},
 		{"caf\xE9 \x80", "café €\n", "café €"},
 	} {
-		doc, f, err := openText([]byte(c.file))
+		doc, f, err := openText("", []byte(c.file))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -31,7 +31,7 @@ func TestTextFiles(t *testing.T) {
 }
 
 func TestTextFileKeepsParagraphsApart(t *testing.T) {
-	doc, f, err := openText([]byte("a\nb"))
+	doc, f, err := openText("", []byte("a\nb"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestTextFileKeepsParagraphsApart(t *testing.T) {
 }
 
 func TestTextFileOnlyEditsItsText(t *testing.T) {
-	_, f, err := openText([]byte("a"))
+	_, f, err := openText("", []byte("a"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -28,9 +28,10 @@ type follower interface {
 	follow(doc *ot.Tree, e ot.Edit, since []ot.Edit) ot.Edit
 }
 
-// formats read files into documents, by extension.
-var formats = map[string]func(data []byte) (*ot.Tree, format, error){
+// formats read files into documents, by extension; name is the file's.
+var formats = map[string]func(name string, data []byte) (*ot.Tree, format, error){
 	".txt":  openText,
+	".csv":  openCSV,
 	".pptx": openPresentation,
 	".pptm": openPresentation,
 	".ppsx": openPresentation,
@@ -44,7 +45,7 @@ type presentation struct {
 	doc *pptx.Document
 }
 
-func openPresentation(data []byte) (*ot.Tree, format, error) {
+func openPresentation(_ string, data []byte) (*ot.Tree, format, error) {
 	doc, tree, err := pptx.Open(data)
 	if err != nil {
 		return nil, nil, err
@@ -68,14 +69,25 @@ func (p presentation) media(name string) ([]byte, string, error) {
 	return data, typ, nil
 }
 
-// workbook is an Excel file, whose formulas the hub calculates.
+// workbook is an Excel or CSV file, whose formulas the hub calculates.
 type workbook struct {
-	doc  *xlsx.Document
+	doc interface {
+		Check(tree *ot.Tree, e ot.Edit) error
+		Save(tree *ot.Tree) ([]byte, error)
+	}
 	calc *xlsx.Calc
 }
 
-func openWorkbook(data []byte) (*ot.Tree, format, error) {
+func openWorkbook(_ string, data []byte) (*ot.Tree, format, error) {
 	doc, tree, err := xlsx.Open(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	return tree, &workbook{doc: doc, calc: xlsx.NewCalc(tree, formula.Options{})}, nil
+}
+
+func openCSV(name string, data []byte) (*ot.Tree, format, error) {
+	doc, tree, err := xlsx.OpenCSV(data, name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -103,9 +115,13 @@ func (w *workbook) follow(doc *ot.Tree, e ot.Edit, since []ot.Edit) (out ot.Edit
 		}
 	}()
 	out = w.calc.Follow(e, since)
+	book, ok := w.doc.(*xlsx.Document)
+	if !ok {
+		return out
+	}
 	for _, c := range e {
 		if c.Op == ot.OpIns || c.Op == ot.OpRem {
-			moves := ot.Change{Op: ot.OpSet, ID: "book", Attrs: ot.Values{"moves": json.RawMessage(strconv.Itoa(w.doc.Moved(e)))}}
+			moves := ot.Change{Op: ot.OpSet, ID: "book", Attrs: ot.Values{"moves": json.RawMessage(strconv.Itoa(book.Moved(e)))}}
 			if doc.Apply(ot.Edit{moves}) == nil {
 				out = append(out, moves)
 			}
@@ -123,5 +139,5 @@ func open(key string, data []byte) (*ot.Tree, format, error) {
 	if read == nil {
 		return nil, nil, fmt.Errorf("bref: %q files are not supported", ext)
 	}
-	return read(data)
+	return read(path.Base(key), data)
 }

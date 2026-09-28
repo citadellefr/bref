@@ -38,7 +38,7 @@ fetch python-docx https://github.com/python-openxml/python-docx.git e45454602b53
 # Impress and Calc
 fetch libreoffice https://github.com/LibreOffice/core.git 2a6ccbc40b060848a6eba2b2d27db43a625ded9a \
 	'/sw/qa/**/*.docx' '/sd/qa/**/*.pptx' '/sd/qa/**/*.pptm' '/sd/qa/**/*.potx' '/sd/qa/**/*.ppsx' \
-	'/sc/qa/**/*.xlsx' '/sc/qa/**/*.xlsm'
+	'/sc/qa/**/*.xlsx' '/sc/qa/**/*.xlsm' '/sc/qa/**/*.csv'
 # MIT
 fetch python-pptx https://github.com/scanny/python-pptx.git 278b47b1dedd5b46ee84c286e77cdfb0bf4594be \
 	'*.pptx' '*.pptm' '*.xlsx'
