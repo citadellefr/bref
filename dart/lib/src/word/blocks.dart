@@ -381,6 +381,10 @@ class BlockBuilder {
   final FieldValues fields;
   final Counters counters;
 
+  /// The number of the note whose blocks are built, which its own
+  /// reference mark shows.
+  String? noteNumber;
+
   WordDocument get doc => ctx.doc;
 
   /// The blocks under a node, laid out in [width]; [table] the keys a
@@ -440,9 +444,10 @@ class BlockBuilder {
     var offset = 0;
     for (final op in ops) {
       final note = op.attributes?['note'];
-      if (note != null && note != 'ref') {
+      if (note != null) {
         for (var i = 0; i < op.insert!.length; i++) {
-          notes[offset + i] = counters.note(note);
+          final number = note == 'ref' ? noteNumber : counters.note(note);
+          if (number != null) notes[offset + i] = number;
         }
       }
       offset += op.insert!.length;

@@ -36,6 +36,12 @@ class PagePainter {
     for (final c in page.cells) {
       _borders(canvas, c);
     }
+    final rule = Paint()
+      ..color = const Color(0xFF000000)
+      ..strokeWidth = 0.5;
+    for (final (a, b) in page.rules) {
+      canvas.drawLine(a, b, rule);
+    }
     for (final p in page.pictures.where((p) => !p.behind)) {
       _picture(canvas, p);
     }

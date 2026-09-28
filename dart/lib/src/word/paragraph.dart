@@ -612,7 +612,7 @@ class _Builder {
     }
     final note = attrs['note'];
     if (note != null) {
-      final n = note == 'ref' ? '' : source.notes[offset] ?? '';
+      final n = source.notes[offset] ?? '';
       if (n.isEmpty) {
         _hidden(style);
       } else {

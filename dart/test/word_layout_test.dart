@@ -99,6 +99,24 @@ void main() {
     expect(many.caretAt(1).left, greaterThan(one.caretAt(1).left + 20));
   });
 
+  test('puts a footnote at the bottom of the page of its reference', () {
+    final flow = Delta()
+      ..insert('Texte')
+      ..insert('￼', {'o': '<w:footnoteReference w:id="1"/>', 'note': 'footnote:1'})
+      ..insert('\n');
+    final doc = document([
+      text('t', 'V', flow),
+      const Node(id: 'fn1', type: 'note', parent: 'doc', key: 'z', attributes: {'kind': 'footnote'}),
+      text('n', 'V', Delta()..insert('￼', {'o': '<w:footnoteRef/>', 'note': 'ref'})..insert(' Source.\n'), parent: 'fn1'),
+    ]);
+    final layout = lay(doc);
+    final page = layout.pages.single;
+    expect(page.rules, hasLength(1));
+    final (_, note) = layout.caret('n', 2)!;
+    expect(note.bottom, closeTo(page.body.bottom, 1));
+    expect(note.top, greaterThan(page.body.bottom - 30));
+  });
+
   test('text flows onto the next pages, lines kept whole', () {
     final long = List.filled(200, 'Ligne').join('\n');
     final layout = lay(document([text('t', 'V', plain(long, {'widowControl': '1'}))]));

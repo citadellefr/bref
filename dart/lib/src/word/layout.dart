@@ -75,6 +75,9 @@ class WordPage {
   final cells = <PlacedCell>[];
   final pictures = <PlacedPicture>[];
 
+  /// Lines drawn over the text: the separator of the footnotes.
+  final rules = <(Offset, Offset)>[];
+
   /// The header and footer drawn on the page, if any.
   String? header, footer;
 }
@@ -208,6 +211,19 @@ class _Paginator {
   /// it goes around.
   final _bands = <(double, double)>[];
 
+  /// The footnotes of the page, and the room they take at its bottom; the
+  /// endnotes referred to so far; the notes laid out, by node and width.
+  final _pageNotes = <List<LaidBlock>>[];
+  var _notesHeight = 0.0;
+  final _endnotes = <(String, String)>[];
+  final _laidNotes = <(String, double), List<LaidBlock>>{};
+
+  /// The room the separator of the footnotes takes.
+  static const _separator = 12.0;
+
+  /// Where the text of the column ends: above the footnotes.
+  double get _limit => _bottom - _notesHeight;
+
   WordPage get _page => pages.last;
 
   static double _columnWidth(WordSection s) {
@@ -249,6 +265,8 @@ class _Paginator {
       }
     }
     if (pages.isEmpty) _startSection(0, first: true);
+    _endnotesAfter();
+    _flushNotes();
     _headers();
   }
 
@@ -292,6 +310,7 @@ class _Paginator {
     final top = topMargin < 0 ? -topMargin : math.max(topMargin, s.header / 20 + _height(header, width));
     final bottomMargin = s.bottom / 20;
     final bottom = bottomMargin < 0 ? -bottomMargin : math.max(bottomMargin, s.footer / 20 + _height(footer, width));
+    _flushNotes();
     final page = WordPage(pages.length, s, _sectionIndex, _pageInSection == 1, _number, size, Rect.fromLTRB(left, top, size.width - right, size.height - bottom))
       ..header = header
       ..footer = footer;
@@ -356,7 +375,7 @@ class _Paginator {
     if (p.breakBefore && !_atTop) _newPage(natural: false);
     if (!_atTop) {
       final need = _keepHeight(items, index);
-      if (_y + need > _bottom + 0.01 && need <= _bottom - _top) _nextColumn(natural: true);
+      if (_y + need > _limit + 0.01 && need <= _bottom - _top) _nextColumn(natural: true);
     }
     var space = _spacing(p);
     var i = 0;
@@ -364,12 +383,19 @@ class _Paginator {
       var n = 0;
       var y = _y + space;
       double? below;
-      while (i + n < lines.length && y + lines[i + n].height <= _bottom + 0.01) {
-        below = _below(y, y + lines[i + n].height);
+      // the footnotes of the lines take room at the bottom of the page
+      var pending = 0.0;
+      while (i + n < lines.length) {
+        final line = lines[i + n];
+        var extra = _footnotes(lp, line).fold(0.0, (h, n) => h + _noteHeight(n.$1, n.$2));
+        if (extra > 0 && _pageNotes.isEmpty && pending == 0) extra += _separator;
+        if (y + line.height > _limit - pending - extra + 0.01) break;
+        below = _below(y, y + line.height);
         if (below != null) break;
-        y += lines[i + n].height;
+        y += line.height;
+        pending += extra;
         n++;
-        if (lines[i + n - 1].breakAfter != null) break;
+        if (line.breakAfter != null) break;
       }
       final hard = n > 0 ? lines[i + n - 1].breakAfter : null;
       if (hard == null && below == null && i + n < lines.length) n = _keep(p, i, n);
@@ -448,6 +474,79 @@ class _Paginator {
     final placed = PlacedLines(lp, from, to, origin, PageArea.body);
     _page.lines.add(placed);
     if (from == 0) _floats(lp, placed);
+    for (var k = from; k < to; k++) {
+      for (final (id, number) in _footnotes(lp, lp.box.lines[k])) {
+        if (_pageNotes.isEmpty) _notesHeight += _separator;
+        _pageNotes.add(_note(id, number));
+        _notesHeight += _noteHeight(id, number);
+      }
+      for (final ref in _refs(lp, lp.box.lines[k], 'endnote')) {
+        if (!_endnotes.contains(ref)) _endnotes.add(ref);
+      }
+    }
+  }
+
+  // notes
+
+  /// The notes a line of a paragraph refers to, of a kind: their nodes and
+  /// numbers.
+  List<(String, String)> _refs(LaidPara lp, ParaLine line, String kind) {
+    final source = lp.box.source;
+    final out = <(String, String)>[];
+    var offset = 0;
+    for (final op in source.ops) {
+      final note = op.attributes?['note'];
+      final n = op.insert!.length;
+      if (note != null && note.startsWith('$kind:') && offset + n > line.start && offset < line.end) {
+        final id = '${kind[0]}n${note.substring(kind.length + 1)}';
+        if (doc.tree[id] != null) out.add((id, source.notes[math.max(offset, line.start)] ?? ''));
+      }
+      offset += n;
+    }
+    return out;
+  }
+
+  List<(String, String)> _footnotes(LaidPara lp, ParaLine line) => _refs(lp, line, 'footnote');
+
+  /// A note laid out in the width of the column, its mark showing its
+  /// number.
+  List<LaidBlock> _note(String id, String number) => _laidNotes[(id, _colWidth)] ??= (BlockBuilder(ctx, cache)..noteNumber = number).blocks(id, _colWidth);
+
+  double _noteHeight(String id, String number) => stackHeight(_note(id, number));
+
+  /// Draws the footnotes of the page at its bottom, under their separator.
+  void _flushNotes() {
+    if (_pageNotes.isEmpty || pages.isEmpty) return;
+    final page = _page;
+    var y = page.body.bottom - _notesHeight + _separator;
+    page.rules.add((Offset(page.body.left, y - _separator / 2), Offset(page.body.left + 144, y - _separator / 2)));
+    for (final blocks in _pageNotes) {
+      _placeBlocks(page, blocks, Offset(page.body.left, y), PageArea.body);
+      y += stackHeight(blocks);
+    }
+    _pageNotes.clear();
+    _notesHeight = 0;
+  }
+
+  /// The endnotes after the text, under a separator.
+  void _endnotesAfter() {
+    if (_endnotes.isEmpty) return;
+    final items = <(LaidBlock, int)>[
+      for (final (id, number) in _endnotes)
+        for (final b in _note(id, number)) (b, _sectionIndex),
+    ];
+    if (_y + _separator > _limit) _nextColumn(natural: true);
+    _page.rules.add((Offset(_colLeft, _y + _separator / 2), Offset(_colLeft + 144, _y + _separator / 2)));
+    _y += _separator;
+    _prev = null;
+    for (var i = 0; i < items.length; i++) {
+      switch (items[i].$1) {
+        case final LaidPara p:
+          _para(p, items, i);
+        case final LaidTable t:
+          _table(t);
+      }
+    }
   }
 
   void _floats(LaidPara lp, PlacedLines placed) {
@@ -515,7 +614,7 @@ class _Paginator {
     final headers = t.rows.takeWhile((r) => r.header).toList();
     for (var r = 0; r < t.rows.length; r++) {
       final row = t.rows[r];
-      if (_y + row.height > _bottom + 0.01 && !_atTop) {
+      if (_y + row.height > _limit + 0.01 && !_atTop) {
         _nextColumn(natural: true);
         if (r >= headers.length) {
           for (final h in headers) {
@@ -532,7 +631,7 @@ class _Paginator {
     final below = _below(_y, _y + row.height);
     if (below != null) {
       _y = below;
-      if (_y + row.height > _bottom + 0.01) _nextColumn(natural: true);
+      if (_y + row.height > _limit + 0.01) _nextColumn(natural: true);
     }
     _placeRow(_page, t, row, r, Offset(_colLeft + t.x, _y));
     _y += row.height;
