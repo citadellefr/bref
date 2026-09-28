@@ -111,6 +111,17 @@ func TestCalcRebased(t *testing.T) {
 	}
 }
 
+// Cells typed below those a range read last still count.
+func TestCalcBounds(t *testing.T) {
+	tree, c := calcTree(t)
+	edit(t, tree, c, ot.Edit{{Op: ot.OpCel, ID: "S1", Cells: []ot.Cell{cell(4, 4, `{"f":"SUM(A:A)"}`)}}})
+	edit(t, tree, c, ot.Edit{{Op: ot.OpCel, ID: "S1", Cells: []ot.Cell{cell(9, 1, `{"v":0}`)}}})
+	edit(t, tree, c, ot.Edit{{Op: ot.OpCel, ID: "S1", Cells: []ot.Cell{cell(12, 1, `{"v":100}`)}}})
+	if got := fieldsAt(tree, "S1", 4, 4); got != `{"f":"SUM(A:A)","v":106}` {
+		t.Fatalf("got %s", got)
+	}
+}
+
 func TestCalcSheets(t *testing.T) {
 	tree, c := calcTree(t)
 	edit(t, tree, c, ot.Edit{{Op: ot.OpSet, ID: "S1", Attrs: ot.Values{"name": json.RawMessage(`"Ventes 2024"`)}}})

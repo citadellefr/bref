@@ -116,10 +116,14 @@ func (c *Calc) Follow(e ot.Edit, since []ot.Edit) ot.Edit {
 	// whether sheets came, went, moved or were renamed, or names changed
 	books := false
 	for _, ch := range e {
-		_, sheet := c.handles[ch.ID]
+		h, sheet := c.handles[ch.ID]
 		_, name := ch.Attrs["name"]
 		_, names := ch.Attrs["names"]
 		switch ch.Op {
+		case ot.OpCel, ot.OpIns, ot.OpRem:
+			if sheet {
+				delete(c.bounds, h)
+			}
 		case ot.OpNew:
 			books = books || ch.Type == "sheet"
 		case ot.OpDel:
