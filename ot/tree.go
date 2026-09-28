@@ -233,7 +233,7 @@ func (t *Tree) Clone() *Tree {
 }
 
 // Apply edits the tree, or leaves it as it was and returns why the edit
-// does not apply to it.
+// does not apply to it. The edit is well formed: Check accepts it.
 func (t *Tree) Apply(e Edit) error {
 	if len(e) == 1 {
 		return t.apply(e[0], nil)
@@ -275,7 +275,7 @@ func (t *Tree) apply(c Change, log func(id string)) error {
 			n.Text = doc
 		}
 		if c.Cells != nil {
-			g, err := NewGrid(c.Cells)
+			g, err := newGrid(c.Cells)
 			if err != nil {
 				return err
 			}

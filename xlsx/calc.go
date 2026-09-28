@@ -96,7 +96,7 @@ func (c *Calc) Formulas() int {
 // was rebased over: the formulas it sets are moved by the rows they
 // inserted or removed.
 func (c *Calc) Follow(e ot.Edit, since []ot.Edit) ot.Edit {
-	f := &follow{c: c, cells: map[string]map[[2]int]map[string]any{}}
+	f := &follow{c: c, cells: map[string]map[[2]int]map[string]json.RawMessage{}}
 	// whether sheets came, went, moved or were renamed, or names changed
 	books := false
 	for _, ch := range e {
@@ -136,7 +136,7 @@ type follow struct {
 	out   ot.Edit
 	moved bool
 	// cells are the fields to set, by sheet and cell.
-	cells map[string]map[[2]int]map[string]any
+	cells map[string]map[[2]int]map[string]json.RawMessage
 	// book are the attributes of the book to set.
 	book ot.Values
 }
@@ -144,15 +144,19 @@ type follow struct {
 func (f *follow) setCell(sheet string, row, col int, key string, v any) {
 	m := f.cells[sheet]
 	if m == nil {
-		m = map[[2]int]map[string]any{}
+		m = map[[2]int]map[string]json.RawMessage{}
 		f.cells[sheet] = m
 	}
 	fields := m[[2]int{row, col}]
 	if fields == nil {
-		fields = map[string]any{}
+		fields = map[string]json.RawMessage{}
 		m[[2]int{row, col}] = fields
 	}
-	fields[key] = v
+	raw, ok := v.(json.RawMessage)
+	if !ok {
+		raw = mustJSON(v)
+	}
+	fields[key] = raw
 }
 
 // flush applies what the follow-up has to set, and adds it to its edit.
@@ -166,15 +170,14 @@ func (f *follow) flush() {
 			}
 			return a[1] - b[1]
 		}) {
-			raw, _ := json.Marshal(f.cells[id][at])
-			cells = append(cells, ot.Cell{Row: at[0], Col: at[1], Fields: raw})
+			cells = append(cells, ot.Cell{Row: at[0], Col: at[1], Fields: object(f.cells[id][at])})
 		}
 		e = append(e, ot.Change{Op: ot.OpCel, ID: id, Cells: cells})
 	}
 	if len(f.book) > 0 {
 		e = append(e, ot.Change{Op: ot.OpSet, ID: "book", Attrs: f.book})
 	}
-	f.cells, f.book = map[string]map[[2]int]map[string]any{}, nil
+	f.cells, f.book = map[string]map[[2]int]map[string]json.RawMessage{}, nil
 	if len(e) == 0 {
 		return
 	}
@@ -187,6 +190,20 @@ func (f *follow) flush() {
 			delete(f.c.bounds, h)
 		}
 	}
+}
+
+// object writes fields as compact JSON, keys in order.
+func object(fields map[string]json.RawMessage) json.RawMessage {
+	b := []byte{'{'}
+	for _, k := range slices.Sorted(mapKeys(fields)) {
+		if len(b) > 1 {
+			b = append(b, ',')
+		}
+		b = strconv.AppendQuote(b, k)
+		b = append(b, ':')
+		b = append(b, fields[k]...)
+	}
+	return append(b, '}')
 }
 
 func mapKeys[K comparable, V any](m map[K]V) func(func(K) bool) {

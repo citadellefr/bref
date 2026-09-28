@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"slices"
 	"strconv"
+	"strings"
+	"unicode/utf8"
+	"unsafe"
 )
 
 // A Grid is the cells of a sheet: sparse, addressed by row and column
@@ -118,106 +121,211 @@ func checkCells(cells []Cell, set bool) bool {
 // that remove fields, and counts its fields. canonical tells whether it is
 // written as compact writes it: no blanks, keys in order, nothing escaped.
 func scanFields(raw []byte, set bool) (n int, canonical, ok bool) {
-	if len(raw) == 0 || raw[0] != '{' || !json.Valid(raw) {
+	if len(raw) == 0 || raw[0] != '{' {
 		return 0, false, false
 	}
 	canonical = true
 	var last []byte
-	i := 1
-	for {
-		i = skipBlank(raw, i, &canonical)
-		if raw[i] == '}' {
-			return n, canonical && i == len(raw)-1, true
-		}
-		if raw[i] == ',' {
+	i := skipBlank(raw, 1, &canonical)
+	for n == 0 && i < len(raw) && raw[i] != '}' || n > 0 && i < len(raw) && raw[i] == ',' {
+		if n > 0 {
 			i = skipBlank(raw, i+1, &canonical)
 		}
-		end := skipString(raw, i)
-		key := raw[i+1 : end-1]
-		if len(key) == 0 {
+		if i >= len(raw) || raw[i] != '"' {
 			return 0, false, false
 		}
-		if escaped(key) || bytes.IndexByte(key, '\\') >= 0 || last != nil && bytes.Compare(last, key) >= 0 {
+		end, ok := scanString(raw, i, &canonical)
+		if !ok || end-i == 2 {
+			return 0, false, false
+		}
+		key := raw[i+1 : end-1]
+		if bytes.IndexByte(key, '\\') >= 0 || last != nil && bytes.Compare(last, key) >= 0 {
 			canonical = false
 		}
 		last = key
-		i = skipBlank(raw, end, &canonical) + 1
-		i = skipBlank(raw, i, &canonical)
+		i = skipBlank(raw, end, &canonical)
+		if i >= len(raw) || raw[i] != ':' {
+			return 0, false, false
+		}
+		i = skipBlank(raw, i+1, &canonical)
 		start := i
-		i = skipValue(raw, i, &canonical)
-		if bytes.Equal(raw[start:i], null) && !set {
+		if i, ok = scanValue(raw, i, 0, &canonical); !ok || !set && bytes.Equal(raw[start:i], null) {
 			return 0, false, false
 		}
 		n++
+		i = skipBlank(raw, i, &canonical)
 	}
+	if i >= len(raw) || raw[i] != '}' || skipBlank(raw, i+1, &canonical) != len(raw) {
+		return 0, false, false
+	}
+	return n, canonical, true
 }
 
 func skipBlank(raw []byte, i int, canonical *bool) int {
-	for raw[i] == ' ' || raw[i] == '\t' || raw[i] == '\n' || raw[i] == '\r' {
+	for i < len(raw) && (raw[i] == ' ' || raw[i] == '\t' || raw[i] == '\n' || raw[i] == '\r') {
 		*canonical = false
 		i++
 	}
 	return i
 }
 
-// skipString is the end of the valid string raw starts at i.
-func skipString(raw []byte, i int) int {
-	for i++; raw[i] != '"'; i++ {
-		if raw[i] == '\\' {
-			i++
-		}
+// maxNesting is how deep values nest, as encoding/json allows.
+const maxNesting = 10000
+
+// scanValue is the end of the JSON value raw holds at i, and whether it
+// is valid.
+func scanValue(raw []byte, i, depth int, canonical *bool) (int, bool) {
+	if i >= len(raw) || depth > maxNesting {
+		return i, false
 	}
-	return i + 1
+	switch c := raw[i]; c {
+	case '"':
+		return scanString(raw, i, canonical)
+	case '{', '[':
+		end := byte(']')
+		if c == '{' {
+			end = '}'
+		}
+		i = skipBlank(raw, i+1, canonical)
+		if i < len(raw) && raw[i] == end {
+			return i + 1, true
+		}
+		for {
+			var ok bool
+			if c == '{' {
+				if i >= len(raw) || raw[i] != '"' {
+					return i, false
+				}
+				if i, ok = scanString(raw, i, canonical); !ok {
+					return i, false
+				}
+				if i = skipBlank(raw, i, canonical); i >= len(raw) || raw[i] != ':' {
+					return i, false
+				}
+				i = skipBlank(raw, i+1, canonical)
+			}
+			if i, ok = scanValue(raw, i, depth+1, canonical); !ok {
+				return i, false
+			}
+			if i = skipBlank(raw, i, canonical); i >= len(raw) {
+				return i, false
+			}
+			if raw[i] == end {
+				return i + 1, true
+			}
+			if raw[i] != ',' {
+				return i, false
+			}
+			i = skipBlank(raw, i+1, canonical)
+		}
+	case 't':
+		return literal(raw, i, "true")
+	case 'f':
+		return literal(raw, i, "false")
+	case 'n':
+		return literal(raw, i, "null")
+	}
+	return scanNumber(raw, i)
 }
 
-// escaped tells whether compact would escape some of s: what HTML reads as
-// markup, and the line separators of JavaScript.
-func escaped(s []byte) bool {
-	return bytes.ContainsAny(s, "<>&") || bytes.Contains(s, []byte("\u2028")) || bytes.Contains(s, []byte("\u2029"))
+func literal(raw []byte, i int, word string) (int, bool) {
+	end := i + len(word)
+	return end, end <= len(raw) && string(raw[i:end]) == word
 }
 
-// skipValue is the end of the valid value raw starts at i.
-func skipValue(raw []byte, i int, canonical *bool) int {
-	depth := 0
-	for {
-		switch c := raw[i]; c {
-		case '"':
-			end := skipString(raw, i)
-			str := raw[i:end]
-			if escaped(str) {
+// scanString is the end of the string raw holds at i, and whether it is
+// valid. What compact would escape or replace, markup for HTML, the line
+// separators of JavaScript and invalid UTF-8, makes it not canonical.
+func scanString(raw []byte, i int, canonical *bool) (int, bool) {
+	for i++; i < len(raw); i++ {
+		switch c := raw[i]; {
+		case c == '"':
+			return i + 1, true
+		case c < 0x20:
+			return i, false
+		case c == '<' || c == '>' || c == '&':
+			*canonical = false
+		case c >= utf8.RuneSelf:
+			r, size := utf8.DecodeRune(raw[i:])
+			if r == utf8.RuneError && size == 1 || r == '\u2028' || r == '\u2029' {
 				*canonical = false
 			}
-			i = end
-		case '{', '[':
-			depth++
-			i++
-		case '}', ']':
-			if depth == 0 {
-				return i
+			i += size - 1
+		case c == '\\':
+			if i++; i >= len(raw) {
+				return i, false
 			}
-			depth--
-			i++
-		case ',':
-			if depth == 0 {
-				return i
+			switch raw[i] {
+			case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
+			case 'u':
+				if i+4 >= len(raw) {
+					return i, false
+				}
+				for _, h := range raw[i+1 : i+5] {
+					if !('0' <= h && h <= '9' || 'a' <= h && h <= 'f' || 'A' <= h && h <= 'F') {
+						return i, false
+					}
+				}
+				i += 4
+			default:
+				return i, false
 			}
-			i++
-		case ' ', '\t', '\n', '\r':
-			*canonical = false
-			i++
-		default:
-			i++
 		}
 	}
+	return i, false
 }
 
-// NewGrid is a grid of cells, which only set fields, each once.
-func NewGrid(cells []Cell) (*Grid, error) {
+func scanNumber(raw []byte, i int) (int, bool) {
+	digits := func() int {
+		start := i
+		for i < len(raw) && '0' <= raw[i] && raw[i] <= '9' {
+			i++
+		}
+		return i - start
+	}
+	if i < len(raw) && raw[i] == '-' {
+		i++
+	}
+	switch {
+	case i < len(raw) && raw[i] == '0':
+		i++
+	case digits() == 0:
+		return i, false
+	}
+	if i < len(raw) && raw[i] == '.' {
+		i++
+		if digits() == 0 {
+			return i, false
+		}
+	}
+	if i < len(raw) && (raw[i] == 'e' || raw[i] == 'E') {
+		i++
+		if i < len(raw) && (raw[i] == '+' || raw[i] == '-') {
+			i++
+		}
+		if digits() == 0 {
+			return i, false
+		}
+	}
+	return i, true
+}
+
+// newGrid is a grid of cells Check accepted, which only set fields, each
+// once. Their cells share one array and their fields one string.
+func newGrid(cells []Cell) (*Grid, error) {
 	if !slices.IsSortedFunc(cells, compareCells) {
 		cells = slices.Clone(cells)
 		slices.SortFunc(cells, compareCells)
 	}
-	g := &Grid{}
+	var text strings.Builder
+	size := 0
+	for _, c := range cells {
+		size += len(c.Fields)
+	}
+	text.Grow(size)
+	all := make([]gridCell, 0, len(cells))
+	var rows []int32
+	var ends, firsts []int
 	for i, c := range cells {
 		n, canonical, ok := scanFields(c.Fields, false)
 		if !ok || i > 0 && compareCells(cells[i-1], c) == 0 {
@@ -226,17 +334,32 @@ func NewGrid(cells []Cell) (*Grid, error) {
 		if n == 0 {
 			continue
 		}
-		f := string(c.Fields)
-		if !canonical {
+		if canonical {
+			text.Write(c.Fields)
+		} else {
 			m, _ := fields(c.Fields, false)
-			f = compact(m)
+			text.WriteString(compact(m))
 		}
-		if k := len(g.rows); k == 0 || g.rows[k-1] != int32(c.Row) {
-			g.rows = append(g.rows, int32(c.Row))
-			g.cells = append(g.cells, nil)
+		ends = append(ends, text.Len())
+		if k := len(rows); k == 0 || rows[k-1] != int32(c.Row) {
+			rows = append(rows, int32(c.Row))
+			firsts = append(firsts, len(all))
 		}
-		g.cells[len(g.cells)-1] = append(g.cells[len(g.cells)-1], gridCell{int32(c.Col), f})
-		g.size++
+		all = append(all, gridCell{col: int32(c.Col)})
+	}
+	fields := text.String()
+	start := 0
+	for i, end := range ends {
+		all[i].fields = fields[start:end]
+		start = end
+	}
+	g := &Grid{rows: rows, cells: make([][]gridCell, len(rows)), size: len(all)}
+	for i, first := range firsts {
+		last := len(all)
+		if i+1 < len(firsts) {
+			last = firsts[i+1]
+		}
+		g.cells[i] = all[first:last:last]
 	}
 	return g, nil
 }
@@ -253,7 +376,14 @@ func (g *Grid) Len() int {
 	return g.size
 }
 
-// Cell is the fields of a cell, nil when it has none.
+// raw is fields as JSON without copying them: what the grid hands out is
+// read, never modified.
+func raw(fields string) json.RawMessage {
+	return unsafe.Slice(unsafe.StringData(fields), len(fields))
+}
+
+// Cell is the fields of a cell, nil when it has none. The fields a grid
+// gives must not be modified.
 func (g *Grid) Cell(row, col int) json.RawMessage {
 	i, ok := slices.BinarySearch(g.rows, int32(row))
 	if !ok {
@@ -264,7 +394,7 @@ func (g *Grid) Cell(row, col int) json.RawMessage {
 	if !ok {
 		return nil
 	}
-	return json.RawMessage(cells[j].fields)
+	return raw(cells[j].fields)
 }
 
 // Cells are all the cells, row by row.
@@ -272,7 +402,7 @@ func (g *Grid) Cells() []Cell {
 	out := make([]Cell, 0, g.size)
 	for i, r := range g.rows {
 		for _, c := range g.cells[i] {
-			out = append(out, Cell{Row: int(r), Col: int(c.col), Fields: json.RawMessage(c.fields)})
+			out = append(out, Cell{Row: int(r), Col: int(c.col), Fields: raw(c.fields)})
 		}
 	}
 	return out
@@ -284,7 +414,7 @@ func (g *Grid) Each(lo, hi int, f func(row, col int, fields json.RawMessage) boo
 	i, _ := slices.BinarySearch(g.rows, int32(lo))
 	for ; i < len(g.rows) && int(g.rows[i]) <= hi; i++ {
 		for _, c := range g.cells[i] {
-			if !f(int(g.rows[i]), int(c.col), json.RawMessage(c.fields)) {
+			if !f(int(g.rows[i]), int(c.col), raw(c.fields)) {
 				return
 			}
 		}
@@ -299,7 +429,7 @@ func (g *Grid) EachIn(r1, r2, c1, c2 int, f func(row, col int, fields json.RawMe
 		cells := g.cells[i]
 		j, _ := slices.BinarySearchFunc(cells, int32(c1), func(c gridCell, col int32) int { return int(c.col - col) })
 		for ; j < len(cells) && int(cells[j].col) <= c2; j++ {
-			if !f(int(g.rows[i]), int(cells[j].col), json.RawMessage(cells[j].fields)) {
+			if !f(int(g.rows[i]), int(cells[j].col), raw(cells[j].fields)) {
 				return
 			}
 		}
@@ -355,6 +485,10 @@ func (g *Grid) put(row, col int, f string) {
 
 func (g *Grid) set(cells []Cell) {
 	for _, c := range cells {
+		if _, canonical, _ := scanFields(c.Fields, true); canonical {
+			g.put(c.Row, c.Col, merge(g.Cell(c.Row, c.Col), c.Fields))
+			continue
+		}
 		set, _ := fields(c.Fields, true)
 		old, _ := fields(g.Cell(c.Row, c.Col), false)
 		if old == nil {
@@ -373,6 +507,56 @@ func (g *Grid) set(cells []Cell) {
 			g.put(c.Row, c.Col, compact(old))
 		}
 	}
+}
+
+// merge is the fields of a cell once set sets some, both written as
+// compact writes them, so that neither needs decoding.
+func merge(old, set []byte) string {
+	b := make([]byte, 0, len(old)+len(set))
+	b = append(b, '{')
+	add := func(key, val []byte) {
+		if bytes.Equal(val, null) {
+			return
+		}
+		if len(b) > 1 {
+			b = append(b, ',')
+		}
+		b = append(b, key...)
+		b = append(b, ':')
+		b = append(b, val...)
+	}
+	a, z := members(old), members(set)
+	for len(a) > 0 || len(z) > 0 {
+		switch {
+		case len(z) == 0 || len(a) > 0 && bytes.Compare(a[0][0], z[0][0]) < 0:
+			add(a[0][0], a[0][1])
+			a = a[1:]
+		case len(a) == 0 || bytes.Compare(z[0][0], a[0][0]) < 0:
+			add(z[0][0], z[0][1])
+			z = z[1:]
+		default:
+			add(z[0][0], z[0][1])
+			a, z = a[1:], z[1:]
+		}
+	}
+	if len(b) == 1 {
+		return ""
+	}
+	return string(append(b, '}'))
+}
+
+// members are the keys, quoted, and values of an object written as
+// compact writes it.
+func members(raw []byte) [][2][]byte {
+	var out [][2][]byte
+	canonical := true
+	for i := 1; i < len(raw) && raw[i] == '"'; {
+		end, _ := scanString(raw, i, &canonical)
+		v, _ := scanValue(raw, end+1, 0, &canonical)
+		out = append(out, [2][]byte{raw[i:end], raw[end+1 : v]})
+		i = v + 1
+	}
+	return out
 }
 
 func compact(f map[string]json.RawMessage) string {

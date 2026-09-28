@@ -100,6 +100,7 @@ func TestGridCheck(t *testing.T) {
 		{{Op: OpCel, ID: "s", Cells: []Cell{cell(1, MaxCols+1, `{"v":1}`)}}},
 		{{Op: OpCel, ID: "s", Cells: []Cell{cell(1, 1, `{}`)}}},
 		{{Op: OpCel, ID: "s", Cells: []Cell{cell(1, 1, `[1]`)}}},
+		{{Op: OpCel, ID: "s", Cells: []Cell{cell(1, 1, `{"v":1`)}}},
 		{{Op: OpCel, ID: "s", Cells: []Cell{cell(1, 1, `{"v":1}`), cell(1, 1, `{"s":1}`)}}},
 		{{Op: OpNew, ID: "s", Type: "sheet", Key: "V", Cells: []Cell{cell(1, 1, `{"v":null}`)}}},
 		{{Op: OpNew, ID: "s", Type: "sheet", Key: "V", Cells: []Cell{}, Text: Delta{ins("\n")}}},
@@ -198,7 +199,6 @@ func TestScanFields(t *testing.T) {
 		{`{"v":null}`, 0, false, false},
 		{`{"":1}`, 0, false, false},
 		{`[1]`, 0, false, false},
-		{`{"v":1`, 0, false, false},
 	} {
 		n, canonical, ok := scanFields(json.RawMessage(c.raw), false)
 		if ok != c.ok || ok && (n != c.n || canonical != c.canonical) {
@@ -211,4 +211,74 @@ func TestScanFields(t *testing.T) {
 	if n, _, ok := scanFields(json.RawMessage(`{"v":null}`), true); !ok || n != 1 {
 		t.Errorf("a null that removes a field: %d %v", n, ok)
 	}
+}
+
+// Fields set on a cell are merged without decoding as they would be
+// through maps.
+func TestMerge(t *testing.T) {
+	values := []string{`1`, `"a\"b"`, `null`, `[1,2]`, `{"x":"}"}`, `true`}
+	keys := []string{"b", "e", "f", "v", "vv"}
+	object := func(r *rand.Rand, nulls bool) string {
+		m := map[string]json.RawMessage{}
+		for _, k := range keys {
+			if r.IntN(2) == 0 {
+				v := values[r.IntN(len(values))]
+				if v != "null" || nulls {
+					m[k] = json.RawMessage(v)
+				}
+			}
+		}
+		return compact(m)
+	}
+	r := rand.New(rand.NewPCG(1, 2))
+	for range 2000 {
+		old, set := object(r, false), object(r, true)
+		if old == "{}" {
+			old = ""
+		}
+		want := map[string]json.RawMessage{}
+		if old != "" {
+			want, _ = fields(json.RawMessage(old), false)
+		}
+		s, _ := fields(json.RawMessage(set), true)
+		for k, v := range s {
+			if string(v) == "null" {
+				delete(want, k)
+			} else {
+				want[k] = v
+			}
+		}
+		w := compact(want)
+		if w == "{}" {
+			w = ""
+		}
+		if got := merge([]byte(old), []byte(set)); got != w {
+			t.Fatalf("%s + %s = %s, want %s", old, set, got, w)
+		}
+	}
+}
+
+// A cell's fields are valid exactly when encoding/json finds them so, and
+// canonical ones are written as compact writes them.
+func FuzzScanFields(f *testing.F) {
+	for _, s := range []string{`{}`, `{"f":"A1","v":1}`, `{"v":-0.5e+3}`, `{"m":[2,3],"r":{"a":"x\"y"}}`, `{"v":"a<b"}`,
+		"{\"v\":\"\\u00e9\\n\"}", `{"v":1 "w":2}`, `{"v":01}`, `{"v":1.}`, `{"v":tru}`, `{"v":[1,]}`, `{"v":1} `, `{"a":{},"b":[]}`} {
+		f.Add([]byte(s))
+	}
+	f.Fuzz(func(t *testing.T, raw []byte) {
+		n, canonical, ok := scanFields(raw, true)
+		m, isObject := fields(raw, true)
+		if ok != (isObject && json.Valid(raw)) {
+			t.Fatalf("%q: ok %v, encoding/json %v", raw, ok, !ok)
+		}
+		if !ok {
+			return
+		}
+		if n < len(m) {
+			t.Fatalf("%q: %d fields, %d read", raw, n, len(m))
+		}
+		if canonical && compact(m) != string(raw) {
+			t.Fatalf("%q canonical, compacted to %s", raw, compact(m))
+		}
+	})
 }

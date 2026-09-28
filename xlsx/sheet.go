@@ -310,6 +310,8 @@ type cellReader struct {
 	sorted    bool
 	lastRow   int
 	lastCol   int
+	// text and value are buffers for a cell's value, as read and as JSON.
+	text, value []byte
 }
 
 type follower struct {
@@ -451,8 +453,11 @@ func (c *cellReader) cell(s *xmltok.Scanner, tok xmltok.Token, row int) error {
 		}
 		switch local(t.Name) {
 		case "v":
-			if value, err = xmltok.Unescape(nil, inner); err != nil {
+			if c.text, err = xmltok.Unescape(c.text[:0], inner); err != nil {
 				return err
+			}
+			if value = c.text; len(value) == 0 {
+				value = nil
 			}
 		case "is":
 			item, err := readItem(body)
@@ -496,7 +501,8 @@ func (c *cellReader) cell(s *xmltok.Scanner, tok xmltok.Token, row int) error {
 		c.part.strings++
 		if i, err := strconv.Atoi(string(value)); err == nil && c.d.sst != nil && i >= 0 && i < len(c.d.sst.items) {
 			item := c.d.sst.items[i]
-			f.V = mustJSON(item.text)
+			c.value = appendString(c.value[:0], item.text)
+			f.V = c.value
 			if item.rich != "" {
 				f.Rich = item.rich
 				c.d.trust(f.Rich)
@@ -504,7 +510,8 @@ func (c *cellReader) cell(s *xmltok.Scanner, tok xmltok.Token, row int) error {
 		}
 	case "str", "inlineStr":
 		if value != nil || typ == "inlineStr" {
-			f.V = mustJSON(decodeEscapes(string(value)))
+			c.value = appendString(c.value[:0], decodeEscapes(string(value)))
+			f.V = c.value
 		}
 	case "b":
 		if len(value) > 0 {
@@ -519,7 +526,8 @@ func (c *cellReader) cell(s *xmltok.Scanner, tok xmltok.Token, row int) error {
 	default:
 		if len(value) > 0 {
 			if n, err := strconv.ParseFloat(strings.TrimSpace(string(value)), 64); err == nil && !math.IsInf(n, 0) {
-				f.V = number(n)
+				c.value = strconv.AppendFloat(c.value[:0], n, 'g', -1, 64)
+				f.V = c.value
 			}
 		}
 	}

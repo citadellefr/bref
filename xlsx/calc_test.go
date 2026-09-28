@@ -2,6 +2,8 @@ package xlsx
 
 import (
 	"encoding/json"
+	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -126,5 +128,37 @@ func TestCalcSheets(t *testing.T) {
 	edit(t, tree, c, ot.Edit{{Op: ot.OpDel, ID: "S1"}})
 	if got := fieldsAt(tree, "S2", 1, 1); got != `{"e":"#REF!","f":"#REF!*10"}` {
 		t.Fatalf("deleted: %s", got)
+	}
+}
+
+// 10 000 formulas read the cell changed: the server calculates them again
+// and sets their values in the tree.
+func BenchmarkFollow(b *testing.B) {
+	cells := []ot.Cell{{Row: 1, Col: 1, Fields: json.RawMessage(`{"v":1}`)}}
+	for i := 2; i <= 10000; i++ {
+		cells = append(cells, ot.Cell{Row: i, Col: 1, Fields: json.RawMessage(`{"v":` + strconv.Itoa(i) + `}`)})
+	}
+	for i := 1; i <= 10000; i++ {
+		f := fmt.Sprintf(`{"f":"$A$1*%d+SUM(A1:A%d)","v":0}`, i, min(i, 50))
+		cells = append(cells, ot.Cell{Row: i, Col: 2, Fields: json.RawMessage(f)})
+	}
+	tree, err := ot.NewTree(ot.Edit{
+		{Op: ot.OpNew, ID: "book", Type: "book", Key: "V"},
+		{Op: ot.OpNew, ID: "S1", Type: "sheet", Parent: "book", Key: "K", Attrs: ot.Values{"name": json.RawMessage(`"Feuil1"`)}, Cells: cells},
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	c := NewCalc(tree, formula.Options{})
+	i := 0
+	for b.Loop() {
+		i++
+		e := ot.Edit{{Op: ot.OpCel, ID: "S1", Cells: []ot.Cell{{Row: 1, Col: 1, Fields: json.RawMessage(`{"v":` + strconv.Itoa(i+1) + `}`)}}}}
+		if err := tree.Apply(e); err != nil {
+			b.Fatal(err)
+		}
+		if out := c.Follow(e, nil); len(out) != 1 || len(out[0].Cells) != 10000 {
+			b.Fatal("not all calculated")
+		}
 	}
 }
