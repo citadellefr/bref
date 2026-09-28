@@ -9,7 +9,7 @@ import 'package:bref/src/word/paragraph.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// How long laying out a long document takes, at first and after a
-/// keystroke: a measure, not a test, run when \$BREF_BENCH is set.
+/// keystroke: a measure, not a test, run when $BREF_BENCH is set.
 void main() {
   test('lays out 2 000 paragraphs, then again after a keystroke', skip: Platform.environment['BREF_BENCH'] == null ? 'BREF_BENCH not set' : false, () {
     const words = 'Le chiffre d’affaires du trimestre progresse nettement grâce aux nouveaux clients et aux services rendus';
