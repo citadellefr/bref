@@ -532,7 +532,7 @@ class _Builder {
       final color = revision == null ? null : revisionColor(revision);
       final style = ctx.style({...run, if (attrs['del'] != null) 'del': '1', if (attrs['ins'] != null) 'ins': '1'}, factor: factor, mark: color);
       final text = op.insert!;
-      if (attrs.containsKey('o') || attrs.containsKey('po') || attrs.containsKey('br')) {
+      if (attrs.containsKey('o') || attrs.containsKey('po') || attrs.containsKey('br') || attrs.containsKey('img')) {
         for (var i = 0; i < text.length; i++) {
           _object(attrs, run, style, offset + i);
         }

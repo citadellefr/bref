@@ -204,6 +204,9 @@ class BrefStrings {
   String get subscript => 'Indice';
   String pageOf(int n, int of) => 'Page $n sur $of';
   String words(int n) => n == 1 ? '1 mot' : '$n mots';
+  String get illustrations => 'Illustrations';
+  String get pictures => 'Images';
+  String get pictureFailed => 'L’image n’a pas pu être ajoutée';
   String get find => 'Rechercher';
   String get replace => 'Remplacer';
   String get replaceAll => 'Remplacer tout';

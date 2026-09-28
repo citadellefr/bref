@@ -133,6 +133,36 @@ void main() {
     expect(tree[first.id]!.text!.text, '\n');
   });
 
+  testWidgets('inserts a picture the host picked, no wider than the text', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    hub = FakeHub.tree(Edit.fromJson(jsonDecode(File('../testdata/docx/par-known-styles.json').readAsStringSync()))!);
+    session = DocSession(hub.connect)..start();
+    addTearDown(session.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: WordEditor(
+          session: session,
+          media: (_) async => Uint8List(0),
+          onPicture: () async => (media: 'pic', width: 4000, height: 2000),
+        ),
+      ),
+    ));
+    await settle(tester);
+    await clickText(tester);
+    await tester.tap(find.text('Insertion'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Images'));
+    await settle(tester);
+    final img = body().text!.ops.map((o) => o.attributes?['img']).nonNulls.single;
+    final p = jsonDecode(img) as Map<String, Object?>;
+    expect(p['media'], 'pic');
+    expect((p['w']! as int) / 12700, lessThan(500));
+    expect((p['w']! as int) / (p['h']! as int), closeTo(2, 0.01));
+    await finish(tester);
+  });
+
   test('finds and replaces in every flow, with the formatting found', () {
     final tree = Tree.fromEdit(Edit.fromJson(jsonDecode(File('../testdata/docx/tbl-having-applied-style.json').readAsStringSync()))!)!;
     final matches = findIn(flowsOf(tree), 'FOO');

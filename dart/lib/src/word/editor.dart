@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -29,6 +30,7 @@ class WordEditor extends StatefulWidget {
     this.onClose,
     this.strings = const BrefStrings(),
     this.fonts,
+    this.onPicture,
   });
 
   final DocSession session;
@@ -41,6 +43,11 @@ class WordEditor extends StatefulWidget {
 
   /// The package bundling the free fonts standing in for Office's.
   final String? fonts;
+
+  /// Lets the user pick a picture and sends it to the document: its name
+  /// and size in pixels, null when nothing was picked. Without it no
+  /// picture can be inserted.
+  final Future<({String media, int width, int height})?> Function()? onPicture;
 
   @override
   State<WordEditor> createState() => _WordEditorState();
@@ -288,6 +295,32 @@ class _WordEditorState extends State<WordEditor> {
       _selection.set(first.id, 0, null, null, PageArea.body);
       _focus.requestFocus();
     }
+  }
+
+  /// Inserts a picture at the caret, no wider than the text.
+  Future<void> _picture() async {
+    final pick = widget.onPicture;
+    if (pick == null) return;
+    final ({String media, int width, int height})? picture;
+    try {
+      picture = await pick();
+    } on Object catch (e) {
+      if (mounted) ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text('${_s.pictureFailed} : $e')));
+      return;
+    }
+    final flow = _flow;
+    if (picture == null || flow == null || !mounted || picture.width <= 0 || picture.height <= 0) return;
+    final layout = _current;
+    final at = layout.caret(flow.id, _selection.extent, page: _selection.page);
+    final page = at == null ? layout.pages.firstOrNull : layout.pages[at.$1];
+    final room = page?.body.width ?? 450;
+    var w = picture.width * 0.75, h = picture.height * 0.75;
+    if (w > room) (w, h) = (room, h * room / w);
+    const emu = 12700;
+    _view.currentState?.replaceWith(flow, _selection.start, _selection.end, '￼', {
+      'img': jsonEncode({'media': picture.media, 'w': (w * emu).round(), 'h': (h * emu).round()}),
+    });
+    _focus.requestFocus();
   }
 
   void _pageBreak() {
@@ -894,6 +927,10 @@ class _WordEditorState extends State<WordEditor> {
           RibbonGroup(_s.pages, [
             RibbonButton(icon: const Icon(Icons.insert_page_break_outlined), label: _s.pageBreak, large: true, shortcut: 'Ctrl+Entrée', onPressed: editable ? _pageBreak : null),
           ]),
+          if (widget.onPicture != null)
+            RibbonGroup(_s.illustrations, [
+              RibbonButton(icon: const Icon(Icons.image_outlined), label: _s.pictures, large: true, onPressed: editable ? _picture : null),
+            ]),
           RibbonGroup(_s.tables, [
             RibbonMenu<(int, int)>(
               icon: const Icon(Icons.table_chart_outlined),

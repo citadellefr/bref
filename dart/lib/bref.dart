@@ -9,6 +9,6 @@ export 'src/ot/tree.dart' show Change, ChangeKind, Edit, Node, Tree, diffTrees, 
 export 'src/plain_text_editor.dart' show PlainTextEditor;
 export 'src/powerpoint/editor.dart' show PresentationEditor;
 export 'src/powerpoint/slide_painter.dart' show MediaFetcher;
-export 'src/word/editor.dart' show WordEditor;
 export 'src/session.dart'
     show DocClosed, DocConnector, DocPeer, DocSelection, DocSession, DocStatus, DocTransport, randomId, webSocketConnector;
+export 'src/word/editor.dart' show WordEditor;
