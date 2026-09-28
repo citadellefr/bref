@@ -501,3 +501,51 @@ func TestFootnotes(t *testing.T) {
 		t.Error("the document was rewritten")
 	}
 }
+
+func TestAddPicture(t *testing.T) {
+	d, tree := open(t, `<w:p><w:r><w:t>A</w:t></w:r></w:p>`)
+	png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRnew")
+	name, err := d.AddPicture(png)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := d.AddPicture(png); again != name {
+		t.Errorf("the same picture named %q then %q", name, again)
+	}
+	if existing, _ := d.AddPicture([]byte("\x89PNG\r\n\x1a\n")); existing == name {
+		t.Error("a picture of the document named like a new one")
+	}
+	if _, err := d.AddPicture([]byte("<svg/>")); err == nil {
+		t.Error("an SVG file added")
+	}
+	if data, typ, err := d.Media(name); err != nil || typ != "image/png" || string(data) != string(png) {
+		t.Fatalf("media before saving: %q %v", typ, err)
+	}
+	n := firstText(t, tree)
+	apply(t, d, tree, ot.Edit{{Op: ot.OpTxt, ID: n.ID, Text: ot.Delta{
+		{Insert: Object, Attrs: ot.Attrs{"img": `{"media":"` + name + `","w":914400,"h":457200}`}},
+		{Insert: Object, Attrs: ot.Attrs{"img": `{"media":"nothing","w":914400,"h":457200}`}},
+	}}})
+	saved, err := d.Save(tree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := partOf(t, saved, "word/document.xml")
+	if strings.Count(doc, "<w:drawing>") != 1 || !strings.Contains(doc, `<wp:extent cx="914400" cy="457200"/><wp:docPr id="1" name="Image 1"/>`) || !strings.Contains(doc, `<a:blip r:embed="rId7"/>`) {
+		t.Errorf("document\n%s", doc)
+	}
+	if partOf(t, saved, "word/media/bref1.png") != string(png) {
+		t.Error("the picture was not written")
+	}
+	if !strings.Contains(partOf(t, saved, "word/_rels/document.xml.rels"), `Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/bref1.png"`) {
+		t.Error("no relationship to the picture")
+	}
+	_, again, err := Open(saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p Picture
+	if json.Unmarshal([]byte(firstText(t, again).Text.Delta()[0].Attrs["img"]), &p); p.Media != name || p.W != 914400 {
+		t.Errorf("read back %+v", p)
+	}
+}

@@ -75,6 +75,9 @@ const (
 var (
 	ErrClosed  = errors.New("bref: hub closed")
 	ErrNoMedia = errors.New("bref: no such picture")
+	// ErrPicture is a picture a document does not take: not a PNG, JPEG or
+	// GIF file, too large, or a format without pictures.
+	ErrPicture = errors.New("bref: this picture cannot be added")
 )
 
 // ErrGone is returned (possibly wrapped) by Store.Save when the file no

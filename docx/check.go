@@ -96,6 +96,9 @@ func (d *Document) Media(name string) ([]byte, string, error) {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if p := d.pending[r.Target]; p != nil {
+		return p.data, p.contentType, nil
+	}
 	data, err := d.pkg.Read(r.Target)
 	if err != nil {
 		return nil, "", errors.Join(ErrNoMedia, err)

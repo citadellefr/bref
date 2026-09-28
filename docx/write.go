@@ -50,8 +50,10 @@ type writer struct {
 	// headerRef is the relationship id of the part of a header or footer
 	// node, from the main part.
 	headerRef func(id string) string
-	// rels are those of the part being written.
-	rels *partrel.Writer
+	// rels are those of the part being written, drawings the last id of
+	// its drawings.
+	rels     *partrel.Writer
+	drawings int
 	// styles are the builtin styles paragraphs took, lists the builtin
 	// lists they started by the numbers given them, in numbering.
 	styles    []string
@@ -62,6 +64,9 @@ type writer struct {
 }
 
 func (w *writer) save() error {
+	if err := w.addPictures(); err != nil {
+		return err
+	}
 	w.parts = map[string]string{}
 	for id, p := range w.d.parts {
 		w.parts[id] = p.name
@@ -290,6 +295,7 @@ func (w *writer) header(n *ot.Node, name string, rels *partrel.Rels) error {
 			return err
 		}
 		read = revisionIDs(doc.Root)
+		w.drawings = lastDrawing(doc.Root)
 	} else {
 		root := xmldom.New(NS, "w:"+n.Type)
 		root.Set("xmlns:w", NS)
@@ -322,6 +328,7 @@ func (w *writer) notes(kind string, p *part) error {
 		return err
 	}
 	read := revisionIDs(doc.Root)
+	w.drawings = lastDrawing(doc.Root)
 	w.rels = partrel.NewWriter(p.name, p.rels, w.d.names.Lookup)
 	for _, e := range doc.Root.Elements() {
 		if e.Space != NS || e.Local != kind {
@@ -347,6 +354,7 @@ func (w *writer) document() error {
 		return err
 	}
 	read := revisionIDs(doc.Root)
+	w.drawings = lastDrawing(doc.Root)
 	body := child(doc.Root, "body")
 	rw := partrel.NewWriter(w.d.main, w.d.mainRels, w.d.names.Lookup)
 	w.headerRef = func(id string) string {
@@ -777,6 +785,15 @@ func (w *writer) run(items []item, in *xmldom.Element, deleted bool) *xmldom.Ele
 			flush()
 			for range utf8.RuneCountInString(it.text) {
 				if e := w.d.fragment(o); e != nil {
+					r.Append(e)
+				}
+			}
+			continue
+		}
+		if img := it.attrs["img"]; img != "" {
+			flush()
+			for range utf8.RuneCountInString(it.text) {
+				if e := w.drawing(img); e != nil {
 					r.Append(e)
 				}
 			}

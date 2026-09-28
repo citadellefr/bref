@@ -3,6 +3,7 @@ package bref
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -53,6 +54,13 @@ func TestDocumentsAreEditedAndSaved(t *testing.T) {
 	}
 	if got := tree.Node(text).Text.Delta()[0]; !strings.HasPrefix(got.Insert, "Bref ") || got.Attrs["b"] != "1" {
 		t.Fatalf("saved text %+v", got)
+	}
+	added, err := h.AddPicture(context.Background(), "letter.docx", []byte("\x89PNG\r\n\x1a\nnew picture"))
+	if err != nil || added == "" {
+		t.Fatalf("picture added: %q %v", added, err)
+	}
+	if _, err := h.AddPicture(context.Background(), "letter.docx", []byte("text")); !errors.Is(err, ErrPicture) {
+		t.Fatalf("text added as a picture: %v", err)
 	}
 	picture, typ, err := h.Media(context.Background(), "letter.docx", media)
 	if err != nil || len(picture) == 0 || !strings.HasPrefix(typ, "image/") {

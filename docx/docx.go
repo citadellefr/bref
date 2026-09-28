@@ -96,6 +96,8 @@ type Document struct {
 	// footnotes and endnotes, by kind.
 	parts map[string]*part
 	notes map[string]*part
+	// pending are the pictures clients added, by the part they go in.
+	pending map[string]*pending
 	// fileStyles are the ids of the styles styles.xml defines.
 	fileStyles map[string]bool
 }
@@ -119,6 +121,7 @@ func Open(data []byte) (*Document, *ot.Tree, error) {
 		seed:     maphash.MakeSeed(),
 		parts:    map[string]*part{},
 		notes:    map[string]*part{},
+		pending:  map[string]*pending{},
 	}
 	root, err := partrel.Read(pkg, "")
 	if err != nil {

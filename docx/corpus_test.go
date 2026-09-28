@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,6 +173,14 @@ func TestCorpusEdit(t *testing.T) {
 		if len(e) == 0 {
 			continue
 		}
+		picture, err := d.AddPicture(onePixel)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e = append(e, ot.Change{Op: ot.OpTxt, ID: e[0].ID, Text: ot.Delta{
+			{Retain: 5},
+			{Insert: Object, Attrs: ot.Attrs{"img": `{"media":"` + picture + `","w":127000,"h":127000}`}},
+		}})
 		if err := d.Check(tree, e); err != nil {
 			t.Fatalf("%s: %v", f, err)
 		}
@@ -202,6 +212,13 @@ func TestCorpusEdit(t *testing.T) {
 	}
 	t.Logf("%d documents edited", files)
 }
+
+// onePixel is a PNG picture of one pixel.
+var onePixel = func() []byte {
+	var b bytes.Buffer
+	_ = png.Encode(&b, image.NewGray(image.Rect(0, 0, 1, 1)))
+	return b.Bytes()
+}()
 
 func firstFlow(tree *ot.Tree) *ot.Node {
 	for _, n := range tree.Children("body") {

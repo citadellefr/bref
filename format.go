@@ -29,6 +29,11 @@ type follower interface {
 	follow(doc *ot.Tree, e ot.Edit, since []ot.Edit) ot.Edit
 }
 
+// pictureAdder is a format a client adds pictures to, for its drawings.
+type pictureAdder interface {
+	addPicture(data []byte) (string, error)
+}
+
 // formats read files into documents, by extension; name is the file's.
 var formats = map[string]func(name string, data []byte) (*ot.Tree, format, error){
 	".txt":  openText,
@@ -63,6 +68,14 @@ func (d document) check(doc *ot.Tree, e ot.Edit) error {
 
 func (d document) encode(doc *ot.Tree) ([]byte, error) {
 	return d.doc.Save(doc)
+}
+
+func (d document) addPicture(data []byte) (string, error) {
+	name, err := d.doc.AddPicture(data)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrPicture, err)
+	}
+	return name, nil
 }
 
 func (d document) media(name string) ([]byte, string, error) {

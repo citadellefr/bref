@@ -146,10 +146,24 @@ func (n *Names) NameAll(e *xmldom.Element, source string, rels *Rels, spaces map
 	})
 }
 
+// Picture names a picture that is not yet in the package, added under
+// that target: the name its content gives it, which it keeps once written.
+func (n *Names) Picture(target string, data []byte) string {
+	s := pictureName(crc32.ChecksumIEEE(data), uint64(len(data)))
+	if _, known := n.byName[s]; !known {
+		n.byName[s] = Rel{Type: Image, Target: target}
+	}
+	return s
+}
+
+func pictureName(crc uint32, size uint64) string {
+	sum := sha256.Sum256(binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint32(nil, crc), size))
+	return "@" + base62(sum[:])
+}
+
 // nameOf is the name of a relationship: made of the checksum and size of
 // the content of a picture, of its type and target otherwise.
 func nameOf(pkg *opc.Package, r Rel) string {
-	var sum [32]byte
 	if r.Type == Image && !r.External {
 		crc, size, ok := pkg.Checksum(r.Target)
 		if !ok {
@@ -159,10 +173,9 @@ func nameOf(pkg *opc.Package, r Rel) string {
 			}
 			crc, size = crc32.ChecksumIEEE(data), uint64(len(data))
 		}
-		sum = sha256.Sum256(binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint32(nil, crc), size))
-	} else {
-		sum = sha256.Sum256([]byte(r.Type + "\x00" + r.Target + "\x00" + strconv.FormatBool(r.External)))
+		return pictureName(crc, size)
 	}
+	sum := sha256.Sum256([]byte(r.Type + "\x00" + r.Target + "\x00" + strconv.FormatBool(r.External)))
 	return "@" + base62(sum[:])
 }
 

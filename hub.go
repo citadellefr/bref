@@ -68,6 +68,21 @@ func (h *Hub) Media(ctx context.Context, key, name string) ([]byte, string, erro
 	return r.file.media(name)
 }
 
+// AddPicture keeps a picture for the drawings of a document, and gives the
+// name a client shows it by. Pictures never travel through the socket.
+func (h *Hub) AddPicture(ctx context.Context, key string, data []byte) (string, error) {
+	r, err := h.acquire(ctx, key)
+	if err != nil {
+		return "", err
+	}
+	defer h.release(r)
+	adder, ok := r.file.(pictureAdder)
+	if !ok {
+		return "", ErrPicture
+	}
+	return adder.addPicture(data)
+}
+
 // Disconnect ends every connection to a document, e.g. when the file behind
 // it is deleted or moved.
 func (h *Hub) Disconnect(key, reason string) {
