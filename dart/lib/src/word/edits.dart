@@ -377,6 +377,50 @@ Edit deleteRanges(Tree tree, List<(Node, int, int)> ranges) {
   return Edit(changes);
 }
 
+/// Where [query] is in the flows, in reading order.
+List<(Node, int, int)> findIn(List<Node> flows, String query, {bool matchCase = false}) {
+  if (query.isEmpty) return const [];
+  final needle = matchCase ? query : query.toLowerCase();
+  final out = <(Node, int, int)>[];
+  for (final flow in flows) {
+    var text = flow.text!.text;
+    if (!matchCase) text = text.toLowerCase();
+    for (var i = text.indexOf(needle); i >= 0; i = text.indexOf(needle, i + needle.length)) {
+      out.add((flow, i, i + needle.length));
+    }
+  }
+  return out;
+}
+
+/// Replaces every match by [text], typed with the formatting of the first
+/// character it replaces: one edit, undone at once.
+Edit replaceAll(List<(Node, int, int)> matches, String text) {
+  final byFlow = <String, List<(int, int)>>{};
+  final nodes = <String, Node>{};
+  for (final (node, a, b) in matches) {
+    (byFlow[node.id] ??= []).add((a, b));
+    nodes[node.id] = node;
+  }
+  final changes = <Change>[];
+  for (final e in byFlow.entries) {
+    final editing = wordEditing(nodes[e.key]!);
+    final d = Delta();
+    var at = 0;
+    for (final (a, b) in e.value..sort((x, y) => x.$1.compareTo(y.$1))) {
+      d
+        ..retain(a - at)
+        ..delete(b - a);
+      if (text.isNotEmpty) {
+        final attributes = editing.typingAttributes(a + 1);
+        d.insert(text, attributes.isEmpty ? null : attributes);
+      }
+      at = b;
+    }
+    changes.add(Change.text(e.key, d.chop()));
+  }
+  return Edit(changes);
+}
+
 Map<String, Object?> _without(Map<String, Object?> attrs, Set<String> keys) => {
   for (final e in attrs.entries)
     if (!keys.contains(e.key)) e.key: e.value,

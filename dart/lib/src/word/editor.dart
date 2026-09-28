@@ -56,6 +56,13 @@ class _WordEditorState extends State<WordEditor> {
   final _cache = ParaCache();
   final _view = GlobalKey<WordPagesViewState>();
   StreamSubscription<String>? _rejections;
+  final _find = TextEditingController();
+  final _replacement = TextEditingController();
+  final _findFocus = FocusNode();
+  var _finding = false;
+  var _replacing = false;
+  var _matchCase = false;
+  var _match = -1;
   var _zoom = 1.0;
   var _fitWidth = false;
   var _backstage = false;
@@ -88,6 +95,9 @@ class _WordEditorState extends State<WordEditor> {
       ..dispose();
     _selection.dispose();
     _focus.dispose();
+    _find.dispose();
+    _replacement.dispose();
+    _findFocus.dispose();
     super.dispose();
   }
 
@@ -444,6 +454,126 @@ class _WordEditorState extends State<WordEditor> {
     if (flow != null) _view.currentState?.clipboard(flow, key);
   }
 
+  // searching
+
+  /// What the search finds in the body, in reading order.
+  List<(Node, int, int)> get _matches =>
+      _finding ? findIn(flowsOf(_session.document), _find.text, matchCase: _matchCase) : const [];
+
+  void _openFind({bool replace = false}) {
+    setState(() {
+      _finding = true;
+      _replacing = replace || _replacing;
+      if (!_selection.collapsed && !_selection.spans && _flow != null) {
+        _find.text = wordEditing(_flow!).text.substring(_selection.start, _selection.end);
+      }
+    });
+    _findFocus.requestFocus();
+    _find.selection = TextSelection(baseOffset: 0, extentOffset: _find.text.length);
+  }
+
+  void _closeFind() {
+    setState(() {
+      _finding = false;
+      _match = -1;
+    });
+    _focus.requestFocus();
+  }
+
+  /// Selects the next match after the caret, or before it.
+  void _step(int by) {
+    final matches = _matches;
+    if (matches.isEmpty) return setState(() => _match = -1);
+    var i = _match;
+    if (i < 0 || i >= matches.length) {
+      final order = flowsOf(_session.document).map((n) => n.id).toList();
+      final here = order.indexOf(_selection.flow ?? '');
+      i = matches.indexWhere((m) {
+        final at = order.indexOf(m.$1.id);
+        return at > here || at == here && m.$2 >= _selection.start;
+      });
+      if (by < 0) i = (i < 0 ? matches.length : i) - 1;
+      if (i < 0) i = by < 0 ? matches.length - 1 : 0;
+    } else {
+      i = (i + by) % matches.length;
+    }
+    final (node, a, b) = matches[i];
+    setState(() => _match = i);
+    _selection.set(node.id, a, b, null, PageArea.body);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _view.currentState?.reveal());
+  }
+
+  void _replaceOne() {
+    final matches = _matches;
+    final flow = _flow;
+    final current = _match >= 0 && _match < matches.length ? matches[_match] : null;
+    if (flow == null || current == null || current.$1.id != flow.id || current.$2 != _selection.start || current.$3 != _selection.end) {
+      _step(1);
+      return;
+    }
+    _edit(replaceAll([current], _replacement.text));
+    _match--;
+    _step(1);
+  }
+
+  void _replaceEvery() {
+    final matches = _matches;
+    if (matches.isEmpty) return;
+    _edit(replaceAll(matches, _replacement.text));
+    setState(() => _match = -1);
+  }
+
+  Widget _findBar(BuildContext context) {
+    final matches = _matches;
+    final s = _s;
+    final count = _match >= 0 && _match < matches.length ? s.resultOf(_match + 1, matches.length) : s.results(matches.length);
+    Widget field(TextEditingController c, String hint, {FocusNode? focus, ValueChanged<String>? submit}) => SizedBox(
+      width: 220,
+      height: 32,
+      child: TextField(
+        controller: c,
+        focusNode: focus,
+        onChanged: (_) => setState(() => _match = -1),
+        onSubmitted: submit,
+        decoration: InputDecoration(hintText: hint, isDense: true, border: const OutlineInputBorder(), contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8)),
+      ),
+    );
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      child: CallbackShortcuts(
+        bindings: {const SingleActivator(LogicalKeyboardKey.escape): _closeFind},
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              field(_find, s.find, focus: _findFocus, submit: (_) {
+                _step(1);
+                _findFocus.requestFocus();
+              }),
+              IconButton(tooltip: s.findPrevious, iconSize: 18, onPressed: () => _step(-1), icon: const Icon(Icons.keyboard_arrow_up)),
+              IconButton(tooltip: s.findNext, iconSize: 18, onPressed: () => _step(1), icon: const Icon(Icons.keyboard_arrow_down)),
+              Text(_find.text.isEmpty ? '' : count, style: Theme.of(context).textTheme.labelMedium),
+              FilterChip(label: Text(s.matchCase), selected: _matchCase, onSelected: (v) => setState(() {
+                _matchCase = v;
+                _match = -1;
+              })),
+              if (!_replacing && !_session.readOnly) TextButton(onPressed: () => setState(() => _replacing = true), child: Text(s.replace)),
+              if (_replacing && !_session.readOnly) ...[
+                field(_replacement, s.replaceWith, submit: (_) => _replaceOne()),
+                OutlinedButton(onPressed: matches.isEmpty ? null : _replaceOne, child: Text(s.replace)),
+                OutlinedButton(onPressed: matches.isEmpty ? null : _replaceEvery, child: Text(s.replaceAll)),
+              ],
+              IconButton(tooltip: s.close, iconSize: 18, onPressed: _closeFind, icon: const Icon(Icons.close)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // keys
 
   /// The keys of Word the editor answers wherever the focus is in it.
@@ -454,6 +584,12 @@ class _WordEditorState extends State<WordEditor> {
     if (!ctrl) return false;
     final key = e.logicalKey;
     switch (key) {
+      case LogicalKeyboardKey.keyF:
+        _openFind();
+        return true;
+      case LogicalKeyboardKey.keyH:
+        _openFind(replace: true);
+        return true;
       case LogicalKeyboardKey.keyZ:
         _session.undo();
         return true;
@@ -533,6 +669,7 @@ class _WordEditorState extends State<WordEditor> {
           children: [
             _ribbon(context),
             ..._banners(context),
+            if (_finding) _findBar(context),
             Expanded(
               child: ColoredBox(
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -547,6 +684,7 @@ class _WordEditorState extends State<WordEditor> {
                     focusNode: _focus,
                     onShortcut: _shortcut,
                     onContextMenu: _contextMenu,
+                    highlights: [for (final (n, a, b) in _matches) (n.id, a, b)],
                   ),
                 ),
               ),
@@ -746,6 +884,10 @@ class _WordEditorState extends State<WordEditor> {
               items: [for (final e in styles) PopupMenuItem(value: e.key, child: Text(_s.styleName(e.value.name)))],
               onSelected: _style,
             ),
+          ]),
+          RibbonGroup(_s.editing, [
+            RibbonButton(icon: const Icon(Icons.search), label: _s.find, shortcut: 'Ctrl+F', onPressed: () => _openFind()),
+            RibbonButton(icon: const Icon(Icons.find_replace), label: _s.replace, shortcut: 'Ctrl+H', onPressed: editable ? () => _openFind(replace: true) : null),
           ]),
         ]),
         RibbonTab(_s.insert, [

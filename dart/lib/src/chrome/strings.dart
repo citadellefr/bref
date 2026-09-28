@@ -204,6 +204,15 @@ class BrefStrings {
   String get subscript => 'Indice';
   String pageOf(int n, int of) => 'Page $n sur $of';
   String words(int n) => n == 1 ? '1 mot' : '$n mots';
+  String get find => 'Rechercher';
+  String get replace => 'Remplacer';
+  String get replaceAll => 'Remplacer tout';
+  String get replaceWith => 'Remplacer par';
+  String get findNext => 'Suivant';
+  String get findPrevious => 'Précédent';
+  String get matchCase => 'Respecter la casse';
+  String results(int n) => n == 0 ? 'Aucun résultat' : (n == 1 ? '1 résultat' : '$n résultats');
+  String resultOf(int n, int of) => 'Résultat $n sur $of';
   String pageCount(int n) => n == 1 ? '1 page' : '$n pages';
   String get headerFooter => 'En-tête et pied de page';
   String get header => 'En-tête';

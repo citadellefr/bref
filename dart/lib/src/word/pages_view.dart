@@ -26,6 +26,7 @@ class WordPagesView extends StatefulWidget {
     required this.focusNode,
     this.onShortcut,
     this.onContextMenu,
+    this.highlights = const [],
   });
 
   final DocSession session;
@@ -42,6 +43,9 @@ class WordPagesView extends StatefulWidget {
 
   /// A right click or long press on the text, at a global position.
   final void Function(Offset global)? onContextMenu;
+
+  /// Ranges of flows shown highlighted: what a search found.
+  final List<(String, int, int)> highlights;
 
   @override
   State<WordPagesView> createState() => WordPagesViewState();
@@ -171,6 +175,8 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
   double get _width => _layout.pages.fold(0.0, (w, p) => math.max(w, p.size.width * _scale)) + 2 * _gap;
 
   /// Brings the caret into view.
+  void reveal() => _reveal();
+
   void _reveal() {
     final flow = _selection.flow;
     if (flow == null) return;
@@ -765,6 +771,11 @@ class _PagePainter extends CustomPainter {
         ..strokeWidth = 0.75;
       final y = s.area == PageArea.header ? page.body.top : page.body.bottom;
       canvas.drawLine(Offset(0, y), Offset(page.size.width, y), line);
+    }
+    for (final (flow, a, b) in state.widget.highlights) {
+      for (final (p, r) in layout.selection(flow, a, b)) {
+        if (p == index) canvas.drawRect(r, Paint()..color = const Color(0x66FFD600));
+      }
     }
     for (final peer in state._session.peers) {
       final sel = peer.selection;

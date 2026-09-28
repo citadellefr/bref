@@ -133,6 +133,34 @@ void main() {
     expect(tree[first.id]!.text!.text, '\n');
   });
 
+  test('finds and replaces in every flow, with the formatting found', () {
+    final tree = Tree.fromEdit(Edit.fromJson(jsonDecode(File('../testdata/docx/tbl-having-applied-style.json').readAsStringSync()))!)!;
+    final matches = findIn(flowsOf(tree), 'FOO');
+    expect(matches.length, greaterThan(3));
+    expect(findIn(flowsOf(tree), 'FOO', matchCase: true), isEmpty);
+    final before = matches.first.$1;
+    final attributes = wordEditing(before).attributesAt(matches.first.$2);
+    expect(tree.apply(replaceAll(matches, 'truc')), isNotNull);
+    expect(findIn(flowsOf(tree), 'foo'), isEmpty);
+    expect(findIn(flowsOf(tree), 'truc').length, matches.length);
+    expect(wordEditing(tree[before.id]!).attributesAt(matches.first.$2), attributes);
+  });
+
+  testWidgets('opens the search with Ctrl+H and replaces everything', (tester) async {
+    await open(tester, 'tbl-having-applied-style');
+    await clickText(tester);
+    await ctrl(tester, LogicalKeyboardKey.keyH);
+    await tester.enterText(find.byType(TextField).first, 'bar');
+    await tester.enterText(find.byType(TextField).last, 'baz');
+    await tester.pump();
+    expect(find.textContaining('résultats'), findsOneWidget);
+    await tester.tap(find.text('Remplacer tout'));
+    await settle(tester);
+    expect(findIn(flowsOf(hub.doc), 'bar'), isEmpty);
+    expect(findIn(flowsOf(hub.doc), 'baz'), isNotEmpty);
+    await finish(tester);
+  });
+
   test('inserts a table after the paragraph, the flow cut there', () {
     final tree = Tree.fromEdit(Edit.fromJson(jsonDecode(File('../testdata/docx/par-known-styles.json').readAsStringSync()))!)!;
     final doc = WordDocument(tree);
