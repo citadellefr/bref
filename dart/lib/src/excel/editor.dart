@@ -726,9 +726,18 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
     while (top >= 1 && number(top, c)) {
       top--;
     }
+    // a filtered list is summed as Excel does, leaving out the rows hidden
+    final filter = SheetFilter.of(sheet);
+    final filtered = filter != null &&
+        filter.columns.isNotEmpty &&
+        filter.area.left <= c &&
+        c <= filter.area.right &&
+        top < filter.rows.$2 &&
+        r - 1 >= filter.rows.$1;
     String formula;
     if (top < r - 1) {
-      formula = 'SUM(${cellName(top + 1, c)}:${cellName(r - 1, c)})';
+      final range = '${cellName(top + 1, c)}:${cellName(r - 1, c)}';
+      formula = filtered ? 'SUBTOTAL(9,$range)' : 'SUM($range)';
     } else {
       var left = c - 1;
       while (left >= 1 && number(r, left)) {
@@ -1446,8 +1455,9 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
     var sum = 0.0;
     if (sheet?.grid != null) {
       final a = _selection.area;
-      for (final c in sheet!.grid!.rows(a.top, a.bottom)) {
-        if (c.row == 0 || c.col == 0 || !a.contains(c.row, c.col)) continue;
+      final l = _wb.layout(sheet!);
+      for (final c in sheet.grid!.rows(a.top, a.bottom)) {
+        if (c.row == 0 || c.col == 0 || !a.contains(c.row, c.col) || l.height(c.row) == 0 || l.width(c.col) == 0) continue;
         final v = c.fields['v'];
         if (v != null || c.fields['e'] != null) count++;
         if (v is num) {

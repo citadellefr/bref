@@ -6,6 +6,7 @@ const _functions = <String, String>{
   'ACOS': 'ACOS',
   'ACOSH': 'ACOSH',
   'ADDRESS': 'ADRESSE',
+  'AGGREGATE': 'AGREGAT',
   'AND': 'ET',
   'ASIN': 'ASIN',
   'ASINH': 'ASINH',
@@ -230,7 +231,7 @@ const _functions = <String, String>{
 /// The functions newer than the file format, which files call with the
 /// prefix "_xlfn.".
 const _newer = {
-  'CEILING.MATH', 'CEILING.PRECISE', 'COMBINA', 'CONCAT', 'COVARIANCE.P', 'COVARIANCE.S', 'DAYS', //
+  'AGGREGATE', 'CEILING.MATH', 'CEILING.PRECISE', 'COMBINA', 'CONCAT', 'COVARIANCE.P', 'COVARIANCE.S', 'DAYS', //
   'FLOOR.MATH', 'FLOOR.PRECISE', 'FORECAST.LINEAR', 'IFNA', 'IFS', 'ISO.CEILING', 'ISOWEEKNUM', 'MAXIFS',
   'MINIFS', 'MODE.SNGL', 'NUMBERVALUE', 'PERCENTILE.EXC', 'PERCENTILE.INC', 'QUARTILE.EXC', 'QUARTILE.INC',
   'RANK.AVG', 'RANK.EQ', 'STDEV.P', 'STDEV.S', 'SWITCH', 'TEXTAFTER', 'TEXTBEFORE', 'TEXTJOIN', 'UNICHAR',

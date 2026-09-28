@@ -192,6 +192,15 @@ void main() {
     expect(hub.doc['S1']!.grid!.cell(3, 0), {'hide': true});
     expect(find.byIcon(Icons.filter_alt), findsOneWidget);
 
+    // a filtered list is summed without the rows it hides
+    for (var i = 0; i < 4 && find.text('A4').evaluate().isEmpty; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+    }
+    await tester.tap(find.byTooltip('Somme automatique (Alt+=)').first);
+    await settle(tester);
+    expect(cell(4, 1)?['f'], 'SUBTOTAL(9,A1:A3)');
+
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyL);
