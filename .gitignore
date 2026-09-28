@@ -1,3 +1,4 @@
 /corpus/files/
 bin/
 obj/
+*.test
