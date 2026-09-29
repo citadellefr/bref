@@ -101,6 +101,7 @@ func (r *room) join(p *peer) {
 	f, _ := json.Marshal(hello{
 		T:        "hello",
 		SID:      p.sid,
+		Name:     p.info.Name,
 		Epoch:    r.epoch,
 		Version:  r.version,
 		Saved:    r.saved,

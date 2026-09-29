@@ -134,6 +134,7 @@ func leaveFrame(sid uint32) []byte {
 type hello struct {
 	T        string     `json:"t"`
 	SID      uint32     `json:"sid"`
+	Name     string     `json:"name"`
 	Epoch    string     `json:"epoch"`
 	Version  uint64     `json:"v"`
 	Saved    uint64     `json:"saved"`

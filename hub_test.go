@@ -125,6 +125,7 @@ func (s *memStore) file(key string) string {
 type frame struct {
 	T     string          `json:"t"`
 	SID   uint32          `json:"sid"`
+	Name  string          `json:"name"`
 	N     uint64          `json:"n"`
 	V     uint64          `json:"v"`
 	Ack   uint64          `json:"ack"`
@@ -214,7 +215,7 @@ func TestEditsAreRebasedAndSaved(t *testing.T) {
 	h := NewHub(store, fastOptions())
 
 	alice, hello, doc := join(t, h, "a.txt", Peer{ID: "1", Name: "Alice", Client: "ca"})
-	if hello.SID != 1 || len(hello.Peers) != 0 || hello.Epoch == "" {
+	if hello.SID != 1 || hello.Name != "Alice" || len(hello.Peers) != 0 || hello.Epoch == "" {
 		t.Fatalf("hello = %+v", hello)
 	}
 	if string(doc.D) != `[{"o":"new","id":"body","t":"text","k":"V","x":[{"i":"one\ntwo\n"}]}]` || doc.V != 0 {
