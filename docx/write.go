@@ -59,11 +59,12 @@ type writer struct {
 	styles    []string
 	lists     map[string]string
 	numbering *xmldom.Document
-	// commentID is the w:id of each comment node; mainRels are the
-	// relationships of the parts created that the main part must have;
-	// anchorsGone tells that comments were deleted, whose anchors the body
-	// may still have.
+	// commentID is the w:id of each comment node, anchored the anchors
+	// written; mainRels are the relationships of the parts created that the
+	// main part must have; anchorsGone tells that comments were deleted,
+	// whose anchors the body may still have.
 	commentID   map[string]string
+	anchored    map[string]bool
 	mainRels    []partrel.Rel
 	anchorsGone bool
 	// force rewrites every part, for tests.
@@ -771,12 +772,14 @@ func (w *writer) paragraphObject(a ot.Attrs, in *xmldom.Element) *xmldom.Element
 }
 
 // commentAnchor is the element of a comment's range or reference: the one
-// read, or one made for a comment added; none for a comment deleted.
+// read, or one made for a comment added; none for a comment deleted, or
+// whose anchor of that kind was written already.
 func (w *writer) commentAnchor(comment, local, read string, in *xmldom.Element) *xmldom.Element {
 	id, ok := w.commentID[comment]
-	if !ok {
+	if !ok || w.anchored[local+id] {
 		return nil
 	}
+	w.anchored[local+id] = true
 	if e := w.d.fragment(read); e != nil {
 		return e
 	}

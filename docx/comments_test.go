@@ -111,7 +111,8 @@ func TestAddComment(t *testing.T) {
 				"author": json.RawMessage(`"` + author + `"`), "initials": json.RawMessage(`"A"`), "date": json.RawMessage(`"2026-09-29T08:00:00Z"`)}},
 			{Op: ot.OpNew, ID: "k2", Type: "text", Parent: "k1", Key: "V", Text: ot.Delta{{Insert: "À revoir\n"}}},
 			{Op: ot.OpTxt, ID: n.ID, Text: ot.Delta{{Retain: 3}, {Insert: Object, Attrs: ot.Attrs{"cs": "k1"}}, {Retain: 3},
-				{Insert: Object, Attrs: ot.Attrs{"ce": "k1"}}, {Insert: Object, Attrs: ot.Attrs{"comment": "k1"}}}},
+				{Insert: Object, Attrs: ot.Attrs{"ce": "k1"}}, {Insert: Object, Attrs: ot.Attrs{"comment": "k1"}},
+				{Retain: 1}, {Insert: Object, Attrs: ot.Attrs{"comment": "k1"}}}},
 		}
 	}
 	if err := d.Check(tree, edit("Bob"), "Alice"); err == nil {
@@ -139,7 +140,7 @@ func TestAddComment(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc := partOf(t, saved, "word/document.xml")
-	if !strings.Contains(doc, `<w:t xml:space="preserve">Un </w:t></w:r><w:commentRangeStart w:id="0"/><w:r><w:t>mot</w:t></w:r><w:commentRangeEnd w:id="0"/><w:r><w:commentReference w:id="0"/><w:t>.</w:t></w:r>`) {
+	if strings.Count(doc, "<w:commentReference ") != 1 || !strings.Contains(doc, `<w:t xml:space="preserve">Un </w:t></w:r><w:commentRangeStart w:id="0"/><w:r><w:t>mot</w:t></w:r><w:commentRangeEnd w:id="0"/><w:r><w:commentReference w:id="0"/><w:t>.</w:t></w:r>`) {
 		t.Errorf("document\n%s", doc)
 	}
 	comments := partOf(t, saved, "word/comments.xml")

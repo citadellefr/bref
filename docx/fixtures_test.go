@@ -14,7 +14,7 @@ var update = flag.Bool("update", false, "rewrite the trees in testdata/docx")
 
 // fixtures are documents of python-docx (MIT) whose trees the Dart package
 // lays out and edits in its tests.
-var fixtures = []string{"par-known-styles.docx", "tbl-having-applied-style.docx", "num-having-numbering-part.docx", "hdr-header-footer.docx"}
+var fixtures = []string{"par-known-styles.docx", "tbl-having-applied-style.docx", "num-having-numbering-part.docx", "hdr-header-footer.docx", "comments-rich-para.docx"}
 
 func TestFixtures(t *testing.T) {
 	for _, name := range fixtures {

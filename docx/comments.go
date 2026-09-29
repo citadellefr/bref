@@ -176,7 +176,7 @@ func prefixOf(e *xmldom.Element, space, def string) string {
 // commentIDs gives each comment of the tree its w:id: its own for those
 // read, the next free ones for the others.
 func (w *writer) commentIDs() {
-	w.commentID = map[string]string{}
+	w.commentID, w.anchored = map[string]string{}, map[string]bool{}
 	next := w.d.commentMax + 1
 	for _, n := range w.tree.Children("doc") {
 		if n.Type != "comment" {
