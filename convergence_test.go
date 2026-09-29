@@ -28,7 +28,7 @@ func init() {
 	}
 }
 
-func (treeFile) check(*ot.Tree, ot.Edit) error { return nil }
+func (treeFile) check(*ot.Tree, ot.Edit, Peer) error { return nil }
 
 func (treeFile) media(string) ([]byte, string, error) { return nil, "", ErrNoMedia }
 

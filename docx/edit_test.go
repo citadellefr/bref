@@ -75,7 +75,7 @@ func partOf(t *testing.T, data []byte, name string) string {
 
 func apply(t *testing.T, d *Document, tree *ot.Tree, e ot.Edit) {
 	t.Helper()
-	if err := d.Check(tree, e); err != nil {
+	if err := d.Check(tree, e, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := tree.Apply(e); err != nil {
@@ -327,7 +327,7 @@ func TestCheck(t *testing.T) {
 		{{Op: ot.OpNew, ID: "x", Type: "tbl", Parent: "body", Key: "z", Text: ot.Delta{{Insert: "\n"}}}},
 		{{Op: ot.OpTxt, ID: "body", Text: ot.Delta{{Insert: "x"}}}},
 	} {
-		if err := d.Check(tree, e); err == nil {
+		if err := d.Check(tree, e, ""); err == nil {
 			t.Errorf("%v allowed", e)
 		}
 	}
@@ -337,7 +337,7 @@ func TestCheck(t *testing.T) {
 		{{Op: ot.OpSet, ID: n.ID, Key: "a"}},
 		{{Op: ot.OpDel, ID: n.ID}},
 	} {
-		if err := d.Check(tree, e); err != nil {
+		if err := d.Check(tree, e, ""); err != nil {
 			t.Errorf("%v refused: %v", e, err)
 		}
 	}
@@ -486,7 +486,7 @@ func TestFootnotes(t *testing.T) {
 	}
 	text := tree.Children("fn1")[0]
 	apply(t, d, tree, ot.Edit{{Op: ot.OpTxt, ID: text.ID, Text: ot.Delta{{Retain: 1}, {Insert: " Voir"}}}})
-	if err := d.Check(tree, ot.Edit{{Op: ot.OpDel, ID: "fn1"}}); err == nil {
+	if err := d.Check(tree, ot.Edit{{Op: ot.OpDel, ID: "fn1"}}, ""); err == nil {
 		t.Error("a note deleted")
 	}
 	saved, err := d.Save(tree)

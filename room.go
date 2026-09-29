@@ -267,7 +267,7 @@ func (r *room) rebase(p *peer, in *inbound) (ot.Edit, []ot.Edit, error) {
 	if json.Unmarshal(in.D, &e) != nil || e.Check() != nil {
 		return nil, nil, errMalformed
 	}
-	if err := r.file.check(r.doc, e); err != nil {
+	if err := r.file.check(r.doc, e, p.info); err != nil {
 		return nil, nil, err
 	}
 	first := r.version - uint64(len(r.history))

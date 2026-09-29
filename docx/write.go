@@ -59,6 +59,13 @@ type writer struct {
 	styles    []string
 	lists     map[string]string
 	numbering *xmldom.Document
+	// commentID is the w:id of each comment node; mainRels are the
+	// relationships of the parts created that the main part must have;
+	// anchorsGone tells that comments were deleted, whose anchors the body
+	// may still have.
+	commentID   map[string]string
+	mainRels    []partrel.Rel
+	anchorsGone bool
 	// force rewrites every part, for tests.
 	force bool
 }
@@ -67,6 +74,7 @@ func (w *writer) save() error {
 	if err := w.addPictures(); err != nil {
 		return err
 	}
+	w.commentIDs()
 	w.parts = map[string]string{}
 	for id, p := range w.d.parts {
 		w.parts[id] = p.name
@@ -99,7 +107,10 @@ func (w *writer) save() error {
 			return err
 		}
 	}
-	if len(created) > 0 || !w.same("body") || !w.sameAttrs("doc") {
+	if err := w.comments(); err != nil {
+		return err
+	}
+	if len(created) > 0 || len(w.mainRels) > 0 || w.anchorsGone || !w.same("body") || !w.sameAttrs("doc") {
 		if err := w.document(); err != nil {
 			return err
 		}
@@ -367,6 +378,9 @@ func (w *writer) document() error {
 			typ = relFooter
 		}
 		return rw.Ensure(partrel.Rel{Type: typ, Target: name})
+	}
+	for _, r := range w.mainRels {
+		rw.Ensure(r)
 	}
 	sect := child(body, "sectPr")
 	body.Content = nil
@@ -673,7 +687,7 @@ func (w *writer) shell(wrap string, in *xmldom.Element) *xmldom.Element {
 var described = map[string]bool{
 	"o": true, "po": true, "wrap": true, "link": true, "ins": true, "del": true, "field": true,
 	"img": true, "fld": true, "instr": true, "br": true, "sym": true, "note": true, "comment": true,
-	"bm": true, "math": true,
+	"bm": true, "math": true, "cs": true, "ce": true,
 }
 
 // runKey tells runs apart: two items with the same key belong to the same
@@ -719,9 +733,9 @@ func (w *writer) inline(parent *xmldom.Element, items []item, depth int, deleted
 			i = j
 			continue
 		}
-		if po := it.attrs["po"]; po != "" {
+		if paragraphLevel(it.attrs) {
 			for range utf8.RuneCountInString(it.text) {
-				if e := w.d.fragment(po); e != nil {
+				if e := w.paragraphObject(it.attrs, parent); e != nil {
 					parent.Append(e)
 				}
 			}
@@ -730,7 +744,7 @@ func (w *writer) inline(parent *xmldom.Element, items []item, depth int, deleted
 		}
 		key := runKey(it.attrs)
 		j := i + 1
-		for j < len(items) && len(items[j].wrap) <= depth && items[j].attrs["po"] == "" && runKey(items[j].attrs) == key {
+		for j < len(items) && len(items[j].wrap) <= depth && !paragraphLevel(items[j].attrs) && runKey(items[j].attrs) == key {
 			j++
 		}
 		if r := w.run(items[i:j], parent, deleted); r != nil {
@@ -738,6 +752,35 @@ func (w *writer) inline(parent *xmldom.Element, items []item, depth int, deleted
 		}
 		i = j
 	}
+}
+
+// paragraphLevel tells the items that are elements of the paragraph
+// rather than of a run.
+func paragraphLevel(a ot.Attrs) bool {
+	return a["po"] != "" || a["cs"] != "" || a["ce"] != ""
+}
+
+func (w *writer) paragraphObject(a ot.Attrs, in *xmldom.Element) *xmldom.Element {
+	switch {
+	case a["cs"] != "":
+		return w.commentAnchor(a["cs"], "commentRangeStart", a["po"], in)
+	case a["ce"] != "":
+		return w.commentAnchor(a["ce"], "commentRangeEnd", a["po"], in)
+	}
+	return w.d.fragment(a["po"])
+}
+
+// commentAnchor is the element of a comment's range or reference: the one
+// read, or one made for a comment added; none for a comment deleted.
+func (w *writer) commentAnchor(comment, local, read string, in *xmldom.Element) *xmldom.Element {
+	id, ok := w.commentID[comment]
+	if !ok {
+		return nil
+	}
+	if e := w.d.fragment(read); e != nil {
+		return e
+	}
+	return newW(in, local, "id", id)
 }
 
 // run writes items of the same formatting as a w:r.
@@ -781,6 +824,15 @@ func (w *writer) run(items []item, in *xmldom.Element, deleted bool) *xmldom.Ele
 		text.Reset()
 	}
 	for _, it := range items {
+		if c := it.attrs["comment"]; c != "" {
+			flush()
+			for range utf8.RuneCountInString(it.text) {
+				if e := w.commentAnchor(c, "commentReference", it.attrs["o"], r); e != nil {
+					r.Append(e)
+				}
+			}
+			continue
+		}
 		if o := it.attrs["o"]; o != "" {
 			flush()
 			for range utf8.RuneCountInString(it.text) {

@@ -17,7 +17,7 @@ import (
 // format writes a document back into the kind of file it was read from,
 // tells which edits it can take, and serves its pictures.
 type format interface {
-	check(doc *ot.Tree, e ot.Edit) error
+	check(doc *ot.Tree, e ot.Edit, by Peer) error
 	encode(doc *ot.Tree) ([]byte, error)
 	media(name string) ([]byte, string, error)
 }
@@ -62,8 +62,8 @@ func openDocument(_ string, data []byte) (*ot.Tree, format, error) {
 	return tree, document{doc}, nil
 }
 
-func (d document) check(doc *ot.Tree, e ot.Edit) error {
-	return d.doc.Check(doc, e)
+func (d document) check(doc *ot.Tree, e ot.Edit, by Peer) error {
+	return d.doc.Check(doc, e, by.Name)
 }
 
 func (d document) encode(doc *ot.Tree) ([]byte, error) {
@@ -99,7 +99,7 @@ func openPresentation(_ string, data []byte) (*ot.Tree, format, error) {
 	return tree, presentation{doc}, nil
 }
 
-func (p presentation) check(doc *ot.Tree, e ot.Edit) error {
+func (p presentation) check(doc *ot.Tree, e ot.Edit, _ Peer) error {
 	return p.doc.Check(doc, e)
 }
 
@@ -140,7 +140,7 @@ func openCSV(name string, data []byte) (*ot.Tree, format, error) {
 	return tree, &workbook{doc: doc, calc: xlsx.NewCalc(tree, formula.Options{})}, nil
 }
 
-func (w *workbook) check(doc *ot.Tree, e ot.Edit) error {
+func (w *workbook) check(doc *ot.Tree, e ot.Edit, _ Peer) error {
 	return w.doc.Check(doc, e)
 }
 

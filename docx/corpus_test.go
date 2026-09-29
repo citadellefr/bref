@@ -181,7 +181,7 @@ func TestCorpusEdit(t *testing.T) {
 			{Retain: 5},
 			{Insert: Object, Attrs: ot.Attrs{"img": `{"media":"` + picture + `","w":127000,"h":127000}`}},
 		}})
-		if err := d.Check(tree, e); err != nil {
+		if err := d.Check(tree, e, "Bref"); err != nil {
 			t.Fatalf("%s: %v", f, err)
 		}
 		if err := tree.Apply(e); err != nil {
@@ -196,7 +196,7 @@ func TestCorpusEdit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: edited package does not open: %v", f, err)
 		}
-		if got := firstFlow(again); got == nil || !strings.HasPrefix(got.Text.Delta()[0].Insert, "Bref") {
+		if got := firstFlow(again); got == nil || !strings.HasPrefix(strings.TrimLeft(concat(got.Text.Delta()), Object), "Bref") {
 			t.Fatalf("%s: the edit was lost", f)
 		}
 		if out != "" {
@@ -230,7 +230,9 @@ func firstFlow(tree *ot.Tree) *ot.Node {
 }
 
 // edits types in the first flow of the body, bolds and splits a paragraph
-// there, centers the tables and widens the left margin.
+// there, comments it, centers the tables and widens the left margin; it
+// resolves the first comment of the document, answers it, and deletes the
+// last.
 func edits(tree *ot.Tree) ot.Edit {
 	n := firstFlow(tree)
 	if n == nil {
@@ -251,7 +253,10 @@ func edits(tree *ot.Tree) ot.Edit {
 		}
 	}
 	delta := ot.Delta{
+		{Insert: Object, Attrs: ot.Attrs{"cs": "bref-c"}},
 		{Insert: "Bref ", Attrs: ot.Attrs{"b": "1", "color": "C00000", "link": "https://citadelle.fr/"}},
+		{Insert: Object, Attrs: ot.Attrs{"ce": "bref-c"}},
+		{Insert: Object, Attrs: ot.Attrs{"comment": "bref-c"}},
 		{Insert: "1", Attrs: ot.Attrs{"field": "PAGE"}},
 		{Insert: Object, Attrs: ot.Attrs{"br": "page"}},
 		{Insert: "\n", Attrs: ot.Attrs{"pstyle": "Title"}},
@@ -262,6 +267,29 @@ func edits(tree *ot.Tree) ot.Edit {
 		delta = append(delta, ot.Op{Retain: 3, Attrs: ot.Attrs{"i": "1", "u": "single"}}, ot.Op{Insert: "\n", Attrs: mark})
 	}
 	e = append(e, ot.Change{Op: ot.OpTxt, ID: n.ID, Text: delta})
+	comment := func(id, parent string) {
+		attrs := ot.Values{"author": json.RawMessage(`"Bref"`), "date": json.RawMessage(`"2026-09-29T10:00:00Z"`)}
+		if parent != "" {
+			attrs["parent"], _ = json.Marshal(parent)
+		}
+		e = append(e,
+			ot.Change{Op: ot.OpNew, ID: id, Type: "comment", Parent: "doc", Key: ot.KeyBetween(lastKey(tree, "doc"), ""), Attrs: attrs},
+			ot.Change{Op: ot.OpNew, ID: id + "-t", Type: "text", Parent: id, Key: "V", Text: ot.Delta{{Insert: "Commentaire\n"}}})
+	}
+	comment("bref-c", "")
+	var comments []*ot.Node
+	for _, c := range tree.Children("doc") {
+		if c.Type == "comment" {
+			comments = append(comments, c)
+		}
+	}
+	if len(comments) > 0 {
+		e = append(e, ot.Change{Op: ot.OpSet, ID: comments[0].ID, Attrs: ot.Values{"done": json.RawMessage("true")}})
+		comment("bref-r", comments[0].ID)
+	}
+	if len(comments) > 1 {
+		e = append(e, ot.Change{Op: ot.OpDel, ID: comments[len(comments)-1].ID})
+	}
 	for _, t := range tree.Children("body") {
 		if t.Type == "tbl" {
 			e = append(e, ot.Change{Op: ot.OpSet, ID: t.ID, Attrs: ot.Values{"jc": json.RawMessage(`"center"`)}})
@@ -287,6 +315,11 @@ func edits(tree *ot.Tree) ot.Edit {
 		e = append(e, ot.Change{Op: ot.OpSet, ID: "doc", Attrs: ot.Values{"sect": data}})
 	}
 	return e
+}
+
+func lastKey(tree *ot.Tree, parent string) string {
+	kids := tree.Children(parent)
+	return kids[len(kids)-1].Key
 }
 
 func concat(flow ot.Delta) string {

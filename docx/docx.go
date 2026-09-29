@@ -96,6 +96,10 @@ type Document struct {
 	// footnotes and endnotes, by kind.
 	parts map[string]*part
 	notes map[string]*part
+	// comments is the part of the comments, commentMax the highest w:id
+	// it gives one.
+	comments   *part
+	commentMax int
 	// pending are the pictures clients added, by the part they go in.
 	pending map[string]*pending
 	// fileStyles are the ids of the styles styles.xml defines.
@@ -114,14 +118,15 @@ func Open(data []byte) (*Document, *ot.Tree, error) {
 		return nil, nil, err
 	}
 	d := &Document{
-		original: data,
-		pkg:      pkg,
-		names:    partrel.NewNames(pkg),
-		trusted:  map[uint64]bool{},
-		seed:     maphash.MakeSeed(),
-		parts:    map[string]*part{},
-		notes:    map[string]*part{},
-		pending:  map[string]*pending{},
+		original:   data,
+		pkg:        pkg,
+		names:      partrel.NewNames(pkg),
+		trusted:    map[uint64]bool{},
+		seed:       maphash.MakeSeed(),
+		parts:      map[string]*part{},
+		notes:      map[string]*part{},
+		pending:    map[string]*pending{},
+		commentMax: -1,
 	}
 	root, err := partrel.Read(pkg, "")
 	if err != nil {
@@ -151,6 +156,10 @@ type reader struct {
 	// headers are the node ids of the headers and footers, by the name
 	// of their relationship.
 	headers map[string]string
+	// comments are the elements of the comments, by node id, in the order
+	// of commentOrder.
+	comments     map[string]*xmldom.Element
+	commentOrder []string
 }
 
 func (r *reader) add(typ, parent, key string, attrs ot.Values, text ot.Delta) string {
@@ -303,6 +312,9 @@ func (r *reader) document() error {
 		}
 	}
 
+	if err := r.readComments(rels); err != nil {
+		return err
+	}
 	r.addID("body", "body", "doc", keys[1], nil, nil)
 	r.blocks(body, "body")
 	if s := child(body, "sectPr"); s != nil {
@@ -322,7 +334,7 @@ func (r *reader) document() error {
 			return err
 		}
 	}
-	return nil
+	return r.commentNodes(rels, last)
 }
 
 // notes reads the footnotes or endnotes of a part, each into a "note" node

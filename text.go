@@ -41,7 +41,7 @@ func openText(_ string, data []byte) (*ot.Tree, format, error) {
 	return doc, f, err
 }
 
-func (textFile) check(_ *ot.Tree, e ot.Edit) error {
+func (textFile) check(_ *ot.Tree, e ot.Edit, _ Peer) error {
 	for _, c := range e {
 		if c.Op != ot.OpTxt || c.ID != textBody {
 			return errTextNodes

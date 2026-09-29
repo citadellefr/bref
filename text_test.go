@@ -55,7 +55,7 @@ func TestTextFileOnlyEditsItsText(t *testing.T) {
 		{{Op: ot.OpSet, ID: textBody, Key: "V"}},
 		{{Op: ot.OpDel, ID: textBody}},
 	} {
-		if f.check(nil, e) == nil {
+		if f.check(nil, e, Peer{}) == nil {
 			t.Errorf("%v passes", e)
 		}
 	}

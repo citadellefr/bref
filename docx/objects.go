@@ -57,7 +57,8 @@ type Float struct {
 //	br      a break: "page" "column", or "textWrapping" with clear
 //	sym     a symbol: "font:F020"
 //	note    a note reference: "footnote:2" "endnote:1", "ref" for the number in a note
-//	comment the id of a comment referred to
+//	comment the node of the comment referred to
+//	cs, ce  the node of the comment whose range starts, ends
 //	bm      the name of a bookmark starting
 //	math    "1", an equation
 func (r *reader) describe(e *xmldom.Element, attrs ot.Attrs) {
@@ -106,7 +107,11 @@ func (r *reader) describe(e *xmldom.Element, attrs ot.Attrs) {
 	case "footnoteRef", "endnoteRef":
 		attrs["note"] = "ref"
 	case "commentReference":
-		attrs["comment"] = attr(e, "id")
+		attrs["comment"] = r.commentAnchor(e)
+	case "commentRangeStart":
+		attrs["cs"] = r.commentAnchor(e)
+	case "commentRangeEnd":
+		attrs["ce"] = r.commentAnchor(e)
 	case "bookmarkStart":
 		attrs["bm"] = attr(e, "name")
 	}

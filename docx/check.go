@@ -1,7 +1,12 @@
 package docx
 
 import (
+	"encoding/json"
 	"errors"
+	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/citadellefr/bref/internal/partrel"
 	"github.com/citadellefr/bref/ot"
@@ -13,7 +18,7 @@ var (
 )
 
 // holders are the nodes blocks go in.
-var holders = map[string]bool{"body": true, "tc": true, "sdt": true, "hdr": true, "ftr": true, "note": true}
+var holders = map[string]bool{"body": true, "tc": true, "sdt": true, "hdr": true, "ftr": true, "note": true, "comment": true}
 
 var blockTypes = map[string]bool{"text": true, "tbl": true, "sdt": true, "other": true}
 
@@ -29,12 +34,14 @@ var editable = func() map[string]map[string]bool {
 		}
 	}
 	out["tbl"]["grid"] = true
+	out["comment"] = map[string]bool{"done": true}
 	return out
 }()
 
 // Check tells whether an edit only changes what can be edited: the blocks
-// of the body, headers and footers, the sections, not the styles.
-func (d *Document) Check(tree *ot.Tree, e ot.Edit) error {
+// of the body, headers and footers, the sections, not the styles; the
+// comments it adds are signed by author.
+func (d *Document) Check(tree *ot.Tree, e ot.Edit, author string) error {
 	created := map[string]string{}
 	typeOf := func(id string) string {
 		if t, ok := created[id]; ok {
@@ -53,7 +60,8 @@ func (d *Document) Check(tree *ot.Tree, e ot.Edit) error {
 				c.Type == "tr" && parent == "tbl" ||
 				c.Type == "tc" && parent == "tr" ||
 				c.Type == "other" && (parent == "tbl" || parent == "tr") ||
-				(c.Type == "hdr" || c.Type == "ftr") && c.Parent == "doc"
+				(c.Type == "hdr" || c.Type == "ftr") && c.Parent == "doc" ||
+				c.Type == "comment" && c.Parent == "doc" && newComment(c.Attrs, author, typeOf)
 			if !ok || (c.Type == "text") != (c.Text != nil) {
 				return ErrReadOnly
 			}
@@ -71,8 +79,8 @@ func (d *Document) Check(tree *ot.Tree, e ot.Edit) error {
 			if c.Key != "" && !blockTypes[t] && t != "tr" && t != "tc" {
 				return ErrReadOnly
 			}
-			for k := range c.Attrs {
-				if !editable[t][k] {
+			for k, v := range c.Attrs {
+				if !editable[t][k] || t == "comment" && !boolean(v) {
 					return ErrReadOnly
 				}
 			}
@@ -85,6 +93,37 @@ func (d *Document) Check(tree *ot.Tree, e ot.Edit) error {
 		}
 	}
 	return nil
+}
+
+// newComment tells whether a comment added is signed by author, dated and
+// answers a comment if any.
+func newComment(attrs ot.Values, author string, typeOf func(string) string) bool {
+	for k, v := range attrs {
+		switch k {
+		case "author", "date", "initials", "parent":
+			var s string
+			if json.Unmarshal(v, &s) != nil {
+				return false
+			}
+		case "done":
+			if !boolean(v) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	initials, parent := str(attrs, "initials"), str(attrs, "parent")
+	if _, err := time.Parse(time.RFC3339, str(attrs, "date")); err != nil {
+		return false
+	}
+	return str(attrs, "author") == author && utf8.RuneCountInString(initials) <= 9 &&
+		strings.IndexFunc(initials, unicode.IsControl) < 0 && (parent == "" || typeOf(parent) == "comment")
+}
+
+// boolean is a boolean attribute, or none.
+func boolean(v json.RawMessage) bool {
+	return v == nil || string(v) == "true" || string(v) == "false"
 }
 
 // Media is a picture of the document, by the name its drawings give it,
