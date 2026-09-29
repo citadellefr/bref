@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.2 — 2026-09-29
+
+- Comments of Word documents: `docx` reads them into "comment" nodes
+  (author, initials, date, resolved, the comment answered) with their
+  anchors in the flows, and writes those changed, added, answered,
+  resolved and deleted. The hub signs a comment added with the name of
+  its peer: `hello` tells a client its name (`DocSession.name`).
+  `WordEditor` lists them beside the pages, in the order of the text:
+  written, answered, edited, resolved and deleted there, their ranges
+  highlighted; the Review tab and Ctrl+Alt+M.
+- `WordEditor` joins the paragraphs a deletion across flows meets in.
+- Fixed: `WordEditor` did not lay the document out again after an edit.
+
 ## 0.5.1 — 2026-09-28
 
 - Pictures inserted in Word documents: the hub keeps a picture a client
