@@ -26,6 +26,7 @@ class WordPagesView extends StatefulWidget {
     required this.focusNode,
     this.onShortcut,
     this.onContextMenu,
+    this.marks = const [],
     this.highlights = const [],
   });
 
@@ -43,6 +44,9 @@ class WordPagesView extends StatefulWidget {
 
   /// A right click or long press on the text, at a global position.
   final void Function(Offset global)? onContextMenu;
+
+  /// Ranges of flows drawn in a color under the text: those of comments.
+  final List<(String, int, int, Color)> marks;
 
   /// Ranges of flows shown highlighted: what a search found.
   final List<(String, int, int)> highlights;
@@ -483,7 +487,9 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
     for (final op in flow.ops) {
       final s = op.insert!;
       final a = (start - at).clamp(0, s.length), b = (end - at).clamp(0, s.length);
-      if (b > a) {
+      // the anchors of comments stay with their comment
+      final anchor = op.attributes?.keys.any(const {'cs', 'ce', 'comment'}.contains) ?? false;
+      if (b > a && !anchor) {
         final attrs = op.attributes == null ? null : {for (final e in op.attributes!.entries) if (e.key != 'sect' && e.key != 'sx') e.key: e.value};
         out.insert(s.substring(a, b), attrs == null || attrs.isEmpty ? null : attrs);
       }
@@ -771,6 +777,11 @@ class _PagePainter extends CustomPainter {
         ..strokeWidth = 0.75;
       final y = s.area == PageArea.header ? page.body.top : page.body.bottom;
       canvas.drawLine(Offset(0, y), Offset(page.size.width, y), line);
+    }
+    for (final (flow, a, b, color) in state.widget.marks) {
+      for (final (p, r) in layout.selection(flow, a, b)) {
+        if (p == index) canvas.drawRect(r, Paint()..color = color);
+      }
     }
     for (final (flow, a, b) in state.widget.highlights) {
       for (final (p, r) in layout.selection(flow, a, b)) {

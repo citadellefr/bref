@@ -228,6 +228,34 @@ class BrefStrings {
   String get wideMargins => 'Larges';
   String get onePage => 'Une page';
   String get pageWidth => 'Largeur de la page';
+  String get comments => 'Commentaires';
+  String get newComment => 'Nouveau commentaire';
+  String get previousComment => 'Précédent';
+  String get nextComment => 'Suivant';
+  String get showComments => 'Afficher les commentaires';
+  String get noComments => 'Aucun commentaire';
+  String get noCommentsHint => 'Sélectionnez du texte, puis choisissez Nouveau commentaire.';
+  String get startConversation => 'Commencer une conversation';
+  String get replyHint => 'Répondre';
+  String get post => 'Publier';
+  String get save => 'Enregistrer';
+  String get resolved => 'Résolu';
+  String get resolveThread => 'Résoudre le thread';
+  String get reopen => 'Rouvrir';
+  String get editComment => 'Modifier le commentaire';
+  String get deleteComment => 'Supprimer le commentaire';
+  String get deleteThread => 'Supprimer le thread';
+  String get moreActions => 'Autres actions de thread';
+  String get unknownAuthor => 'Auteur inconnu';
+  String get commentedTextGone => 'Le texte commenté a été supprimé.';
+  String replies(int n) => n == 1 ? '1 réponse' : '$n réponses';
+  String commentDate(DateTime d) {
+    const months = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+    final now = DateTime.now();
+    final time = '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+    if (d.year == now.year && d.month == now.month && d.day == now.day) return 'Aujourd’hui, $time';
+    return '${d.day} ${months[d.month - 1]} ${d.year}, $time';
+  }
   List<(String, int, int)> get paperSizes => const [
     ('A4', 11906, 16838),
     ('A5', 8391, 11906),

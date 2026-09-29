@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +13,8 @@ import '../powerpoint/slide_painter.dart' show MediaCache, MediaFetcher;
 import '../session.dart';
 import '../text/text_frame.dart' show Fonts, Props;
 import 'blocks.dart';
+import 'comments.dart';
+import 'comments_pane.dart';
 import 'document.dart';
 import 'edits.dart';
 import 'layout.dart';
@@ -75,6 +78,16 @@ class _WordEditorState extends State<WordEditor> {
   var _fitWidth = false;
   var _backstage = false;
 
+  /// Whether the comments are shown, by default when the document has some;
+  /// the thread whose card is open; the range of the comment being
+  /// written.
+  bool? _commentsShown;
+  String? _activeThread;
+  ((String, int), (String, int))? _draft;
+  var _followCaret = true;
+  List<WordThread>? _threads;
+  var _threadRanges = <String, List<(String, int, int)>>{};
+
   Tree? _laid;
   WordDocument? _doc;
   WordLayout? _layout;
@@ -87,18 +100,24 @@ class _WordEditorState extends State<WordEditor> {
     super.initState();
     _session.addListener(_repaint);
     _selection.addListener(_repaint);
+    _selection.addListener(_caretMoved);
     _rejections = _session.rejections.listen((reason) {
       if (!mounted) return;
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(_s.refused(reason))));
     });
     // the tree changes in place: each edit lays it out again
-    _changes = _session.changes.listen((_) => _laid = null);
+    _changes = _session.changes.listen((edit) {
+      _laid = null;
+      _draft = _moveDraft(edit);
+    });
   }
 
   @override
   void dispose() {
     _session.removeListener(_repaint);
-    _selection.removeListener(_repaint);
+    _selection
+      ..removeListener(_repaint)
+      ..removeListener(_caretMoved);
     unawaited(_rejections?.cancel());
     unawaited(_changes?.cancel());
     _media
@@ -125,6 +144,7 @@ class _WordEditorState extends State<WordEditor> {
       _doc = doc;
       _layout = WordLayout(doc, WordContext(doc, fonts: Fonts(theme: doc.typeface, package: widget.fonts)), _cache);
       _laid = tree;
+      _threads = null;
     }
     return _layout!;
   }
@@ -444,6 +464,8 @@ class _WordEditorState extends State<WordEditor> {
         PopupMenuItem(value: 'cut', enabled: editable && !_selection.collapsed, child: Text(_s.cut)),
         PopupMenuItem(value: 'copy', enabled: !_selection.collapsed, child: Text(_s.copy)),
         PopupMenuItem(value: 'paste', enabled: editable, child: Text(_s.paste)),
+        const PopupMenuDivider(),
+        PopupMenuItem(value: 'comment', enabled: editable, child: Text(_s.newComment)),
         if (cell != null && editable) ...[
           const PopupMenuDivider(),
           PopupMenuItem(value: 'rowAbove', child: Text(_s.insertRowAbove)),
@@ -468,6 +490,8 @@ class _WordEditorState extends State<WordEditor> {
       return;
     }
     switch (choice) {
+      case 'comment':
+        _newComment();
       case 'rowAbove':
         _tableEdit((e, c) => e.insertRow(_session.document[c.parent]!, below: false));
       case 'rowBelow':
@@ -490,6 +514,175 @@ class _WordEditorState extends State<WordEditor> {
     final flow = _flow;
     if (flow != null) _view.currentState?.clipboard(flow, key);
   }
+
+  // comments
+
+  List<WordThread> get _commentThreads {
+    _current;
+    if (_threads == null) {
+      final tree = _session.document;
+      final threads = commentThreads(tree);
+      final flows = flowsOf(tree);
+      _threads = threads;
+      _threadRanges = {for (final t in threads) t.id: threadRanges(t, flows)};
+    }
+    return _threads!;
+  }
+
+  CommentAuthor get _author => (
+    name: _session.name,
+    date: DateTime.now(),
+    style: _document.styles.containsKey('CommentText') ? 'CommentText' : null,
+  );
+
+  /// The thread whose range holds the caret, the innermost.
+  String? _threadAt(String flow, int offset) {
+    String? found;
+    for (final t in _commentThreads) {
+      if (_threadRanges[t.id]!.any((r) => r.$1 == flow && r.$2 <= offset && offset <= r.$3)) found = t.id;
+    }
+    return found;
+  }
+
+  void _caretMoved() {
+    final flow = _selection.flow;
+    if (!_followCaret || flow == null) return;
+    final id = _threadAt(flow, _selection.extent);
+    if (id != _activeThread) setState(() => _activeThread = id);
+  }
+
+  /// The range of the comment being written, moved over [edit]; none when
+  /// its text went.
+  ((String, int), (String, int))? _moveDraft(Edit edit) {
+    final draft = _draft;
+    if (draft == null) return null;
+    (String, int)? move((String, int) at) {
+      if (_session.document[at.$1] == null) return null;
+      var offset = at.$2;
+      for (final c in edit.changes) {
+        if (c.kind == ChangeKind.text && c.id == at.$1) offset = c.text!.transformPosition(offset, thisFirst: false);
+      }
+      return (at.$1, offset);
+    }
+
+    final start = move(draft.$1), end = move(draft.$2);
+    return start == null || end == null ? null : (start, end);
+  }
+
+  /// Starts a comment on the selection, or on the word of the caret.
+  void _newComment() {
+    final flow = _flow;
+    if (flow == null || _session.readOnly || !_session.document.isUnder(flow.id, 'body')) return;
+    final (String, int) start, end;
+    if (_selection.spans) {
+      final ranges = _ranges;
+      if (ranges.isEmpty) return;
+      start = (ranges.first.$1.id, ranges.first.$2);
+      end = (ranges.last.$1.id, ranges.last.$3);
+    } else if (_selection.collapsed) {
+      final (a, b) = wordEditing(flow).wordAt(_selection.start);
+      (start, end) = ((flow.id, a), (flow.id, b));
+    } else {
+      (start, end) = ((flow.id, _selection.start), (flow.id, _selection.end));
+    }
+    setState(() {
+      _draft = (start, end);
+      _commentsShown = true;
+      _activeThread = null;
+    });
+  }
+
+  void _postComment(String text) {
+    final draft = _draft;
+    if (draft == null) return;
+    final edit = addComment(_session.document, draft.$1, draft.$2, text, _author);
+    if (_edit(edit)) {
+      setState(() {
+        _draft = null;
+        _activeThread = edit.changes.first.id;
+      });
+    }
+  }
+
+  void _cancelDraft() {
+    setState(() => _draft = null);
+    _focus.requestFocus();
+  }
+
+  /// Opens a thread's card and brings its text into view, the caret at its
+  /// start.
+  void _selectThread(WordThread t) {
+    setState(() => _activeThread = t.id);
+    final at = t.start ?? t.end ?? t.reference;
+    if (at == null || _session.document[at.$1] == null) return;
+    _followCaret = false;
+    _selection.set(at.$1, at.$2, null, null, PageArea.body);
+    _followCaret = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _view.currentState?.reveal());
+  }
+
+  /// Opens the thread before or after the one open, in the order of the
+  /// text.
+  void _stepThread(int by) {
+    final threads = _commentThreads.where((t) => t.anchored).toList();
+    if (threads.isEmpty) return;
+    final i = threads.indexWhere((t) => t.id == _activeThread);
+    final next = i < 0 ? (by > 0 ? 0 : threads.length - 1) : (i + by).clamp(0, threads.length - 1);
+    setState(() => _commentsShown = true);
+    _selectThread(threads[next]);
+  }
+
+  /// Deletes a comment, and its answers when it starts a thread.
+  void _deleteComment(WordComment c) {
+    final thread = _commentThreads.where((t) => t.id == c.id).firstOrNull;
+    final ids = thread == null ? {c.id} : {for (final r in thread.all) r.id};
+    if (_edit(deleteComments(_session.document, ids)) && ids.contains(_activeThread)) setState(() => _activeThread = null);
+  }
+
+  WordThread? get _active => _commentThreads.where((t) => t.id == _activeThread).firstOrNull;
+
+  /// The ranges of the comments drawn on the text: the open one darker.
+  List<(String, int, int, Color)> get _commentMarks {
+    final out = <(String, int, int, Color)>[];
+    for (final t in _commentThreads) {
+      final active = t.id == _activeThread;
+      if (t.done && !active) continue;
+      final color = authorColor(t.root.author).withValues(alpha: active ? 0.34 : 0.14);
+      for (final (f, a, b) in _threadRanges[t.id]!) {
+        out.add((f, a, b, color));
+      }
+    }
+    final draft = _draft;
+    if (draft != null) {
+      final flows = flowsOf(_session.document);
+      final i = flows.indexWhere((f) => f.id == draft.$1.$1), j = flows.indexWhere((f) => f.id == draft.$2.$1);
+      final color = Theme.of(context).colorScheme.primary.withValues(alpha: 0.3);
+      for (var k = math.max(i, 0); i >= 0 && k <= j; k++) {
+        out.add((flows[k].id, k == i ? draft.$1.$2 : 0, k == j ? draft.$2.$2 : flows[k].text!.length - 1, color));
+      }
+    }
+    return out;
+  }
+
+  Widget _commentsPane(BuildContext context) => WordCommentsPane(
+    threads: _commentThreads,
+    active: _activeThread,
+    me: _session.name,
+    readOnly: _session.readOnly,
+    drafting: _draft != null,
+    strings: _s,
+    onSelect: _selectThread,
+    onPost: _postComment,
+    onCancelDraft: _cancelDraft,
+    onReply: (t, text) => _edit(replyTo(_session.document, t, text, _author)),
+    onResolve: (t, done) => _edit(resolveThread(t, done)),
+    onDelete: _deleteComment,
+    onEdit: (c, text) => _edit(editComment(_session.document, c, text)),
+    onClose: () => setState(() {
+      _commentsShown = false;
+      _draft = null;
+    }),
+  );
 
   // searching
 
@@ -636,6 +829,9 @@ class _WordEditorState extends State<WordEditor> {
     }
     if (_session.readOnly) return false;
     switch (key) {
+      case LogicalKeyboardKey.keyM when HardwareKeyboard.instance.isAltPressed:
+        _newComment();
+        return true;
       // Gras is Ctrl+G in the French version, Ctrl+B elsewhere
       case LogicalKeyboardKey.keyB || LogicalKeyboardKey.keyG:
         _toggle('b');
@@ -700,6 +896,7 @@ class _WordEditorState extends State<WordEditor> {
     _ensureCaret();
     final phone = MediaQuery.sizeOf(context).width < phoneWidth;
     if (phone && !_fitWidth) _fitWidth = true;
+    final comments = _commentsShown ?? (!phone && _commentThreads.isNotEmpty);
     return Stack(
       children: [
         Column(
@@ -708,27 +905,40 @@ class _WordEditorState extends State<WordEditor> {
             ..._banners(context),
             if (_finding) _findBar(context),
             Expanded(
-              child: ColoredBox(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: LayoutBuilder(
-                  builder: (context, box) => WordPagesView(
-                    key: _view,
-                    session: _session,
-                    layout: layout,
-                    selection: _selection,
-                    painter: PagePainter(images: (m) => _media[m]),
-                    scale: _scale(box),
-                    focusNode: _focus,
-                    onShortcut: _shortcut,
-                    onContextMenu: _contextMenu,
-                    highlights: [for (final (n, a, b) in _matches) (n.id, a, b)],
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: ColoredBox(
+                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      child: LayoutBuilder(
+                        builder: (context, box) => WordPagesView(
+                          key: _view,
+                          session: _session,
+                          layout: layout,
+                          selection: _selection,
+                          painter: PagePainter(images: (m) => _media[m]),
+                          scale: _scale(box),
+                          focusNode: _focus,
+                          onShortcut: _shortcut,
+                          onContextMenu: _contextMenu,
+                          marks: _commentMarks,
+                          highlights: [for (final (n, a, b) in _matches) (n.id, a, b)],
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                  if (comments && !phone) ...[
+                    const VerticalDivider(width: 1),
+                    SizedBox(width: 320, child: _commentsPane(context)),
+                  ],
+                ],
               ),
             ),
             _statusBar(context),
           ],
         ),
+        if (comments && phone) Positioned.fill(child: SafeArea(child: _commentsPane(context))),
         if (_backstage) _Backstage(editor: this),
       ],
     );
@@ -804,6 +1014,13 @@ class _WordEditorState extends State<WordEditor> {
         IconButton(tooltip: '${_s.redo} (Ctrl+Y)', iconSize: 18, onPressed: _session.canRedo ? () => setState(() => _session.redo()) : null, icon: const Icon(Icons.redo)),
       ],
       trailing: [
+        IconButton(
+          tooltip: _s.comments,
+          iconSize: 18,
+          isSelected: _commentsShown ?? _commentThreads.isNotEmpty,
+          onPressed: () => setState(() => _commentsShown = !(_commentsShown ?? _commentThreads.isNotEmpty)),
+          icon: const Icon(Icons.forum_outlined),
+        ),
         for (final p in _session.peers.take(5))
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -956,6 +1173,9 @@ class _WordEditorState extends State<WordEditor> {
               onSelected: (_) {},
             ),
           ]),
+          RibbonGroup(_s.comments, [
+            RibbonButton(icon: const Icon(Icons.add_comment_outlined), label: _s.newComment, large: true, shortcut: 'Ctrl+Alt+M', onPressed: editable ? _newComment : null),
+          ]),
           RibbonGroup(_s.headerFooter, [
             RibbonButton(icon: const Icon(Icons.vertical_align_top), label: _s.header, large: true, onPressed: editable ? () => _headerFooter(footer: false) : null),
             RibbonButton(icon: const Icon(Icons.vertical_align_bottom), label: _s.footer, large: true, onPressed: editable ? () => _headerFooter(footer: true) : null),
@@ -1002,6 +1222,26 @@ class _WordEditorState extends State<WordEditor> {
               onSelected: _columns,
             ),
             RibbonButton(icon: const Icon(Icons.insert_page_break_outlined), label: _s.breaks, large: true, onPressed: editable ? _pageBreak : null),
+          ]),
+        ]),
+        RibbonTab(_s.review, [
+          RibbonGroup(_s.comments, [
+            RibbonButton(icon: const Icon(Icons.add_comment_outlined), label: _s.newComment, large: true, shortcut: 'Ctrl+Alt+M', onPressed: editable ? _newComment : null),
+            RibbonButton(
+              icon: const Icon(Icons.delete_outline),
+              label: _s.delete,
+              large: true,
+              onPressed: !_session.readOnly && _active != null ? () => _deleteComment(_active!.root) : null,
+            ),
+            RibbonButton(icon: const Icon(Icons.arrow_upward), label: _s.previousComment, large: true, onPressed: _commentThreads.isEmpty ? null : () => _stepThread(-1)),
+            RibbonButton(icon: const Icon(Icons.arrow_downward), label: _s.nextComment, large: true, onPressed: _commentThreads.isEmpty ? null : () => _stepThread(1)),
+            RibbonButton(
+              icon: const Icon(Icons.forum_outlined),
+              label: _s.showComments,
+              large: true,
+              selected: _commentsShown ?? _commentThreads.isNotEmpty,
+              onPressed: () => setState(() => _commentsShown = !(_commentsShown ?? _commentThreads.isNotEmpty)),
+            ),
           ]),
         ]),
         RibbonTab(_s.view, [

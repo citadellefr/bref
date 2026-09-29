@@ -220,6 +220,60 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('comments a word, answers, resolves and deletes the thread', (tester) async {
+    await open(tester, 'par-known-styles');
+    await clickText(tester);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyM);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await settle(tester);
+    await tester.enterText(find.widgetWithText(TextField, 'Commencer une conversation'), 'Pourquoi ?');
+    await tester.pump();
+    await tester.tap(find.text('Publier'));
+    await settle(tester);
+    List<Node> comments() => hub.doc.children('doc').where((n) => n.type == 'comment').toList();
+    expect(comments().single.attributes['author'], 'Peer 1');
+    final id = comments().single.id;
+    final anchors = [for (final op in body().text!.ops) if (op.attributes != null) ...op.attributes!.entries.where((e) => e.value == id).map((e) => e.key)];
+    expect(anchors, ['cs', 'ce', 'comment']);
+    expect(find.text('Pourquoi ?'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, 'Répondre'), 'Parce que.');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Publier'));
+    await settle(tester);
+    expect(comments().map((c) => c.attributes['parent']), [null, id]);
+
+    await tester.tap(find.byTooltip('Autres actions de thread').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Résoudre le thread'));
+    await settle(tester);
+    expect(comments().every((c) => c.attributes['done'] == true), isTrue);
+    expect(find.text('Résolu'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Autres actions de thread').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Supprimer le thread'));
+    await settle(tester);
+    expect(comments(), isEmpty);
+    expect(body().text!.ops.where((op) => op.attributes?.containsKey('cs') ?? false), isEmpty);
+    expect(find.text('Aucun commentaire'), findsOneWidget);
+    await finish(tester);
+  });
+
+  testWidgets('shows the comments of a document beside its pages', (tester) async {
+    await open(tester, 'comments-rich-para');
+    expect(find.text('Commentaires'), findsWidgets);
+    expect(find.text('Steve Canny'), findsOneWidget);
+    expect(find.text('Text with character style.'), findsOneWidget);
+    await tester.tap(find.text('Text with character style.'));
+    await settle(tester);
+    expect(find.widgetWithText(TextField, 'Répondre'), findsOneWidget);
+    await finish(tester);
+  });
+
   test('inserts a table after the paragraph, the flow cut there', () {
     final tree = Tree.fromEdit(Edit.fromJson(jsonDecode(File('../testdata/docx/par-known-styles.json').readAsStringSync()))!)!;
     final doc = WordDocument(tree);

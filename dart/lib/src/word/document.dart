@@ -26,7 +26,7 @@ const wordOwnKeys = {'sect', 'sx', 'pa'};
 
 /// The keys that describe an element of a run, which text typed after it
 /// does not take.
-const wordObjectKeys = {'o', 'po', 'img', 'fld', 'instr', 'br', 'sym', 'note', 'comment', 'bm', 'math'};
+const wordObjectKeys = {'o', 'po', 'img', 'fld', 'instr', 'br', 'sym', 'note', 'comment', 'cs', 'ce', 'bm', 'math'};
 
 /// A style of the document.
 class WordStyle {
