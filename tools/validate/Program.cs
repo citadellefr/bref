@@ -91,7 +91,8 @@ Report? Check(string path)
 // the same wherever it moved in its part: errors are compared by their
 // text without positions, paths or lines, as many after as before. An edit
 // copies what it splits, errors and all: in an edited document an error
-// that was there before may come back more often.
+// that was there before may come back more often, or inside a revision
+// the edit tracks.
 static IEnumerable<string> Added(HashSet<Error> before, IEnumerable<Error> after, bool edited)
 {
     var count = before.GroupBy(e => Unplaced(e.Text)).ToDictionary(g => g.Key, g => edited ? int.MaxValue : g.Count());
@@ -105,7 +106,7 @@ static IEnumerable<string> Added(HashSet<Error> before, IEnumerable<Error> after
     }
 }
 
-static string Unplaced(string text) => System.Text.RegularExpressions.Regex.Replace(text, @"\[\d+\]|Line \d+, position \d+", "");
+static string Unplaced(string text) => System.Text.RegularExpressions.Regex.Replace(text, @"\[\d+\]|Line \d+, position \d+|/w:(ins|del)(?=\[)", "");
 
 // Hidden are the parts of a package stored under a name with backslashes,
 // as they read once normalized.

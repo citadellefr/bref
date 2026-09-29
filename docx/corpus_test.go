@@ -248,7 +248,9 @@ func edits(tree *ot.Tree) ot.Edit {
 	}
 	mark := ot.Attrs{}
 	for k, v := range marks[0] {
-		if k != "sect" && k != "sx" {
+		switch k {
+		case "sect", "sx", "ins", "insd", "del", "deld":
+		default:
 			mark[k] = v
 		}
 	}
@@ -260,13 +262,17 @@ func edits(tree *ot.Tree) ot.Edit {
 		{Insert: "1", Attrs: ot.Attrs{"field": "PAGE"}},
 		{Insert: Object, Attrs: ot.Attrs{"br": "page"}},
 		{Insert: "\n", Attrs: ot.Attrs{"pstyle": "Title"}},
-		{Insert: "•", Attrs: nil},
-		{Insert: "\n", Attrs: ot.Attrs{"num": "bullet", "lvl": "0"}},
+		{Insert: "•", Attrs: ot.Attrs{"ins": "Bref", "insd": "2026-09-29T10:00:00Z"}},
+		{Insert: "\n", Attrs: ot.Attrs{"num": "bullet", "lvl": "0", "ins": "Bref", "insd": "2026-09-29T10:00:00Z"}},
 	}
 	if first := len([]rune(strings.SplitN(concat(flow), "\n", 2)[0])); first > 6 {
-		delta = append(delta, ot.Op{Retain: 3, Attrs: ot.Attrs{"i": "1", "u": "single"}}, ot.Op{Insert: "\n", Attrs: mark})
+		delta = append(delta,
+			ot.Op{Retain: 3, Attrs: ot.Attrs{"i": "1", "u": "single"}},
+			ot.Op{Retain: 2, Attrs: ot.Attrs{"del": "Bref", "deld": "2026-09-29T10:00:00Z"}},
+			ot.Op{Insert: "\n", Attrs: mark})
 	}
 	e = append(e, ot.Change{Op: ot.OpTxt, ID: n.ID, Text: delta})
+	e = append(e, ot.Change{Op: ot.OpSet, ID: "doc", Attrs: ot.Values{"track": json.RawMessage("true")}})
 	comment := func(id, parent string) {
 		attrs := ot.Values{"author": json.RawMessage(`"Bref"`), "date": json.RawMessage(`"2026-09-29T10:00:00Z"`)}
 		if parent != "" {

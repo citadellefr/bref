@@ -134,6 +134,9 @@ func (r *reader) styles(attrs ot.Values, rels *partrel.Rels) {
 				settings.Compat = number(c, "val", 0)
 			}
 		}
+		if on(child(root, "trackRevisions")) == "1" {
+			attrs["track"] = json.RawMessage("true")
+		}
 	}
 	put("settings", settings)
 }

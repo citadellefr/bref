@@ -67,6 +67,10 @@ type writer struct {
 	anchored    map[string]bool
 	mainRels    []partrel.Rel
 	anchorsGone bool
+	// revs are the revisions wraps read stand for, made the elements of
+	// revisions made for clients, whose ids the part gives.
+	revs map[string][2]string
+	made map[*xmldom.Element]bool
 	// force rewrites every part, for tests.
 	force bool
 }
@@ -115,6 +119,9 @@ func (w *writer) save() error {
 		if err := w.document(); err != nil {
 			return err
 		}
+	}
+	if err := w.settings(); err != nil {
+		return err
 	}
 	return w.definitions()
 }
@@ -184,7 +191,7 @@ func (w *writer) put(doc *xmldom.Document, name, contentType string, rels *partr
 	}
 	rw.Resolve(doc.Root, spaces)
 	declare(doc.Root)
-	uniqueRevisions(doc.Root, read)
+	uniqueRevisions(doc.Root, read, w.made)
 	data := doc.Bytes()
 	if w.pkg.Has(name) {
 		if err := w.pkg.Set(name, data); err != nil {
@@ -237,8 +244,8 @@ func revisionIDs(root *xmldom.Element) map[string]int {
 
 // uniqueRevisions gives new ids to the tracked changes that share one more
 // often than the part as read did: a paragraph split in two copies those
-// of its mark.
-func uniqueRevisions(root *xmldom.Element, read map[string]int) {
+// of its mark; and ids to those made.
+func uniqueRevisions(root *xmldom.Element, read map[string]int, made map[*xmldom.Element]bool) {
 	next := 0
 	for id := range revisionIDs(root) {
 		if n, err := strconv.Atoi(id); err == nil {
@@ -248,7 +255,10 @@ func uniqueRevisions(root *xmldom.Element, read map[string]int) {
 	seen := map[string]int{}
 	var walk func(e *xmldom.Element)
 	walk = func(e *xmldom.Element) {
-		if e.Space == NS && revisions[e.Local] {
+		if made[e] {
+			setAttr(e, "id", strconv.Itoa(next))
+			next++
+		} else if e.Space == NS && revisions[e.Local] {
 			if id := attr(e, "id"); id != "" {
 				seen[id]++
 				if seen[id] > max(read[id], 1) {
@@ -538,7 +548,7 @@ func (w *writer) paragraph(para paragraph, in *xmldom.Element, ids marks) *xmldo
 	}
 	var items []item
 	for _, o := range para.ops {
-		items = append(items, item{text: o.Insert, attrs: o.Attrs, wrap: wrapsOf(o.Attrs)})
+		items = append(items, item{text: o.Insert, attrs: o.Attrs, wrap: w.revised(wrapsOf(o.Attrs), o.Attrs)})
 	}
 	w.inline(p, items, 0, false)
 	return p
@@ -594,6 +604,7 @@ func (w *writer) pPr(mark ot.Attrs, in *xmldom.Element) *xmldom.Element {
 			pPr.Remove(rPr)
 		}
 	}
+	w.markRevisions(pPr, mark)
 	if s := w.section(mark["sx"], json.RawMessage(mark["sect"]), pPr); s != nil {
 		insert(pPr, s, pPrOrder)
 	}
@@ -680,13 +691,16 @@ func (w *writer) shell(wrap string, in *xmldom.Element) *xmldom.Element {
 		}
 		return h
 	}
+	if e := w.madeRevision(wrap, in); e != nil {
+		return e
+	}
 	return w.d.fragment(wrap)
 }
 
 // described are the keys that describe an Object or its wrappers, which
 // do not tell runs apart.
 var described = map[string]bool{
-	"o": true, "po": true, "wrap": true, "link": true, "ins": true, "del": true, "field": true,
+	"o": true, "po": true, "wrap": true, "link": true, "ins": true, "del": true, "insd": true, "deld": true, "field": true,
 	"img": true, "fld": true, "instr": true, "br": true, "sym": true, "note": true, "comment": true,
 	"bm": true, "math": true, "cs": true, "ce": true,
 }

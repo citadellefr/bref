@@ -455,6 +455,9 @@ func (r *reader) paragraph(p *xmldom.Element, flow ot.Delta) ot.Delta {
 		for k, v := range RunProps(child(pPr, "rPr")) {
 			mark[k] = v
 		}
+		for _, c := range elements(child(pPr, "rPr")) {
+			readRevision(mark, c)
+		}
 		mark["p"] = r.d.raw(pPr)
 	}
 	flow = r.inline(p, nil, flow)
@@ -536,10 +539,8 @@ func (r *reader) wrapAttrs(attrs ot.Attrs, wrap []string) ot.Attrs {
 			} else if l, ok := r.d.names.Lookup(e.Get("r:id")); ok && l.External {
 				attrs["link"] = l.Target
 			}
-		case "ins", "moveTo":
-			attrs["ins"] = attr(e, "author")
-		case "del", "moveFrom":
-			attrs["del"] = attr(e, "author")
+		case "ins", "moveTo", "del", "moveFrom":
+			readRevision(attrs, e)
 		case "fldSimple":
 			attrs["field"] = strings.TrimSpace(attr(e, "instr"))
 		}

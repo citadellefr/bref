@@ -24,7 +24,7 @@ var blockTypes = map[string]bool{"text": true, "tbl": true, "sdt": true, "other"
 
 // editable are the attributes a change may set, by node type.
 var editable = func() map[string]map[string]bool {
-	out := map[string]map[string]bool{"doc": {"sect": true}}
+	out := map[string]map[string]bool{"doc": {"sect": true, "track": true}}
 	for typ, list := range map[string][]tprop{"tbl": tblProps, "tr": trProps, "tc": tcProps} {
 		out[typ] = map[string]bool{}
 		for _, p := range list {
@@ -62,7 +62,7 @@ func (d *Document) Check(tree *ot.Tree, e ot.Edit, author string) error {
 				c.Type == "other" && (parent == "tbl" || parent == "tr") ||
 				(c.Type == "hdr" || c.Type == "ftr") && c.Parent == "doc" ||
 				c.Type == "comment" && c.Parent == "doc" && newComment(c.Attrs, author, typeOf)
-			if !ok || (c.Type == "text") != (c.Text != nil) {
+			if !ok || (c.Type == "text") != (c.Text != nil) || !d.signed(c.Text, author) {
 				return ErrReadOnly
 			}
 			created[c.ID] = c.Type
@@ -80,12 +80,12 @@ func (d *Document) Check(tree *ot.Tree, e ot.Edit, author string) error {
 				return ErrReadOnly
 			}
 			for k, v := range c.Attrs {
-				if !editable[t][k] || t == "comment" && !boolean(v) {
+				if !editable[t][k] || (t == "comment" || k == "track") && !boolean(v) {
 					return ErrReadOnly
 				}
 			}
 		case ot.OpTxt:
-			if t := typeOf(c.ID); t != "" && t != "text" {
+			if t := typeOf(c.ID); t != "" && t != "text" || !d.signed(c.Text, author) {
 				return ErrReadOnly
 			}
 		default:
