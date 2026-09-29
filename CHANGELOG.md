@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.3 — 2026-09-29
+
+- Tracked changes of Word documents: text and paragraph marks inserted or
+  deleted read as "ins"/"del" (author) and "insd"/"deld" (date); a
+  revision whose keys are removed was accepted or rejected, its element
+  dropped. Revisions a client makes are written by `docx` and signed:
+  `Check` refuses one by another author than the peer, but for a copy of
+  one the document holds. `trackRevisions` of settings.xml is the "track"
+  attribute of the document node.
+- `WordEditor` tracks what is typed, deleted, pasted and replaced when the
+  document does, accepts and rejects changes (one, all, and go to the
+  next), steps through them, bars changed lines in the margin and tells
+  in its status bar whether changes are tracked; the Review tab and
+  Ctrl+Shift+E.
+
 ## 0.5.2 — 2026-09-29
 
 - Comments of Word documents: `docx` reads them into "comment" nodes
