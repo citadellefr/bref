@@ -116,11 +116,12 @@ void main() {
     await finish(tester);
   });
 
-  test('deletes across flows: the ends trimmed, the blocks between gone', () {
+  test('deletes across flows: the blocks between gone, the ends joined', () {
     final tree = Tree.fromEdit(Edit.fromJson(jsonDecode(File('../testdata/docx/tbl-having-applied-style.json').readAsStringSync()))!)!;
     final body = tree.children('body');
     final first = body.firstWhere((n) => n.type == 'text');
     final last = body.lastWhere((n) => n.type == 'text');
+    final text = last.text!.text;
     final selection = WordSelection()
       ..set(first.id, 0)
       ..extendTo(last.id, 0);
@@ -129,8 +130,26 @@ void main() {
     expect(ranges.last, (last, 0, 0));
     expect(tree.apply(deleteRanges(tree, ranges)), isNotNull);
     // the table before the first flow stays, those between go
-    expect(tree.children('body').map((n) => n.type), ['tbl', 'text', 'text']);
-    expect(tree[first.id]!.text!.text, '\n');
+    expect(tree.children('body').map((n) => n.type), ['tbl', 'text']);
+    expect(tree[first.id]!.text!.text, text);
+    expect(tree[last.id], isNull);
+  });
+
+  test('joins the paragraphs a deletion across flows meets in, the first keeping its formatting', () {
+    final tree = Tree.fromEdit(Edit.fromJson(jsonDecode(File('../testdata/docx/par-known-styles.json').readAsStringSync()))!)!;
+    expect(tree.apply(WordEdits(WordDocument(tree)).insertTable(flowsOf(tree).first, 0, 1, 1, 400)), isNotNull);
+    final kids = tree.children('body');
+    final (first, last) = (kids[0], kids[2]);
+    final (a, b) = (wordEditing(first), wordEditing(last));
+    final selection = WordSelection()
+      ..set(first.id, 2)
+      ..extendTo(last.id, 3);
+    expect(tree.apply(deleteRanges(tree, selection.ranges(tree, flowsOf(tree)))), isNotNull);
+    expect(tree.children('body').map((n) => n.type), ['text']);
+    final joined = wordEditing(tree[first.id]!);
+    expect(joined.text, a.text.substring(0, 2) + b.text.substring(3));
+    expect(WordEdits.paragraphLike(joined.markAt(0)), WordEdits.paragraphLike(a.markAt(0)));
+    expect(joined.attributesAt(joined.text.length - 1), b.attributesAt(b.text.length - 1));
   });
 
   testWidgets('inserts a picture the host picked, no wider than the text', (tester) async {

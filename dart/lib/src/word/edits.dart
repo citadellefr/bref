@@ -355,26 +355,67 @@ class WordEdits {
 
 /// Deletes what a selection across flows covers: the end of the first,
 /// the start of the last, the text of the flows between and the blocks
-/// of the body between them; the flows at its two ends stay apart.
+/// between them. When the two ends share a parent, the rest of the last
+/// joins the first, as Word joins the paragraphs; they stay apart when one
+/// is in a table and the other not.
 Edit deleteRanges(Tree tree, List<(Node, int, int)> ranges) {
   if (ranges.isEmpty) return Edit();
   final changes = <Change>[];
-  final first = ranges.first.$1, last = ranges.last.$1;
+  final (first, from, _) = ranges.first;
+  final (last, _, to) = ranges.last;
+  final join = first.id != last.id && first.parent == last.parent;
   final between = <String>{};
-  if (first.parent == last.parent) {
+  if (join) {
     final kids = tree.children(first.parent);
     final a = kids.indexWhere((n) => n.id == first.id), b = kids.indexWhere((n) => n.id == last.id);
     for (var i = a + 1; i < b; i++) {
       between.add(kids[i].id);
       changes.add(Change.delete(kids[i].id));
     }
+    changes
+      ..add(Change.text(first.id, _joined(first, from, last, to)))
+      ..add(Change.delete(last.id));
   }
   for (final (flow, start, end) in ranges) {
+    if (join && (flow.id == first.id || flow.id == last.id)) continue;
     if (between.any((id) => tree.isUnder(flow.id, id))) continue;
     final d = wordEditing(flow).delete(start, end);
     if (!d.isEmpty) changes.add(Change.text(flow.id, d));
   }
   return Edit(changes);
+}
+
+/// [first] up to [from], then [last] from [to]: the paragraph where they
+/// meet keeps the formatting of the first, and the last mark of [first]
+/// becomes that of [last].
+Delta _joined(Node first, int from, Node last, int to) {
+  final a = wordEditing(first), b = wordEditing(last);
+  final end = a.text.length - 1, lastEnd = b.text.length - 1;
+  final (_, meet) = b.paragraphAt(to);
+  final merged = {
+    for (final e in (b.attributesAt(meet) ?? const <String, String>{}).entries)
+      if (!wordParagraphKeys.contains(e.key) || wordOwnKeys.contains(e.key)) e.key: e.value,
+    ...WordEdits.paragraphLike(a.markAt(from)),
+  };
+  final d = Delta()
+    ..retain(from)
+    ..delete(end - from);
+  for (final op in _slice(last.text!, to, meet).ops) {
+    d.insert(op.insert!, op.attributes);
+  }
+  if (meet < lastEnd) {
+    d.insert('\n', merged.isEmpty ? null : merged);
+    for (final op in _slice(last.text!, meet + 1, lastEnd).ops) {
+      d.insert(op.insert!, op.attributes);
+    }
+  }
+  final old = a.attributesAt(end) ?? const <String, String>{};
+  final target = meet < lastEnd ? b.attributesAt(lastEnd) ?? const <String, String>{} : merged;
+  d.retain(1, {
+    for (final k in {...old.keys, ...target.keys})
+      if (old[k] != target[k]) k: target[k] ?? '',
+  });
+  return d.chop();
 }
 
 /// Where [query] is in the flows, in reading order.
