@@ -11,6 +11,7 @@ import '../session.dart';
 import 'edits.dart';
 import 'layout.dart';
 import 'page_painter.dart';
+import 'revisions.dart';
 
 /// The pages of a document one under the other, where the text is edited:
 /// the caret and selection, those of the others, the keys of Word and the
@@ -28,6 +29,8 @@ class WordPagesView extends StatefulWidget {
     this.onContextMenu,
     this.marks = const [],
     this.highlights = const [],
+    this.changed = const [],
+    this.trackAs,
   });
 
   final DocSession session;
@@ -50,6 +53,12 @@ class WordPagesView extends StatefulWidget {
 
   /// Ranges of flows shown highlighted: what a search found.
   final List<(String, int, int)> highlights;
+
+  /// Ranges of flows changed, marked by a bar in the margin as Word does.
+  final List<(String, int, int)> changed;
+
+  /// The author changes are tracked as, null when they are not tracked.
+  final String? trackAs;
 
   @override
   State<WordPagesView> createState() => WordPagesViewState();
@@ -361,7 +370,7 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
           return clipboard(flow, key);
         case LogicalKeyboardKey.backspace:
           final from = editing.previous(s.start, word: true);
-          _delete(flow, editing.deleteBackward(from, s.collapsed ? s.start : s.end), from);
+          _delete(flow, editing.deleteBackward(from, s.collapsed ? s.start : s.end), from, back: true);
           return true;
         case LogicalKeyboardKey.delete:
           _delete(flow, editing.deleteForward(s.start, s.collapsed ? editing.next(s.start, word: true) : s.end), s.start);
@@ -374,7 +383,7 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
     }
     switch (key) {
       case LogicalKeyboardKey.backspace:
-        _delete(flow, editing.deleteBackward(s.start, s.end), s.collapsed ? editing.previous(s.start) : s.start);
+        _delete(flow, editing.deleteBackward(s.start, s.end), s.collapsed ? editing.previous(s.start) : s.start, back: true);
         return true;
       case LogicalKeyboardKey.delete:
         _delete(flow, editing.deleteForward(s.start, s.end), s.start);
@@ -517,8 +526,9 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
     final ranges = s.ranges(_session.document, _flows);
     if (ranges.isEmpty) return null;
     final (first, at, _) = ranges.first;
+    final author = widget.trackAs;
     _local = true;
-    _session.edit(deleteRanges(_session.document, ranges));
+    _session.edit(author == null ? deleteRanges(_session.document, ranges) : trackDeletion(ranges, author, revisionDate(DateTime.now())));
     _local = false;
     final node = _session.document[first.id];
     if (node != null) s.set(node.id, at.clamp(0, node.text!.length - 1));
@@ -554,12 +564,22 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
     _text(flow, d.chop(), start + 1, start + 1);
   }
 
-  void _delete(Node flow, Delta? d, int caret) {
+  /// Deletes, the caret put at [caret]: before the text struck there when
+  /// changes are tracked and the deletion goes [back], after it otherwise.
+  void _delete(Node flow, Delta? d, int caret, {bool back = false}) {
     if (d == null) return;
-    _text(flow, d, caret, caret);
+    _text(flow, d, caret, caret, after: !back);
   }
 
-  void _text(Node flow, Delta d, int base, int extent) {
+  /// Makes a change of a flow, then puts the selection at [base] and
+  /// [extent], offsets of the flow changed; tracked, what it deletes stays
+  /// and they move over it, [after] it or not.
+  void _text(Node flow, Delta d, int base, int extent, {bool after = true}) {
+    final author = widget.trackAs;
+    if (author != null) {
+      final tracked = track(flow.text!, d, author, revisionDate(DateTime.now()));
+      (d, base, extent) = (tracked.delta, tracked.offset(base, after: after), tracked.offset(extent, after: after));
+    }
     _local = true;
     final ok = d.isEmpty || _session.edit(Edit([Change.text(flow.id, d)]));
     _local = false;
@@ -620,8 +640,9 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
           replace(node, replacedRange.start, replacedRange.end, replacementText);
         case TextEditingDeltaNonTextUpdate():
       }
+      // tracked, the text struck stays: the platform's selection is off
       final selection = delta.selection;
-      if (selection.isValid) {
+      if (selection.isValid && (widget.trackAs == null || delta is TextEditingDeltaNonTextUpdate)) {
         final last = (_flow?.text?.length ?? 1) - 1;
         _selection.set(node.id, selection.baseOffset.clamp(0, last), selection.extentOffset.clamp(0, last));
       }
@@ -649,7 +670,7 @@ class WordPagesViewState extends State<WordPagesView> implements DeltaTextInputC
       replace(node, prefix, old.length - suffix, now.substring(prefix, now.length - suffix));
     }
     final last = (_flow?.text?.length ?? 1) - 1;
-    if (value.selection.isValid) {
+    if (value.selection.isValid && (widget.trackAs == null || old == now)) {
       _selection.set(node.id, value.selection.baseOffset.clamp(0, last), value.selection.extentOffset.clamp(0, last));
     }
   }
@@ -781,6 +802,15 @@ class _PagePainter extends CustomPainter {
     for (final (flow, a, b, color) in state.widget.marks) {
       for (final (p, r) in layout.selection(flow, a, b)) {
         if (p == index) canvas.drawRect(r, Paint()..color = color);
+      }
+    }
+    final bar = Paint()
+      ..color = const Color(0xFF7F7F7F)
+      ..strokeWidth = 1;
+    for (final (flow, a, b) in state.widget.changed) {
+      for (final (p, r) in layout.selection(flow, a, b)) {
+        final x = page.body.left - 14;
+        if (p == index) canvas.drawLine(Offset(x, r.top), Offset(x, r.bottom), bar);
       }
     }
     for (final (flow, a, b) in state.widget.highlights) {

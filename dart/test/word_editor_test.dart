@@ -210,6 +210,47 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('tracks what is typed and deleted, then accepts it all', (tester) async {
+    await open(tester, 'par-known-styles');
+    await clickText(tester);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await ctrl(tester, LogicalKeyboardKey.keyE);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    expect(hub.doc['doc']!.attributes['track'], isTrue);
+    expect(find.text('Suivi des modifications : activé'), findsOneWidget);
+
+    await ctrl(tester, LogicalKeyboardKey.home);
+    final before = body().text!.text;
+    tester.testTextInput.updateEditingValue(TextEditingValue(
+      text: 'Bref ${before.substring(0, before.length - 1)}',
+      selection: const TextSelection.collapsed(offset: 5),
+    ));
+    await settle(tester);
+    expect(wordEditing(body()).attributesAt(0)?['ins'], 'Peer 1');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.delete);
+    await settle(tester);
+    expect(body().text!.text, 'Bref $before');
+    expect(wordEditing(body()).attributesAt(5)?['del'], 'Peer 1');
+    expect(find.textContaining('Supprimé : Peer 1'), findsOneWidget);
+
+    // back over the text struck, then over the space typed, which goes
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+    await settle(tester);
+    expect(body().text!.text, 'Bref$before');
+
+    await tester.tap(find.text('Révision'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Accepter').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Accepter toutes les modifications'));
+    await settle(tester);
+    expect(body().text!.text, 'Bref${before.substring(1)}');
+    expect(body().text!.ops.any((op) => op.attributes?.keys.any(const {'ins', 'del'}.contains) ?? false), isFalse);
+    await finish(tester);
+  });
+
   testWidgets('lays out again what is typed', (tester) async {
     await open(tester, 'par-known-styles');
     expect(find.text('Page 1 sur 1'), findsOneWidget);

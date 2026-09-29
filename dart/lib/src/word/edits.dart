@@ -8,9 +8,11 @@ import '../session.dart';
 import '../text/editing.dart';
 import 'document.dart';
 import 'layout.dart';
+import 'revisions.dart';
 
-/// The keys of the flows of Word documents.
-const wordKeys = FlowKeys(paragraph: wordParagraphKeys, own: wordOwnKeys, objects: wordObjectKeys);
+/// The keys of the flows of Word documents: text typed takes no revision
+/// from the text around it.
+const wordKeys = FlowKeys(paragraph: wordParagraphKeys, own: wordOwnKeys, objects: {...wordObjectKeys, ...revisionKeys});
 
 /// Edits of the flows of a Word document.
 FlowEditing wordEditing(Node text) => FlowEditing(text.text!, keys: wordKeys);
@@ -141,7 +143,7 @@ class WordEdits {
     final (_, mark) = editing.paragraphAt(offset);
     final flow = text.text!;
     final changes = <Change>[];
-    final after = _slice(flow, mark + 1, flow.length);
+    final after = slice(flow, mark + 1, flow.length);
     if (after.length > 0) {
       // the last mark of a flow stays: it takes the place of the paragraph's
       final last = flow.length - 1;
@@ -400,12 +402,12 @@ Delta _joined(Node first, int from, Node last, int to) {
   final d = Delta()
     ..retain(from)
     ..delete(end - from);
-  for (final op in _slice(last.text!, to, meet).ops) {
+  for (final op in slice(last.text!, to, meet).ops) {
     d.insert(op.insert!, op.attributes);
   }
   if (meet < lastEnd) {
     d.insert('\n', merged.isEmpty ? null : merged);
-    for (final op in _slice(last.text!, meet + 1, lastEnd).ops) {
+    for (final op in slice(last.text!, meet + 1, lastEnd).ops) {
       d.insert(op.insert!, op.attributes);
     }
   }
@@ -466,16 +468,3 @@ Map<String, Object?> _without(Map<String, Object?> attrs, Set<String> keys) => {
   for (final e in attrs.entries)
     if (!keys.contains(e.key)) e.key: e.value,
 };
-
-/// The flow from [start] to [end], as inserts.
-Delta _slice(Delta flow, int start, int end) {
-  final out = Delta();
-  var at = 0;
-  for (final op in flow.ops) {
-    final s = op.insert!;
-    final a = (start - at).clamp(0, s.length), b = (end - at).clamp(0, s.length);
-    if (b > a) out.insert(s.substring(a, b), op.attributes);
-    at += s.length;
-  }
-  return out;
-}

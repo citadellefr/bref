@@ -21,6 +21,7 @@ import 'layout.dart';
 import 'page_painter.dart';
 import 'pages_view.dart';
 import 'paragraph.dart';
+import 'revisions.dart';
 
 /// A Word editor on a session whose document is a Word document: the
 /// ribbon, the pages, the status bar.
@@ -87,6 +88,7 @@ class _WordEditorState extends State<WordEditor> {
   var _followCaret = true;
   List<WordThread>? _threads;
   var _threadRanges = <String, List<(String, int, int)>>{};
+  List<WordRevision>? _revisionList;
 
   Tree? _laid;
   WordDocument? _doc;
@@ -145,6 +147,7 @@ class _WordEditorState extends State<WordEditor> {
       _layout = WordLayout(doc, WordContext(doc, fonts: Fonts(theme: doc.typeface, package: widget.fonts)), _cache);
       _laid = tree;
       _threads = null;
+      _revisionList = null;
     }
     return _layout!;
   }
@@ -457,6 +460,7 @@ class _WordEditorState extends State<WordEditor> {
   Future<void> _contextMenu(Offset at) async {
     final cell = _cell;
     final editable = !_session.readOnly;
+    final revision = _revision;
     final choice = await showMenu<String>(
       context: context,
       position: RelativeRect.fromLTRB(at.dx, at.dy, at.dx, at.dy),
@@ -466,6 +470,11 @@ class _WordEditorState extends State<WordEditor> {
         PopupMenuItem(value: 'paste', enabled: editable, child: Text(_s.paste)),
         const PopupMenuDivider(),
         PopupMenuItem(value: 'comment', enabled: editable, child: Text(_s.newComment)),
+        if (revision != null && editable) ...[
+          const PopupMenuDivider(),
+          PopupMenuItem(value: 'accept', child: Text(_s.settleRevision(true, revision.deleted))),
+          PopupMenuItem(value: 'reject', child: Text(_s.settleRevision(false, revision.deleted))),
+        ],
         if (cell != null && editable) ...[
           const PopupMenuDivider(),
           PopupMenuItem(value: 'rowAbove', child: Text(_s.insertRowAbove)),
@@ -492,6 +501,8 @@ class _WordEditorState extends State<WordEditor> {
     switch (choice) {
       case 'comment':
         _newComment();
+      case 'accept' || 'reject':
+        _settle(accept: choice == 'accept');
       case 'rowAbove':
         _tableEdit((e, c) => e.insertRow(_session.document[c.parent]!, below: false));
       case 'rowBelow':
@@ -690,6 +701,83 @@ class _WordEditorState extends State<WordEditor> {
   List<(Node, int, int)> get _matches =>
       _finding ? findIn(flowsOf(_session.document), _find.text, matchCase: _matchCase) : const [];
 
+  // tracked changes
+
+  /// Whether the document tracks changes, everyone's.
+  bool get _tracking => _session.document['doc']?.attributes['track'] == true;
+
+  /// The author this client's changes are tracked as, null when they are
+  /// not tracked.
+  String? get _trackAs => _tracking && _session.name.isNotEmpty ? _session.name : null;
+
+  Edit _trackedEdit(Edit edit) {
+    final author = _trackAs;
+    return author == null ? edit : trackEdit(_session.document, edit, author, revisionDate(DateTime.now()));
+  }
+
+  void _toggleTracking() => _edit(Edit([Change.set('doc', attributes: {'track': !_tracking})]));
+
+  List<WordRevision> get _revisions {
+    _current;
+    return _revisionList ??= revisionsOf(flowsOf(_session.document));
+  }
+
+  /// The tracked change the caret is in, or just after.
+  WordRevision? get _revision {
+    final flow = _selection.flow;
+    if (flow == null || _selection.spans) return null;
+    final at = _selection.start;
+    final here = _revisions.where((r) => r.flow == flow);
+    return here.where((r) => r.start <= at && at < r.end).firstOrNull ?? here.where((r) => r.end == at).firstOrNull;
+  }
+
+  /// Accepts or rejects the changes selected, or the one at the caret, or
+  /// [all] of them, then [stop]s tracking or goes to the [next] one.
+  void _settle({required bool accept, bool all = false, bool next = false, bool stop = false}) {
+    final tree = _session.document;
+    final flows = flowsOf(tree);
+    final r = _revision;
+    final flow = r == null ? null : tree[r.flow];
+    final ranges = all
+        ? [for (final f in flows) (f, 0, f.text!.length)]
+        : !_selection.collapsed
+        ? _selection.ranges(tree, flows)
+        : [if (flow != null) (flow, r!.start, r.end)];
+    _edit(Edit([
+      ...settle(ranges, accept: accept).changes,
+      if (stop && _tracking) Change.set('doc', attributes: {'track': false}),
+    ]));
+    if (next) _stepRevision(1);
+    _focus.requestFocus();
+  }
+
+  /// Selects the tracked change after the selection, or before it, going
+  /// round the document.
+  void _stepRevision(int by) {
+    final revisions = _revisions;
+    if (revisions.isEmpty) return;
+    final order = {for (final (i, f) in flowsOf(_session.document).indexed) f.id: i};
+    final s = _selection;
+    final flow = order[s.flow] ?? 0;
+    bool current(WordRevision r) => r.flow == s.flow && r.start == s.start && r.end == s.end;
+    int compare(WordRevision r, int at) => order[r.flow]! != flow ? order[r.flow]!.compareTo(flow) : at.compareTo(by > 0 ? s.end : s.start);
+    final found = by > 0
+        ? revisions.where((r) => compare(r, r.start) >= 0 && !current(r)).firstOrNull ?? revisions.first
+        : revisions.where((r) => compare(r, r.end) <= 0 && !current(r)).lastOrNull ?? revisions.last;
+    s.set(found.flow, found.start, found.end, null, PageArea.body);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _view.currentState?.reveal());
+  }
+
+  List<PopupMenuEntry<String>> _settleItems(bool accept) => [
+    PopupMenuItem(value: 'next', child: Text(accept ? _s.acceptAndNext : _s.rejectAndNext)),
+    PopupMenuItem(value: 'this', enabled: !_selection.collapsed || _revision != null, child: Text(accept ? _s.acceptThis : _s.rejectThis)),
+    PopupMenuItem(value: 'all', child: Text(accept ? _s.acceptAll : _s.rejectAll)),
+    PopupMenuItem(value: 'stop', enabled: _tracking, child: Text(accept ? _s.acceptAllAndStop : _s.rejectAllAndStop)),
+  ];
+
+  void _settleChosen(bool accept, String choice) =>
+      _settle(accept: accept, all: choice == 'all' || choice == 'stop', next: choice == 'next', stop: choice == 'stop');
+
   void _openFind({bool replace = false}) {
     setState(() {
       _finding = true;
@@ -741,7 +829,7 @@ class _WordEditorState extends State<WordEditor> {
       _step(1);
       return;
     }
-    _edit(replaceAll([current], _replacement.text));
+    _edit(_trackedEdit(replaceAll([current], _replacement.text)));
     _match--;
     _step(1);
   }
@@ -749,7 +837,7 @@ class _WordEditorState extends State<WordEditor> {
   void _replaceEvery() {
     final matches = _matches;
     if (matches.isEmpty) return;
-    _edit(replaceAll(matches, _replacement.text));
+    _edit(_trackedEdit(replaceAll(matches, _replacement.text)));
     setState(() => _match = -1);
   }
 
@@ -831,6 +919,9 @@ class _WordEditorState extends State<WordEditor> {
     switch (key) {
       case LogicalKeyboardKey.keyM when HardwareKeyboard.instance.isAltPressed:
         _newComment();
+        return true;
+      case LogicalKeyboardKey.keyE when shift:
+        _toggleTracking();
         return true;
       // Gras is Ctrl+G in the French version, Ctrl+B elsewhere
       case LogicalKeyboardKey.keyB || LogicalKeyboardKey.keyG:
@@ -924,6 +1015,8 @@ class _WordEditorState extends State<WordEditor> {
                           onContextMenu: _contextMenu,
                           marks: _commentMarks,
                           highlights: [for (final (n, a, b) in _matches) (n.id, a, b)],
+                          changed: [for (final r in _revisions) (r.flow, r.start, r.end)],
+                          trackAs: _trackAs,
                         ),
                       ),
                     ),
@@ -965,6 +1058,7 @@ class _WordEditorState extends State<WordEditor> {
         banner(Icons.cloud_off, _s.offline, scheme.tertiaryContainer, action: _session.retry, label: _s.retry),
       if (_session.status == DocStatus.closed) banner(Icons.block, '${_session.failure ?? ''}', scheme.errorContainer),
       if (_session.readOnly) banner(Icons.visibility_outlined, _s.readOnly, scheme.secondaryContainer),
+      if (_tracking && !_session.readOnly && _session.name.isEmpty) banner(Icons.person_off_outlined, _s.untracked, scheme.errorContainer),
       if (_selection.area != PageArea.body)
         banner(Icons.vertical_split_outlined, _s.headerFooter, scheme.primaryContainer, action: _closeHeaderFooter, label: _s.closeHeaderFooter),
     ];
@@ -1243,6 +1337,36 @@ class _WordEditorState extends State<WordEditor> {
               onPressed: () => setState(() => _commentsShown = !(_commentsShown ?? _commentThreads.isNotEmpty)),
             ),
           ]),
+          RibbonGroup(_s.tracking, [
+            RibbonButton(
+              icon: const Icon(Icons.track_changes),
+              label: _s.trackChanges,
+              large: true,
+              shortcut: 'Ctrl+Maj+E',
+              selected: _tracking,
+              onPressed: _session.readOnly ? null : _toggleTracking,
+            ),
+          ]),
+          RibbonGroup(_s.changes, [
+            RibbonMenu<String>(
+              icon: const Icon(Icons.check_circle_outline),
+              label: _s.accept,
+              large: true,
+              enabled: !_session.readOnly && _revisions.isNotEmpty,
+              items: _settleItems(true),
+              onSelected: (c) => _settleChosen(true, c),
+            ),
+            RibbonMenu<String>(
+              icon: const Icon(Icons.cancel_outlined),
+              label: _s.reject,
+              large: true,
+              enabled: !_session.readOnly && _revisions.isNotEmpty,
+              items: _settleItems(false),
+              onSelected: (c) => _settleChosen(false, c),
+            ),
+            RibbonButton(icon: const Icon(Icons.arrow_upward), label: _s.previousChange, large: true, onPressed: _revisions.isEmpty ? null : () => _stepRevision(-1)),
+            RibbonButton(icon: const Icon(Icons.arrow_downward), label: _s.nextChange, large: true, onPressed: _revisions.isEmpty ? null : () => _stepRevision(1)),
+          ]),
         ]),
         RibbonTab(_s.view, [
           RibbonGroup(_s.zoom, [
@@ -1271,6 +1395,7 @@ class _WordEditorState extends State<WordEditor> {
         : _s.saving;
     final style = Theme.of(context).textTheme.labelSmall;
     final phone = MediaQuery.sizeOf(context).width < phoneWidth;
+    final revision = phone ? null : _revision;
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainer,
       child: SizedBox(
@@ -1280,6 +1405,28 @@ class _WordEditorState extends State<WordEditor> {
           Text(_s.pageOf(page, layout.pages.length), style: style),
           const SizedBox(width: 16),
           if (!phone) ...[Text(_s.words(_words), style: style), const SizedBox(width: 16), Text(_s.language, style: style), const SizedBox(width: 16)],
+          if (_tracking || !phone) ...[
+            Flexible(
+              child: InkWell(
+                onTap: _session.readOnly ? null : _toggleTracking,
+                child: phone
+                    ? const Icon(Icons.track_changes, size: 14)
+                    : Text(_s.trackChangesState(_tracking), style: style, maxLines: 1, overflow: TextOverflow.ellipsis),
+              ),
+            ),
+            const SizedBox(width: 16),
+          ],
+          if (revision != null) ...[
+            Flexible(
+              child: Text(
+                _s.revision(revision.deleted, revision.author, revision.date),
+                style: style?.copyWith(color: revisionColor(revision.author)),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 16),
+          ],
           Icon(_session.saveError != null ? Icons.error_outline : (_session.saved ? Icons.cloud_done_outlined : Icons.cloud_upload_outlined), size: 14),
           const SizedBox(width: 4),
           Expanded(child: Text(state, style: style, overflow: TextOverflow.ellipsis)),

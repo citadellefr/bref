@@ -249,6 +249,26 @@ class BrefStrings {
   String get unknownAuthor => 'Auteur inconnu';
   String get commentedTextGone => 'Le texte commenté a été supprimé.';
   String replies(int n) => n == 1 ? '1 réponse' : '$n réponses';
+  String get tracking => 'Suivi';
+  String get trackChanges => 'Suivi des modifications';
+  String trackChangesState(bool on) => 'Suivi des modifications : ${on ? 'activé' : 'désactivé'}';
+  String get untracked => 'Vos modifications ne peuvent pas être suivies : le serveur ne vous a pas donné de nom.';
+  String get changes => 'Modifications';
+  String get accept => 'Accepter';
+  String get reject => 'Refuser';
+  String get acceptAndNext => 'Accepter et passer à la suivante';
+  String get acceptThis => 'Accepter cette modification';
+  String get acceptAll => 'Accepter toutes les modifications';
+  String get acceptAllAndStop => 'Accepter toutes les modifications et arrêter le suivi';
+  String get rejectAndNext => 'Refuser et passer à la suivante';
+  String get rejectThis => 'Refuser la modification';
+  String get rejectAll => 'Refuser toutes les modifications';
+  String get rejectAllAndStop => 'Refuser toutes les modifications et arrêter le suivi';
+  String get previousChange => 'Précédent';
+  String get nextChange => 'Suivant';
+  String settleRevision(bool accept, bool deleted) => '${accept ? 'Accepter' : 'Refuser'} ${deleted ? 'la suppression' : 'l’insertion'}';
+  String revision(bool deleted, String author, DateTime? date) =>
+      '${deleted ? 'Supprimé' : 'Inséré'} : $author${date == null ? '' : ', ${commentDate(date.toLocal())}'}';
   String commentDate(DateTime d) {
     const months = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
     final now = DateTime.now();
