@@ -210,6 +210,16 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('lays out again what is typed', (tester) async {
+    await open(tester, 'par-known-styles');
+    expect(find.text('Page 1 sur 1'), findsOneWidget);
+    final flow = flowsOf(session.document).first;
+    session.edit(Edit([Change.text(flow.id, Delta()..insert('x\n' * 200))]));
+    await settle(tester);
+    expect(find.text('Page 1 sur 1'), findsNothing);
+    await finish(tester);
+  });
+
   test('inserts a table after the paragraph, the flow cut there', () {
     final tree = Tree.fromEdit(Edit.fromJson(jsonDecode(File('../testdata/docx/par-known-styles.json').readAsStringSync()))!)!;
     final doc = WordDocument(tree);

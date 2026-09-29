@@ -63,6 +63,7 @@ class _WordEditorState extends State<WordEditor> {
   final _cache = ParaCache();
   final _view = GlobalKey<WordPagesViewState>();
   StreamSubscription<String>? _rejections;
+  StreamSubscription<Edit>? _changes;
   final _find = TextEditingController();
   final _replacement = TextEditingController();
   final _findFocus = FocusNode();
@@ -90,6 +91,8 @@ class _WordEditorState extends State<WordEditor> {
       if (!mounted) return;
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(_s.refused(reason))));
     });
+    // the tree changes in place: each edit lays it out again
+    _changes = _session.changes.listen((_) => _laid = null);
   }
 
   @override
@@ -97,6 +100,7 @@ class _WordEditorState extends State<WordEditor> {
     _session.removeListener(_repaint);
     _selection.removeListener(_repaint);
     unawaited(_rejections?.cancel());
+    unawaited(_changes?.cancel());
     _media
       ..removeListener(_repaint)
       ..dispose();
