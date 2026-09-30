@@ -303,7 +303,8 @@ enum _Kind { insert, delete, retain }
 class _Iterator {
   _Iterator(this._ops);
 
-  static const _infinite = 1 << 53;
+  // 2^53 - 1, not 1 << 53: shifts are 32-bit on the web
+  static const _infinite = 0x1FFFFFFFFFFFFF;
 
   final List<Op> _ops;
   var _index = 0;
