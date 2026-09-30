@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4 — 2026-09-30
+
+- The Dart editors no longer freeze at the first keystroke on the web:
+  deltas were composed in an endless loop, `1 << 53` being 0 once
+  compiled to JavaScript.
+
 ## 0.5.3 — 2026-09-29
 
 - Tracked changes of Word documents: text and paragraph marks inserted or
