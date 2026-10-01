@@ -4,6 +4,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
+import '../chart/chart.dart';
+import '../chart/chart_painter.dart';
 import '../drawing/color.dart';
 import '../drawing/geometry.dart';
 import '../drawing/paint.dart';
@@ -63,6 +65,7 @@ class SlidePainter {
   final String? fonts;
 
   final _frames = Expando<TextFrame>();
+  final _charts = Expando<ChartSpec>();
 
   void paint(Canvas canvas, Node slide) {
     final size = deck.size;
@@ -160,7 +163,12 @@ class SlidePainter {
     canvas.transform(_placement(shape).storage);
     final size = box.size;
     if (shape.type == 'frame' || shape.type == 'other') {
-      _stand(canvas, size);
+      final chart = shape.type == 'frame' ? _charts[shape] ??= ChartSpec.fromJson(shape.attributes['chart']) : null;
+      if (chart != null) {
+        ChartPainter(chart, colors: colors, fonts: Fonts(theme: theme.typeface, package: fonts)).paint(canvas, size);
+      } else {
+        _stand(canvas, size);
+      }
       canvas.restore();
       return;
     }
@@ -195,8 +203,8 @@ class SlidePainter {
     canvas.restore();
   }
 
-  /// What stands for a table, chart or other object the editor does not
-  /// draw yet.
+  /// What stands for a table or other object the editor does not draw
+  /// yet.
   void _stand(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
     canvas.drawRect(rect, Paint()..color = const Color(0x14000000));
