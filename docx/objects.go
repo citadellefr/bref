@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/citadellefr/bref/chart"
 	"github.com/citadellefr/bref/internal/xmldom"
 	"github.com/citadellefr/bref/ot"
 )
@@ -32,6 +33,8 @@ type Picture struct {
 	Text ot.Delta `json:"text,omitempty"`
 	Fill string   `json:"fill,omitempty"`
 	Line string   `json:"line,omitempty"`
+	// Chart is the chart the drawing shows, drawn but not edited.
+	Chart *chart.Chart `json:"chart,omitempty"`
 }
 
 // Float is the position of an anchored drawing.
@@ -145,6 +148,9 @@ func (r *reader) drawing(e *xmldom.Element) *Picture {
 				}
 			}
 		}
+		if ref := find(c, chart.NS, "chart"); ref != nil {
+			p.Chart = r.chart(ref)
+		}
 		if c.Local == "anchor" {
 			p.Float = anchor(c)
 		}
@@ -152,6 +158,23 @@ func (r *reader) drawing(e *xmldom.Element) *Picture {
 		return p
 	}
 	return nil
+}
+
+// chart reads the chart part a c:chart points to, nil when it cannot.
+func (r *reader) chart(ref *xmldom.Element) *chart.Chart {
+	l, ok := r.d.names.Lookup(ref.Get("r:id"))
+	if !ok || l.External {
+		return nil
+	}
+	data, err := r.d.pkg.Read(l.Target)
+	if err != nil {
+		return nil
+	}
+	c, err := chart.Read(data)
+	if err != nil {
+		return nil
+	}
+	return c
 }
 
 func anchor(a *xmldom.Element) *Float {

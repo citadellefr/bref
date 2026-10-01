@@ -2,6 +2,10 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/painting.dart';
 
+import '../chart/chart.dart';
+import '../chart/chart_painter.dart';
+import '../drawing/color.dart';
+import '../text/text_frame.dart';
 import 'blocks.dart';
 import 'document.dart';
 import 'layout.dart';
@@ -10,10 +14,13 @@ import 'paragraph.dart';
 /// Draws the pages of a laid out document, in points from the page's
 /// top-left.
 class PagePainter {
-  const PagePainter({this.images});
+  const PagePainter({this.images, this.context});
 
   /// The pictures of the document, by name, when they are loaded.
   final ui.Image? Function(String media)? images;
+
+  /// The document's theme and fonts, which charts are drawn with.
+  final WordContext? context;
 
   void paint(Canvas canvas, WordPage page, {bool dimHeaders = false}) {
     canvas.drawRect(Offset.zero & page.size, Paint()..color = const Color(0xFFFFFFFF));
@@ -30,7 +37,7 @@ class PagePainter {
     for (final l in page.lines.where((l) => l.area != PageArea.drawing)) {
       final dim = dimHeaders && l.area != PageArea.body;
       if (dim) canvas.saveLayer(null, Paint()..color = const Color(0x80FFFFFF));
-      l.box.paint(canvas, l.origin, l.from, l.to, images: images);
+      l.box.paint(canvas, l.origin, l.from, l.to, objects: _object);
       if (dim) canvas.restore();
     }
     for (final c in page.cells) {
@@ -47,17 +54,26 @@ class PagePainter {
     }
     // the text of text boxes, over their fill
     for (final l in page.lines.where((l) => l.area == PageArea.drawing)) {
-      l.box.paint(canvas, l.origin, l.from, l.to, images: images);
+      l.box.paint(canvas, l.origin, l.from, l.to, objects: _object);
     }
   }
 
-  void _picture(Canvas canvas, PlacedPicture p) {
-    final media = p.picture['media'] as String?;
-    final image = media == null ? null : images?.call(media);
-    if (image != null) {
-      drawPicture(canvas, image, p.rect);
-      return;
+  /// Draws a chart or a picture once loaded; tells whether it could.
+  bool _object(Canvas canvas, Map<String, Object?> picture, Rect rect) {
+    final chart = _charts[picture] ??= ChartSpec.fromJson(picture['chart']);
+    if (chart != null) {
+      _chart(canvas, chart, rect);
+      return true;
     }
+    final media = picture['media'] as String?;
+    final image = media == null ? null : images?.call(media);
+    if (image == null) return false;
+    drawPicture(canvas, image, rect);
+    return true;
+  }
+
+  void _picture(Canvas canvas, PlacedPicture p) {
+    if (_object(canvas, p.picture, p.rect)) return;
     if (p.picture['text'] != null) {
       final fill = hexColor(p.picture['fill']), line = hexColor(p.picture['line']);
       if (fill != null) canvas.drawRect(p.rect, Paint()..color = fill);
@@ -72,6 +88,27 @@ class PagePainter {
     canvas.drawRect(p.rect, Paint()
       ..style = PaintingStyle.stroke
       ..color = const Color(0xFFB0B0B0));
+  }
+
+  void _chart(Canvas canvas, ChartSpec chart, Rect rect) {
+    final doc = context?.doc;
+    final colors = ColorContext(scheme: {
+      for (final e in (doc?.themeColors ?? const <String, String>{}).entries)
+        if (hexColor(e.value) != null) e.key: hexColor(e.value)!,
+    });
+    final fonts = context?.fonts;
+    canvas.save();
+    canvas.translate(rect.left, rect.top);
+    ChartPainter(
+      chart,
+      colors: colors,
+      fonts: Fonts(
+        theme: (name) => doc?.typeface(name.startsWith('+mj') ? '+major' : '+minor') ?? 'Calibri',
+        substitutes: fonts?.substitutes ?? Fonts.defaultSubstitutes,
+        package: fonts?.package,
+      ),
+    ).paint(canvas, rect.size);
+    canvas.restore();
   }
 
   /// The shading and borders of a paragraph behind its lines.
@@ -149,3 +186,5 @@ Map<String, (Paint, double, double)>? jsonBorders(String json) {
   }
   return out.isEmpty ? null : out;
 }
+
+final _charts = Expando<ChartSpec>();

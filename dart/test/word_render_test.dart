@@ -35,10 +35,11 @@ void main() {
         }
       }
       final watch = Stopwatch()..start();
-      final layout = WordLayout(doc, WordContext(doc), ParaCache());
+      final context = WordContext(doc);
+      final layout = WordLayout(doc, context, ParaCache());
       // ignore: avoid_print
       print('${file.path}: ${layout.pages.length} pages in ${watch.elapsedMilliseconds} ms');
-      final painter = PagePainter(images: (m) => images[m]);
+      final painter = PagePainter(images: (m) => images[m], context: context);
       for (final page in layout.pages.take(int.tryParse(Platform.environment['BREF_PAGES'] ?? '') ?? 6)) {
         const scale = 1.5;
         final recorder = ui.PictureRecorder();

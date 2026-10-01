@@ -93,6 +93,7 @@ class _WordEditorState extends State<WordEditor> {
   Tree? _laid;
   WordDocument? _doc;
   WordLayout? _layout;
+  WordContext? _context;
 
   DocSession get _session => widget.session;
   BrefStrings get _s => widget.strings;
@@ -144,7 +145,8 @@ class _WordEditorState extends State<WordEditor> {
     if (_laid != tree || _layout == null) {
       final doc = WordDocument(tree, previous: _doc);
       _doc = doc;
-      _layout = WordLayout(doc, WordContext(doc, fonts: Fonts(theme: doc.typeface, package: widget.fonts)), _cache);
+      _context = WordContext(doc, fonts: Fonts(theme: doc.typeface, package: widget.fonts));
+      _layout = WordLayout(doc, _context!, _cache);
       _laid = tree;
       _threads = null;
       _revisionList = null;
@@ -1008,7 +1010,7 @@ class _WordEditorState extends State<WordEditor> {
                           session: _session,
                           layout: layout,
                           selection: _selection,
-                          painter: PagePainter(images: (m) => _media[m]),
+                          painter: PagePainter(images: (m) => _media[m], context: _context),
                           scale: _scale(box),
                           focusNode: _focus,
                           onShortcut: _shortcut,

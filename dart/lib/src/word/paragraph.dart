@@ -75,6 +75,10 @@ const _highlights = {
 };
 
 /// Draws a picture stretched over a rectangle.
+/// Draws an object of the text, a picture or a chart, in a box; tells
+/// whether it could.
+typedef DrawObject = bool Function(Canvas canvas, Map<String, Object?> picture, Rect box);
+
 void drawPicture(Canvas canvas, ui.Image image, Rect rect) {
   final src = Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble());
   canvas.drawImageRect(image, src, rect, Paint()..filterQuality = FilterQuality.medium);
@@ -152,7 +156,7 @@ enum _SlotKind { hidden, tab, image, glyph, lead }
 /// A placeholder of the text: what stands for a flow character that is not
 /// drawn as text.
 class _Slot {
-  _Slot(this.kind, {this.width = 0, this.height = 0, this.text, this.style, this.rise = 0, this.media});
+  _Slot(this.kind, {this.width = 0, this.height = 0, this.text, this.style, this.rise = 0, this.picture});
 
   final _SlotKind kind;
   double width;
@@ -162,7 +166,7 @@ class _Slot {
   final String? text;
   final TextStyle? style;
   final double rise;
-  final String? media;
+  final Map<String, Object?>? picture;
 
   /// A tab's leader: "dot", "hyphen", "underscore"…
   String? leader;
@@ -358,7 +362,7 @@ class ParaBox {
   int lineIndexOf(int offset) => lines.indexOf(lineAt(offset));
 
   /// Draws lines [from]…[to] with their top at [origin].
-  void paint(Canvas canvas, Offset origin, int from, int to, {ui.Image? Function(String media)? images}) {
+  void paint(Canvas canvas, Offset origin, int from, int to, {DrawObject? objects}) {
     if (lines.isEmpty) return;
     final top = lines[from].top;
     final bottom = lines[to - 1].bottom;
@@ -376,24 +380,20 @@ class ParaBox {
       piece.painter.paint(canvas, at);
       final boxes = piece.painter.inlinePlaceholderBoxes ?? const [];
       for (var i = 0; i < boxes.length && i < piece.slots.length; i++) {
-        _paintSlot(canvas, piece.slots[i], boxes[i].toRect().shift(at), images);
+        _paintSlot(canvas, piece.slots[i], boxes[i].toRect().shift(at), objects);
       }
     }
     canvas.restore();
   }
 
-  void _paintSlot(Canvas canvas, _Slot slot, Rect box, ui.Image? Function(String media)? images) {
+  void _paintSlot(Canvas canvas, _Slot slot, Rect box, DrawObject? objects) {
     switch (slot.kind) {
       case _SlotKind.glyph:
         final p = TextPainter(text: TextSpan(text: slot.text, style: slot.style), textDirection: TextDirection.ltr)..layout();
         final base = p.computeLineMetrics().firstOrNull?.baseline ?? p.height;
         p.paint(canvas, Offset(box.left, box.bottom - base - slot.rise));
       case _SlotKind.image:
-        final media = slot.media;
-        final image = media == null ? null : images?.call(media);
-        if (image != null) {
-          drawPicture(canvas, image, box);
-        } else {
+        if (objects == null || !objects(canvas, slot.picture ?? const {}, box)) {
           canvas.drawRect(box, Paint()..color = const Color(0xFFE8E8E8));
           canvas.drawRect(box.deflate(0.5), Paint()
             ..style = PaintingStyle.stroke
@@ -597,7 +597,7 @@ class _Builder {
         floats.add(FloatingPicture(img, offset));
         _hidden(style);
       } else {
-        _out.add(_Op.slot(_Slot(_SlotKind.image, width: w, height: h, media: img['media'] as String?), style));
+        _out.add(_Op.slot(_Slot(_SlotKind.image, width: w, height: h, picture: img), style));
       }
       return;
     }
