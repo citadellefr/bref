@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.0 — 2026-10-01
+
+- Charts are drawn in the three editors, not yet edited. The package
+  `chart` reads a chart part into what a client draws it from: plots,
+  series with the values Office cached and the cells they come from, axes,
+  title, legend, labels, DrawingML fills and lines. `pptx` gives it to a
+  frame as "chart", `docx` to a drawing in the "chart" of its "img", and
+  `xlsx` to a sheet in "charts", with the anchors, which the server's
+  revision moves with rows and columns and whose references follow
+  renamed sheets; a chart sheet's "kept" node carries its "chart".
+- Dart: `ChartPainter` draws bars, lines, areas, scatters, bubbles, pies,
+  doughnuts and radars as Office lays them out, value axes scaled as Excel
+  scales them (`Scale.auto`). Slides, Word pages and sheets show their
+  charts; Excel reads the series from its cells as they change, hidden
+  rows left out, but for pivot charts.
+
 ## 0.5.4 — 2026-09-30
 
 - The Dart editors no longer freeze at the first keystroke on the web:
