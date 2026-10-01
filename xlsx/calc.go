@@ -288,8 +288,8 @@ func mapKeys[K comparable, V any](m map[K]V) func(func(K) bool) {
 }
 
 // formulas calls rewrite with every formula of the workbook, those of the
-// defined names, list validations and conditional formats included, and
-// sets those it changes.
+// defined names, list validations, conditional formats and charts included,
+// and sets those it changes.
 func (f *follow) formulas(rewrite func(text, sheet string) string) {
 	c := f.c
 	for _, id := range c.sheets {
@@ -341,6 +341,17 @@ func (f *follow) formulas(rewrite func(text, sheet string) string) {
 		}
 		if changed {
 			setList(f, id, conditionalKey, rules)
+		}
+		var charts []Placed
+		f.attr(id, chartsKey, &charts)
+		changed = false
+		for _, p := range charts {
+			if p.Chart != nil && chartRefs(p.Chart, func(ref string) string { return rewrite(ref, id) }) {
+				changed = true
+			}
+		}
+		if changed {
+			setList(f, id, chartsKey, charts)
 		}
 	}
 	changed := false
@@ -443,6 +454,11 @@ func (f *follow) shift(ch ot.Change) {
 			}
 		}
 		setList(f, ch.ID, conditionalKey, kept)
+	}
+	var charts []Placed
+	if f.attr(ch.ID, chartsKey, &charts); len(charts) > 0 {
+		shiftCharts(charts, rows, ch.At, n)
+		setList(f, ch.ID, chartsKey, charts)
 	}
 	f.shiftFilter(ch.ID, sheet, rows, ch.At, n)
 	if looks := looksID(ch.ID); c.tree.Node(looks) != nil {

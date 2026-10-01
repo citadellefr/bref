@@ -55,6 +55,11 @@ func (r *reader) sheet(s *xmldom.Element, key string) (string, error) {
 	}
 	if rel.ID == "" || err != nil || rel.Type != relWorksheet || !d.pkg.Has(name) {
 		part.kept = true
+		if rel.Type == relChartsheet && err == nil {
+			if c := d.sheetChart(name); c != nil {
+				attrs["chart"] = c.JSON()
+			}
+		}
 		r.add(ot.Change{Op: ot.OpNew, ID: id, Type: "kept", Parent: "book", Key: key, Attrs: attrs})
 		return id, nil
 	}
@@ -107,6 +112,9 @@ func (r *reader) sheet(s *xmldom.Element, key string) (string, error) {
 	}
 	if f := autoFilter(root); f != nil {
 		attrs[filterKey] = mustJSON(f)
+	}
+	if c := d.sheetCharts(name, root); len(c) > 0 {
+		attrs[chartsKey] = mustJSON(c)
 	}
 	if f := root.Child(mainNS, "sheetFormatPr"); f != nil {
 		if w := parseFloat(f.Get("defaultColWidth")); w > 0 {

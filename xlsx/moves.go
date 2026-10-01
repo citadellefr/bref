@@ -161,18 +161,9 @@ func (m *mover) sqref(s, own string) string {
 // is removed.
 func (m *mover) index(i int, own string, rows bool) int {
 	for _, mv := range m.moves {
-		if mv.sheet != own || mv.rows != rows {
-			continue
+		if mv.sheet == own && mv.rows == rows {
+			i = shiftIndex(i, mv.at, mv.n)
 		}
-		at := i + 1
-		switch {
-		case at < mv.at:
-		case mv.n < 0 && at < mv.at-mv.n:
-			i = mv.at - 1
-		default:
-			i += mv.n
-		}
-		i = max(i, 0)
 	}
 	return i
 }
