@@ -33,6 +33,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/citadellefr/bref/chart"
 	"github.com/citadellefr/bref/drawingml"
 	"github.com/citadellefr/bref/internal/partrel"
 	"github.com/citadellefr/bref/internal/xmldom"
@@ -528,7 +529,13 @@ func (r *reader) shape(e *xmldom.Element, parent, prefix, key string, spaces map
 		r.nodes[at].Attrs = attrs
 	case "graphicFrame":
 		putJSON(attrs, "xfrm", drawingml.ReadXfrm(e.Child(pNS, "xfrm")))
-		putString(attrs, "frame", frameKind(e))
+		kind := frameKind(e)
+		putString(attrs, "frame", kind)
+		if kind == "chart" {
+			if c := r.d.chart(e); c != nil {
+				attrs["chart"] = c.JSON()
+			}
+		}
 		attrs["xml"] = r.d.raw(e)
 		r.add(id, "frame", parent, key, attrs, nil)
 	default:
@@ -603,6 +610,31 @@ func frameKind(e *xmldom.Element) string {
 		return "ole"
 	}
 	return "other"
+}
+
+// chart reads the chart a graphic frame shows, nil when it cannot.
+func (d *Document) chart(frame *xmldom.Element) *chart.Chart {
+	g := frame.Child(aNS, "graphic")
+	if g == nil {
+		return nil
+	}
+	gd := g.Child(aNS, "graphicData")
+	if gd == nil {
+		return nil
+	}
+	ref := gd.Child(chart.NS, "chart")
+	if ref == nil {
+		return nil
+	}
+	data, err := d.pkg.Read(d.targetOf(ref))
+	if err != nil {
+		return nil
+	}
+	c, err := chart.Read(data)
+	if err != nil {
+		return nil
+	}
+	return c
 }
 
 func size(e *xmldom.Element) json.RawMessage {
