@@ -20,6 +20,10 @@ class ChartSpec {
   bool get rounded => json['rounded'] == true;
   String get blanks => json['blanks'] as String? ?? 'gap';
 
+  /// Whether the chart shows a pivot table, whose values are not all
+  /// those of the cells its series point to.
+  bool get pivot => json['pivot'] == true;
+
   AxisSpec? axis(num id) {
     for (final a in axes) {
       if (a.id == id) return a;

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/painting.dart';
 
+import '../drawing/color.dart';
 import '../ot/grid.dart';
 import '../ot/tree.dart';
 import 'conditional.dart';
@@ -77,6 +78,44 @@ class Workbook {
     _looks[sheet.id] = (sheet, node, l);
     return l;
   }
+
+  /// The sheet and area a reference or a defined name points to, the
+  /// sheet named or [sheet].
+  (Node, CellArea)? resolve(Node sheet, String ref) => _area(sheet, ref) ?? _named(sheet, ref);
+
+  (Node, CellArea)? _area(Node sheet, String ref) {
+    var on = sheet;
+    var a = ref;
+    final bang = ref.lastIndexOf('!');
+    if (bang > 0) {
+      var name = ref.substring(0, bang);
+      if (name.length >= 2 && name.startsWith("'") && name.endsWith("'")) {
+        name = name.substring(1, name.length - 1).replaceAll("''", "'");
+      }
+      final found = sheets.where((n) => '${n.attributes['name']}'.toLowerCase() == name.toLowerCase()).firstOrNull;
+      if (found == null) return null;
+      on = found;
+      a = ref.substring(bang + 1);
+    }
+    final area = parseArea(a);
+    return area == null ? null : (on, area);
+  }
+
+  /// The sheet and area of a defined name, the name of [sheet] first.
+  (Node, CellArea)? _named(Node sheet, String name) {
+    final names = tree['book']?.attributes['names'];
+    if (names is! List<Object?>) return null;
+    Map<String, Object?>? best;
+    for (final n in names) {
+      if (n is! Map<String, Object?> || '${n['name']}'.toLowerCase() != name.toLowerCase()) continue;
+      if (n['sheet'] == sheet.id || n['sheet'] == null && best == null) best = n;
+    }
+    final ref = best?['ref'];
+    return ref is String ? _area(sheet, ref) : null;
+  }
+
+  /// The colors of the theme by the names DrawingML gives them.
+  ColorContext get colors => ColorContext(scheme: {for (var i = 0; i < themeNames.length && i < themeColors.length; i++) themeNames[i]: themeColors[i]});
 
   /// A color as the Go package writes those of cells: RGB, a color of the
   /// theme lightened or darkened by a tint, automatic.

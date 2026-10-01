@@ -4,11 +4,13 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../chart/chart.dart';
 import '../chrome/ribbon.dart';
 import '../chrome/strings.dart';
 import '../ot/grid.dart';
 import '../ot/tree.dart';
 import '../session.dart';
+import 'charts.dart';
 import 'edits.dart';
 import 'filter.dart';
 import 'filter_panel.dart';
@@ -896,6 +898,19 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
 
   // building
 
+  /// A chart sheet: its chart over the whole view, or what tells it is
+  /// not shown.
+  Widget _chartSheet(Node sheet) {
+    final spec = ChartSpec.fromJson(sheet.attributes['chart']);
+    if (spec == null) return Center(child: Text(_s.chartSheet));
+    return LayoutBuilder(
+      builder: (context, box) => CustomPaint(
+        size: box.biggest,
+        painter: _ChartSheetPainter(spec, _wb, sheet, widget.fonts),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_session.loaded) {
@@ -917,7 +932,7 @@ class _SpreadsheetEditorState extends State<SpreadsheetEditor> {
           child: sheet == null
               ? const SizedBox.expand()
               : sheet.grid == null
-              ? Center(child: Text(_s.chartSheet))
+              ? _chartSheet(sheet)
               : Focus(
                   focusNode: _gridFocus,
                   autofocus: true,
@@ -1596,4 +1611,22 @@ class _Failure extends StatelessWidget {
       FilledButton(onPressed: onRetry, child: Text(retry)),
     ],
   );
+}
+
+class _ChartSheetPainter extends CustomPainter {
+  _ChartSheetPainter(this.spec, this.book, this.sheet, this.fonts);
+
+  final ChartSpec spec;
+  final Workbook book;
+  final Node sheet;
+  final String? fonts;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = const Color(0xFFF3F3F3));
+    paintSheetChart(canvas, (Offset.zero & size).deflate(16), spec, book, sheet, fonts: fonts);
+  }
+
+  @override
+  bool shouldRepaint(_ChartSheetPainter old) => old.spec != spec || old.book != book || old.sheet != sheet;
 }

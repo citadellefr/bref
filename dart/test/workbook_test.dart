@@ -1,3 +1,5 @@
+import 'package:bref/src/chart/chart.dart';
+import 'package:bref/src/excel/charts.dart';
 import 'package:bref/src/excel/conditional.dart';
 import 'package:bref/src/excel/input.dart';
 import 'package:bref/src/excel/number_format.dart';
@@ -135,5 +137,39 @@ void main() {
     expect(parseArea(r'$B:C'), const CellArea(1, 2, maxRows, 3));
     expect(parseArea('2:4'), const CellArea(2, 1, 4, maxCols));
     expect(parseArea('A:4'), isNull);
+  });
+
+  test('charts read their series from the cells, hidden rows left out', () {
+    final w = Workbook(book([
+      const Cell(3, 0, {'hide': true}),
+      const Cell(1, 1, {'v': 'Mois'}),
+      const Cell(2, 1, {'v': 'Janvier'}),
+      const Cell(3, 1, {'v': 'Février'}),
+      const Cell(4, 1, {'v': 'Mars'}),
+      const Cell(2, 2, {'v': 1234.5, 's': 'x1'}),
+      const Cell(3, 2, {'v': 7}),
+      const Cell(4, 2, {'e': '#N/A'}),
+    ], attributes: {
+      'charts': [
+        {
+          'from': {'col': 3, 'row': 1, 'dx': 9525 * 10},
+          'to': {'col': 5, 'row': 10},
+          'chart': {'plots': <Object?>[]},
+        },
+      ],
+    }));
+    final sheet = w.sheets.first;
+    final values = liveData(w, sheet, DataSpec(ref: r'Feuil1!$B$2:$B$4', numbers: const [0, 0, 0], count: 3), NumberLocale.fr)!;
+    expect(values.numbers, [1234.5, null]);
+    expect(values.format, '#,##0.00 "€"');
+    final names = liveData(w, sheet, DataSpec(ref: r"('Feuil1'!$A$2:$A$4)", texts: const ['', '', ''], count: 3), NumberLocale.fr)!;
+    expect(names.texts, ['Janvier', 'Mars']);
+    expect(liveData(w, sheet, DataSpec(ref: r'Autre!$A$1'), NumberLocale.fr), isNull);
+    expect(liveData(w, sheet, DataSpec(ref: r'Feuil1!$A$1:$B$2'), NumberLocale.fr), isNull);
+
+    final charts = SheetChart.of(sheet);
+    expect(charts, hasLength(1));
+    final l = w.layout(sheet);
+    expect(charts.first.rect(l), Rect.fromPoints(Offset(l.x(4) + 10, l.y(2)), Offset(l.x(6), l.y(11))));
   });
 }

@@ -147,7 +147,7 @@ class BrefStrings {
   String get rowHeight => 'Hauteur de ligne';
   String get hide => 'Masquer';
   String get unhide => 'Afficher';
-  String get chartSheet => 'Cette feuille contient un graphique, qui ne s’affiche pas encore ici.';
+  String get chartSheet => 'Le graphique de cette feuille ne peut pas s’afficher ici.';
   String get calculating => 'Calcul…';
   String get dataValidation => 'Validation des données';
   String get notInList => 'Cette valeur ne correspond pas aux restrictions de validation des données définies pour cette cellule.';

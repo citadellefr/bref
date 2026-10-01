@@ -42,6 +42,9 @@ type Chart struct {
 	Rounded bool `json:"rounded,omitempty"`
 	// Blanks is how missing values show: "gap", "zero" or "span".
 	Blanks string `json:"blanks,omitempty"`
+	// Pivot tells a chart of a pivot table, whose values are those of the
+	// table: not all the cells its series point to.
+	Pivot bool `json:"pivot,omitempty"`
 }
 
 // Plot is a group of series drawn the same way on the same axes.
@@ -240,6 +243,7 @@ func ReadElement(space *xmldom.Element) (*Chart, error) {
 		Style:   intVal(child(space, "style")),
 		Rounded: boolVal(child(space, "roundedCorners")),
 		Blanks:  val(child(c, "dispBlanksAs")),
+		Pivot:   child(space, "pivotSource") != nil,
 	}
 	if e := mcStyle(space); e != nil && out.Style == 0 {
 		out.Style = intVal(e)

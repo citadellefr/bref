@@ -50,7 +50,7 @@ class ListRule {
     if (s.length >= 2 && s.startsWith('"') && s.endsWith('"')) {
       return s.substring(1, s.length - 1).replaceAll('""', '"').split(',');
     }
-    final found = _resolve(book, sheet, s) ?? _named(book, sheet, s);
+    final found = book.resolve(sheet, s);
     if (found == null) return null;
     final (on, area) = found;
     final out = <String>[];
@@ -60,38 +60,6 @@ class ListRule {
       if (text.isNotEmpty) out.add(text);
     }
     return out;
-  }
-
-  /// The sheet and area of a reference, the sheet named or [sheet].
-  static (Node, CellArea)? _resolve(Workbook book, Node sheet, String ref) {
-    var on = sheet;
-    var a = ref;
-    final bang = ref.lastIndexOf('!');
-    if (bang > 0) {
-      var name = ref.substring(0, bang);
-      if (name.length >= 2 && name.startsWith("'") && name.endsWith("'")) {
-        name = name.substring(1, name.length - 1).replaceAll("''", "'");
-      }
-      final found = book.sheets.where((n) => '${n.attributes['name']}'.toLowerCase() == name.toLowerCase()).firstOrNull;
-      if (found == null) return null;
-      on = found;
-      a = ref.substring(bang + 1);
-    }
-    final area = parseArea(a);
-    return area == null ? null : (on, area);
-  }
-
-  /// The sheet and area of a defined name, the name of [sheet] first.
-  static (Node, CellArea)? _named(Workbook book, Node sheet, String name) {
-    final names = book.tree['book']?.attributes['names'];
-    if (names is! List<Object?>) return null;
-    Map<String, Object?>? best;
-    for (final n in names) {
-      if (n is! Map<String, Object?> || '${n['name']}'.toLowerCase() != name.toLowerCase()) continue;
-      if (n['sheet'] == sheet.id || n['sheet'] == null && best == null) best = n;
-    }
-    final ref = best?['ref'];
-    return ref is String ? _resolve(book, sheet, ref) : null;
   }
 
   /// Whether the list takes what was typed: one of its values, whatever

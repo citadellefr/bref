@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import '../ot/grid.dart';
 import '../ot/tree.dart';
+import 'charts.dart';
 import 'conditional.dart';
 import 'filter.dart';
 import 'number_format.dart';
@@ -212,6 +213,14 @@ class SheetViewState extends State<SheetView> {
     final l = _layout;
     final y = l.y(row);
     return _colHeader + (row <= l.frozenRows ? y : y - _scroll.dy) * _z;
+  }
+
+  /// Where a rectangle of the sheet, in pixels at 100 %, lies on screen:
+  /// past the frozen panes it scrolls.
+  Rect screenRect(Rect r) {
+    final f = _frozen;
+    final dx = r.left < f.dx ? 0.0 : _scroll.dx, dy = r.top < f.dy ? 0.0 : _scroll.dy;
+    return Rect.fromLTWH(_rowHeader + (r.left - dx) * _z, _colHeader + (r.top - dy) * _z, r.width * _z, r.height * _z);
   }
 
   /// The cell under a point of the view.
@@ -708,6 +717,9 @@ class _SheetPainter extends CustomPainter {
       canvas.clipRect(rect);
       _cells(canvas, area);
       _selection(canvas);
+      for (final c in SheetChart.of(sheet)) {
+        paintSheetChart(canvas, view.screenRect(c.rect(l)), c.spec, book, sheet, zoom: z, fonts: fonts);
+      }
       canvas.restore();
     }
     _headers(canvas, size, panes);
