@@ -1,4 +1,5 @@
 import 'package:bref/bref.dart';
+import 'package:bref/src/handles.dart';
 import 'package:bref/src/render.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -237,6 +238,23 @@ void main() {
     await tester.pump();
     await settle(tester);
     expect(hub.text, 'abc\rx\ny');
+    await finish(tester);
+  });
+
+  testWidgets('a long press selects a word, whose ends move with handles', (tester) async {
+    await pumpEditor(tester, 'Le chat noir dort');
+    final render = note(tester);
+    Offset at(int offset) => render.localToGlobal(render.caretRect(offset).center);
+    await tester.longPressAt(at(5));
+    await tester.pumpAndSettle();
+    expect((marks(tester).base, marks(tester).extent), (3, 7));
+    final handles = find.descendant(of: find.byType(SelectionHandles), matching: find.byType(Positioned));
+    expect(handles, findsNWidgets(2));
+    await tester.drag(handles.last, at(15) - at(7));
+    await tester.pump();
+    expect((marks(tester).start, marks(tester).end), (3, 15));
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    expect(find.byType(SelectionHandles), findsNothing);
     await finish(tester);
   });
 }

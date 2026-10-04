@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:trame/trame.dart';
 
 import 'editing.dart';
+import 'handles.dart';
 import 'layout.dart';
 import 'note_syntax.dart';
 import 'note_text.dart';
@@ -93,6 +94,9 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
   Offset? _dragAt;
   Timer? _autoScroll;
 
+  /// Whether the selection was last made by touch: its handles show then.
+  final _touch = ValueNotifier(false);
+
   DocSession get _session => widget.session;
 
   FocusNode get _focus => widget.focusNode ?? (_ownFocus ??= FocusNode());
@@ -165,6 +169,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
     _autoScroll?.cancel();
     _layout?.dispose();
     _marks.dispose();
+    _touch.dispose();
     _scroll.dispose();
     super.dispose();
   }
@@ -467,6 +472,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
       default:
         return KeyEventResult.ignored;
     }
+    _touch.value = false;
     return KeyEventResult.handled;
   }
 
@@ -643,6 +649,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
   void _pointerDown(PointerDownEvent e) {
     _menu.remove();
     _focus.requestFocus();
+    _touch.value = e.kind != PointerDeviceKind.mouse;
     final render = _render;
     if (render == null) return;
     final at = render.offsetAt(e.localPosition);
@@ -748,13 +755,23 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
     _showMenu(d.globalPosition);
   }
 
+  /// Shows the menu of the selection: over it, or under it and its handles
+  /// when there is no room above. [global] is where a mouse asked for it.
   void _showMenu(Offset global) {
     final s = _marks;
     final selected = s.base != s.extent;
+    var anchors = TextSelectionToolbarAnchors(primaryAnchor: global);
+    final render = _render;
+    if (_touch.value && render != null) {
+      final top = render.localToGlobal(render.caretRect(s.start).topLeft);
+      final bottom = render.localToGlobal(render.caretRect(s.end).bottomLeft);
+      final x = (top.dx + bottom.dx) / 2;
+      anchors = TextSelectionToolbarAnchors(primaryAnchor: Offset(x, top.dy), secondaryAnchor: Offset(x, bottom.dy + 32));
+    }
     _menu.show(
       context: context,
       contextMenuBuilder: (context) => AdaptiveTextSelectionToolbar.buttonItems(
-        anchors: TextSelectionToolbarAnchors(primaryAnchor: global),
+        anchors: anchors,
         buttonItems: [
           if (selected && _editable)
             ContextMenuButtonItem(type: ContextMenuButtonType.cut, onPressed: () => _menuDone(_copy(cut: true))),
@@ -784,7 +801,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
           left: math.max(widget.padding.left, side),
           right: math.max(widget.padding.right, side),
         );
-        return Focus(
+        final editor = Focus(
           focusNode: _focus,
           autofocus: widget.autofocus,
           onKeyEvent: _onKey,
@@ -811,6 +828,23 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
               ),
             ),
           ),
+        );
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            editor,
+            ValueListenableBuilder(
+              valueListenable: _touch,
+              builder: (context, touch, _) => touch
+                  ? SelectionHandles(
+                      marks: _marks,
+                      scroll: _scroll,
+                      note: () => _render,
+                      onMoved: (base, extent) => _select(base, extent: extent),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
         );
       },
     );

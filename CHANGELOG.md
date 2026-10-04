@@ -8,7 +8,8 @@
   (headings, emphasis, code, links, lists, tasks, quotes, tables, math, fenced
   blocks and front matter), with the carets of others, the keys of text
   editors, lists and quotes going on with Enter, and only the lines in view
-  laid out.
+  laid out. On touch screens, a long press selects a word whose ends move
+  with the platform's handles, under a menu kept clear of them.
 
 Versions 0.1.0 to 0.6.0 of `github.com/citadellefr/bref` were those of
 L'Office, now `github.com/citadellefr/loffice`.
