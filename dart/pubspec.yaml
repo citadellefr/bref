@@ -1,0 +1,26 @@
+name: bref
+description: Collaborative Markdown notes in Flutter, edited together in real time against the Go server of Bref.
+version: 0.1.0
+publish_to: none
+repository: https://github.com/citadellefr/bref
+issue_tracker: https://github.com/citadellefr/bref/issues
+topics: [markdown, editor, collaboration, notes]
+
+environment:
+  sdk: ^3.12.0
+  flutter: ">=3.44.0"
+
+dependencies:
+  characters: ^1.4.0
+  flutter:
+    sdk: flutter
+  trame:
+    git:
+      url: https://github.com/citadellefr/trame.git
+      path: dart
+      ref: v0.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0

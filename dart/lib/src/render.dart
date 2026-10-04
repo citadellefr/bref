@@ -1,0 +1,285 @@
+import 'dart:math' as math;
+
+import 'package:flutter/rendering.dart';
+import 'package:flutter/widgets.dart';
+
+import 'layout.dart';
+
+/// Someone else's selection, as the note shows it.
+typedef PeerMark = ({int sid, String name, int base, int extent});
+
+/// What is drawn over the text: the selection, the caret and those of the
+/// others. Changing it repaints the note without laying it out again.
+class NoteMarks extends ChangeNotifier {
+  int base = 0;
+  int extent = 0;
+  bool caret = false;
+  TextRange composing = TextRange.empty;
+  List<PeerMark> peers = const [];
+
+  int get start => math.min(base, extent);
+
+  int get end => math.max(base, extent);
+
+  void changed() => notifyListeners();
+}
+
+/// The note scrolled by [offset]: the lines in view laid out and drawn,
+/// with what [marks] holds over them.
+class NoteViewport extends LeafRenderObjectWidget {
+  const NoteViewport({super.key, required this.offset, required this.layout, required this.marks, required this.padding});
+
+  final ViewportOffset offset;
+  final NoteLayout layout;
+  final NoteMarks marks;
+  final EdgeInsets padding;
+
+  @override
+  RenderNote createRenderObject(BuildContext context) =>
+      RenderNote(offset: offset, noteLayout: layout, marks: marks, padding: padding);
+
+  @override
+  void updateRenderObject(BuildContext context, RenderNote renderObject) {
+    renderObject
+      ..offset = offset
+      ..noteLayout = layout
+      ..marks = marks
+      ..padding = padding;
+  }
+}
+
+class RenderNote extends RenderBox {
+  RenderNote({
+    required this._offset,
+    required NoteLayout noteLayout,
+    required this._marks,
+    required this._padding,
+  }) : _layout = noteLayout;
+
+  /// How far beyond the view lines are laid out, so that scrolling a little
+  /// shows lines already measured.
+  static const _cache = 400.0;
+
+  ViewportOffset _offset;
+  NoteLayout _layout;
+  NoteMarks _marks;
+  EdgeInsets _padding;
+
+  /// The anchor line's top at the last layout: where it moved since is how
+  /// far the view must follow.
+  double? _anchorTop;
+  var _first = 0, _last = -1;
+  final _labels = <String, TextPainter>{};
+
+  set offset(ViewportOffset value) {
+    if (value == _offset) return;
+    if (attached) _offset.removeListener(markNeedsLayout);
+    _offset = value;
+    if (attached) _offset.addListener(markNeedsLayout);
+    markNeedsLayout();
+  }
+
+  set noteLayout(NoteLayout value) {
+    if (value == _layout) return;
+    if (attached) _layout.removeListener(markNeedsLayout);
+    _layout = value;
+    _anchorTop = null;
+    if (attached) _layout.addListener(markNeedsLayout);
+    markNeedsLayout();
+  }
+
+  set marks(NoteMarks value) {
+    if (value == _marks) return;
+    if (attached) _marks.removeListener(markNeedsPaint);
+    _marks = value;
+    if (attached) _marks.addListener(markNeedsPaint);
+    markNeedsPaint();
+  }
+
+  set padding(EdgeInsets value) {
+    if (value == _padding) return;
+    _padding = value;
+    markNeedsLayout();
+  }
+
+  EdgeInsets get padding => _padding;
+
+  /// The scroll offset of the top of the view, in the coordinates of the
+  /// column of lines.
+  double get _viewTop => _offset.pixels - _padding.top;
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _offset.addListener(markNeedsLayout);
+    _layout.addListener(markNeedsLayout);
+    _marks.addListener(markNeedsPaint);
+  }
+
+  @override
+  void detach() {
+    _offset.removeListener(markNeedsLayout);
+    _layout.removeListener(markNeedsLayout);
+    _marks.removeListener(markNeedsPaint);
+    super.detach();
+  }
+
+  @override
+  void dispose() {
+    for (final label in _labels.values) {
+      label.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  bool get sizedByParent => true;
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => constraints.biggest;
+
+  @override
+  bool hitTestSelf(Offset position) => true;
+
+  @override
+  void performLayout() {
+    _layout.width = math.max(0, size.width - _padding.horizontal);
+    _offset.applyViewportDimension(size.height);
+    for (var round = 0; round < 8; round++) {
+      _fill();
+      final extent = _layout.height + _padding.vertical;
+      if (_offset.applyContentDimensions(0, math.max(0, extent - size.height))) break;
+    }
+  }
+
+  /// Lays out the lines in view, keeping the anchor line where it was on
+  /// screen when lines above it changed height.
+  void _fill() {
+    final known = _anchorTop;
+    if (known != null) {
+      final moved = _layout.top(_layout.anchor) - known;
+      if (moved != 0) _offset.correctBy(moved);
+    }
+    final top = _viewTop;
+    final anchor = _layout.lineAtY(top);
+    final anchorTop = _layout.top(anchor);
+    final count = _layout.text.lineCount;
+    var last = anchor;
+    while (last < count) {
+      _layout.painter(last);
+      if (_layout.top(last + 1) > top + size.height + _cache) break;
+      last++;
+    }
+    var first = anchor;
+    while (first > 0 && _layout.top(first) > top - _cache) {
+      _layout.painter(--first);
+    }
+    final moved = _layout.top(anchor) - anchorTop;
+    if (moved != 0) _offset.correctBy(moved);
+    _layout.anchor = anchor;
+    _anchorTop = _layout.top(anchor);
+    _first = first;
+    _last = math.min(last, count - 1);
+    _layout.forget(_first, _last);
+  }
+
+  /// The offset of the text nearest to [local], a point of this box.
+  int offsetAt(Offset local) => _layout.offsetAt(local - Offset(_padding.left, -_viewTop));
+
+  /// The caret before [offset], in the coordinates of this box.
+  Rect caretRect(int offset) => _layout.caretRect(offset).shift(Offset(_padding.left, -_viewTop));
+
+  /// The caret before [offset], in the coordinates of the scrolled content.
+  Rect contentCaretRect(int offset) => _layout.caretRect(offset).shift(Offset(_padding.left, _padding.top));
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final canvas = context.canvas;
+    final text = _layout.text;
+    final theme = _layout.theme;
+    final top = _viewTop;
+    final bottom = top + size.height;
+    canvas
+      ..save()
+      ..clipRect(offset & size)
+      ..translate(offset.dx + _padding.left, offset.dy - top);
+    final width = _layout.width;
+    final block = Paint()..color = theme.codeBackground;
+    final selection = Paint()..color = theme.selection;
+    final s = _marks;
+    for (var i = _first; i <= _last; i++) {
+      final y = _layout.top(i);
+      final h = _layout.lineHeight(i);
+      if (y > bottom) break;
+      if (y + h < top) continue;
+      final painter = _layout.painter(i);
+      final start = text.lineStart(i), end = text.lineEnd(i);
+      if (_layout.syntax.inBlock(i)) canvas.drawRect(Rect.fromLTWH(-8, y, width + 16, h), block);
+      for (final peer in s.peers) {
+        final from = math.min(peer.base, peer.extent), to = math.max(peer.base, peer.extent);
+        _range(canvas, painter, y, start, end, from, to, Paint()..color = theme.peer(peer.sid).withValues(alpha: 0.2));
+      }
+      _range(canvas, painter, y, start, end, s.start, s.end, selection);
+      painter.paint(canvas, Offset(0, y));
+      if (s.composing.isValid && !s.composing.isCollapsed) {
+        _underline(canvas, painter, y, start, end, s.composing, theme.text.color ?? const Color(0xFF000000));
+      }
+    }
+    for (final peer in s.peers) {
+      if (peer.extent < text.lineStart(_first) || peer.extent > text.lineEnd(_last)) continue;
+      _peerCaret(canvas, _layout.caretRect(peer.extent), theme.peer(peer.sid), peer.name);
+    }
+    if (s.caret && s.base == s.extent) {
+      canvas.drawRect(_layout.caretRect(s.extent), Paint()..color = theme.caret);
+    }
+    canvas.restore();
+  }
+
+  /// Fills what [from] to [to] covers of a line; a selection going on past
+  /// the line's end covers a space's width after it, standing for its "\n".
+  void _range(Canvas canvas, TextPainter painter, double y, int start, int end, int from, int to, Paint paint) {
+    if (from >= to || to < start || from > end) return;
+    final a = math.max(from, start) - start, b = math.min(to, end) - start;
+    for (final box in painter.getBoxesForSelection(TextSelection(baseOffset: a, extentOffset: b))) {
+      canvas.drawRect(box.toRect().shift(Offset(0, y)), paint);
+    }
+    if (to > end) {
+      final caret = painter.getOffsetForCaret(TextPosition(offset: end - start), Rect.zero);
+      final h = painter.getFullHeightForCaret(TextPosition(offset: end - start), Rect.zero);
+      canvas.drawRect(Rect.fromLTWH(caret.dx, y + caret.dy, h / 3, h), paint);
+    }
+  }
+
+  void _underline(Canvas canvas, TextPainter painter, double y, int start, int end, TextRange range, Color color) {
+    if (range.end < start || range.start > end) return;
+    final a = math.max(range.start, start) - start, b = math.min(range.end, end) - start;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1;
+    for (final box in painter.getBoxesForSelection(TextSelection(baseOffset: a, extentOffset: b))) {
+      final r = box.toRect().shift(Offset(0, y));
+      canvas.drawLine(r.bottomLeft.translate(0, -1), r.bottomRight.translate(0, -1), paint);
+    }
+  }
+
+  /// Someone's caret, with their name on a tag above it.
+  void _peerCaret(Canvas canvas, Rect caret, Color color, String name) {
+    canvas.drawRect(caret, Paint()..color = color);
+    if (name.isEmpty) return;
+    final label = _labels[name] ??= TextPainter(
+      text: TextSpan(
+        text: name,
+        style: TextStyle(color: const Color(0xFFFFFFFF), fontSize: 11, fontWeight: FontWeight.w600, height: 1.2),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+      ellipsis: '…',
+    )..layout(maxWidth: 160);
+    final tag = Rect.fromLTWH(caret.left, caret.top - label.height - 4, label.width + 8, label.height + 4);
+    canvas.drawRRect(
+      RRect.fromRectAndCorners(tag, topLeft: const Radius.circular(3), topRight: const Radius.circular(3), bottomRight: const Radius.circular(3)),
+      Paint()..color = color,
+    );
+    label.paint(canvas, tag.topLeft + const Offset(4, 2));
+  }
+}
