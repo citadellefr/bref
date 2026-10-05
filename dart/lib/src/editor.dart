@@ -9,6 +9,7 @@ import 'package:trame/trame.dart';
 
 import 'editing.dart';
 import 'handles.dart';
+import 'host.dart';
 import 'layout.dart';
 import 'note_syntax.dart';
 import 'note_text.dart';
@@ -27,6 +28,7 @@ class BrefEditor extends StatefulWidget {
   const BrefEditor({
     super.key,
     required this.session,
+    this.host,
     this.theme,
     this.padding = const EdgeInsets.fromLTRB(24, 24, 24, 120),
     this.width = 760,
@@ -36,6 +38,9 @@ class BrefEditor extends StatefulWidget {
   });
 
   final DocSession session;
+
+  /// What links stand for and how they open; without it, they do not.
+  final BrefHost? host;
 
   /// How the note looks; derived from the app's theme when null.
   final BrefTheme? theme;
@@ -102,6 +107,8 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
 
   /// Whether the selection was last made by touch: its handles show then.
   final _touch = ValueNotifier(false);
+
+  var _cursor = SystemMouseCursors.text;
 
   DocSession get _session => widget.session;
 
@@ -392,6 +399,29 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
     final done = _text.substring(at + 1, at + 2) != ' ';
     _edit(at + 1, at + 2, done ? ' ' : 'x');
     return true;
+  }
+
+  /// The link at [local] a click opens: on a line read as it renders, or
+  /// anywhere with the command key.
+  Uri? _linkAt(Offset local) {
+    final host = widget.host;
+    final link = _render?.linkAt(local);
+    if (host == null || link == null || link.image) return null;
+    final command = _apple ? HardwareKeyboard.instance.isMetaPressed : HardwareKeyboard.instance.isControlPressed;
+    if (!command && !(_layout?.previewed(_text.lineAt(link.start)) ?? false)) return null;
+    return linkUri(host, link.dest, wiki: link.wiki);
+  }
+
+  bool _openLink(Offset local) {
+    final uri = _linkAt(local);
+    if (uri == null) return false;
+    widget.host!.open(uri);
+    return true;
+  }
+
+  void _hover(PointerHoverEvent e) {
+    final cursor = _linkAt(e.localPosition) == null ? SystemMouseCursors.text : SystemMouseCursors.click;
+    if (cursor != _cursor) setState(() => _cursor = cursor);
   }
 
   void _moveTo(int to, {required bool extend, bool keepGoal = false}) {
@@ -695,7 +725,11 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
 
   void _pointerDown(PointerDownEvent e) {
     _menu.remove();
-    if (e.kind == PointerDeviceKind.mouse && e.buttons == kPrimaryMouseButton && _toggleTask(e.localPosition)) return;
+    if (e.kind == PointerDeviceKind.mouse &&
+        e.buttons == kPrimaryMouseButton &&
+        (_toggleTask(e.localPosition) || _openLink(e.localPosition))) {
+      return;
+    }
     _focus.requestFocus();
     _touch.value = e.kind != PointerDeviceKind.mouse;
     final render = _render;
@@ -780,7 +814,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
   void _tapUp(TapUpDetails d) {
     if (d.kind == PointerDeviceKind.mouse) return;
     final render = _render;
-    if (render == null || _toggleTask(d.localPosition)) return;
+    if (render == null || _toggleTask(d.localPosition) || _openLink(d.localPosition)) return;
     _select(render.offsetAt(d.localPosition));
     _openInput();
     _input?.show();
@@ -854,7 +888,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
           autofocus: widget.autofocus,
           onKeyEvent: _onKey,
           child: MouseRegion(
-            cursor: SystemMouseCursors.text,
+            cursor: _cursor,
             child: Scrollbar(
               controller: _scroll,
               child: Scrollable(
@@ -862,6 +896,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
                 axisDirection: AxisDirection.down,
                 viewportBuilder: (context, offset) => Listener(
                   onPointerDown: _pointerDown,
+                  onPointerHover: _hover,
                   onPointerMove: _pointerMove,
                   onPointerUp: _pointerUp,
                   onPointerCancel: _pointerUp,

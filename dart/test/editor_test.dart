@@ -82,13 +82,13 @@ void main() {
     await tester.pump();
   }
 
-  Future<void> pumpEditor(WidgetTester tester, String text) async {
+  Future<void> pumpEditor(WidgetTester tester, String text, {BrefHost? host}) async {
     hub = FakeHub(text);
     mine = DocSession(hub.connect)..start();
     theirs = DocSession(hub.connect)..start();
     addTearDown(mine.dispose);
     addTearDown(theirs.dispose);
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: BrefEditor(session: mine, autofocus: true))));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: BrefEditor(session: mine, host: host, autofocus: true))));
     await settle(tester);
     await tester.pump();
   }
@@ -306,6 +306,38 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('a click opens the links of lines read as they render, to where the host goes', (tester) async {
+    const line = '[site](https://a.b) [x](javascript:alert(1)) [[Note#Part]] [@A](user:1) [@B](group:2)';
+    final host = _Host();
+    await pumpEditor(tester, 'first\n$line', host: host);
+    final render = note(tester);
+    Future<void> click(String text, {bool control = false}) async {
+      final at = render.caretRect(6 + line.indexOf(text));
+      if (control) await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.tapAt(render.localToGlobal(at.centerLeft + const Offset(3, 0)), kind: PointerDeviceKind.mouse);
+      if (control) await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pump(kDoubleTapTimeout);
+    }
+
+    for (final text in ['site', 'Note', '@A']) {
+      await click(text);
+    }
+    expect(host.opened, [Uri.parse('https://a.b'), Uri(path: 'Note', fragment: 'Part'), Uri.parse('user:1')]);
+    expect(marks(tester).extent, 0);
+
+    // a link to nowhere the host goes is text: the click places the caret,
+    // and the line shows as written
+    host.opened.clear();
+    await click('@B');
+    expect(marks(tester).extent, greaterThan(6));
+    await click('x]');
+    await click('site');
+    expect(host.opened, isEmpty);
+    await click('site', control: true);
+    expect(host.opened, [Uri.parse('https://a.b')]);
+    await finish(tester);
+  });
+
   testWidgets('shows the whole note as written when asked to', (tester) async {
     hub = FakeHub('**gras** fin\n**gras** fin');
     mine = DocSession(hub.connect)..start();
@@ -315,4 +347,14 @@ void main() {
     expect(note(tester).caretRect(12).left, note(tester).caretRect(25).left);
     await finish(tester);
   });
+}
+
+class _Host extends BrefHost {
+  final opened = <Uri>[];
+
+  @override
+  Set<String> get schemes => const {'user'};
+
+  @override
+  void open(Uri uri) => opened.add(uri);
 }

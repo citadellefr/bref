@@ -4,6 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 import 'layout.dart';
+import 'note_syntax.dart';
 import 'syntax.dart';
 import 'theme.dart';
 
@@ -191,6 +192,9 @@ class RenderNote extends RenderBox {
   /// The offset of the box of a task at [local], a point of this box, or
   /// null.
   int? taskAt(Offset local) => _layout.taskAt(local - Offset(_padding.left, -_viewTop));
+
+  /// The link or picture at [local], a point of this box, or null.
+  NoteLink? linkAt(Offset local) => _layout.linkAt(local - Offset(_padding.left, -_viewTop));
 
   /// The caret before [offset], in the coordinates of this box.
   Rect caretRect(int offset) => _layout.caretRect(offset).shift(Offset(_padding.left, -_viewTop));

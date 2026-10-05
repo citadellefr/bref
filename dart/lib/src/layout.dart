@@ -185,7 +185,8 @@ class NoteLayout extends ChangeNotifier {
     if (_preview) notifyListeners();
   }
 
-  bool _shownInPreview(int i) => _preview && (i < _first || i > _last);
+  /// Whether line [i] reads as it renders.
+  bool previewed(int i) => _preview && (i < _first || i > _last);
 
   /// The visual row of the text around [offset]: from where it starts to
   /// where it ends.
@@ -267,7 +268,7 @@ class NoteLayout extends ChangeNotifier {
 
   /// Line [i] laid out, its height known from then on.
   LineView view(int i) {
-    final preview = _shownInPreview(i);
+    final preview = previewed(i);
     final cached = _views[i];
     if (cached != null && cached.preview == preview) return cached;
     cached?.dispose();
@@ -446,6 +447,24 @@ class NoteLayout extends ChangeNotifier {
       if ((o.kind == SwapKind.box || o.kind == SwapKind.doneBox) && o.rect.inflate(4).contains(Offset(p.dx, p.dy - top(i)))) {
         return text.lineStart(i) + o.column;
       }
+    }
+    return null;
+  }
+
+  /// The link or picture under [p], in the coordinates of the column, or
+  /// null.
+  NoteLink? linkAt(Offset p) {
+    final i = lineAtY(p.dy);
+    final v = view(i);
+    final local = Offset(p.dx, p.dy - top(i));
+    final start = text.lineStart(i), end = text.lineEnd(i);
+    final at = start + v.column(v.painter.getPositionForOffset(local).offset);
+    for (final o in [at, at - 1]) {
+      if (o < start || o >= end) continue;
+      final link = syntax.linkAt(o);
+      if (link == null) continue;
+      final a = math.max(link.start, start) - start, b = math.min(link.end, end) - start;
+      if (boxes(i, a, b).any((r) => r.contains(local))) return link;
     }
     return null;
   }

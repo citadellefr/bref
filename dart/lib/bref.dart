@@ -2,4 +2,5 @@
 library;
 
 export 'src/editor.dart' show BrefEditor, noteBody;
+export 'src/host.dart' show BrefHost, LinkLabel, Mention, MentionSource;
 export 'src/theme.dart' show BrefTheme;

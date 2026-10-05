@@ -4,6 +4,9 @@ import 'md/node.dart';
 import 'note_text.dart';
 import 'syntax.dart';
 
+/// A link or a picture, in the offsets of the text.
+typedef NoteLink = ({int start, int end, String dest, bool wiki, bool image});
+
 /// A block of the document itself, with the lines it spans. Its offsets are
 /// those of the text when it was read, [base] being where its first line
 /// started then: lines inserted above move it without reading it again.
@@ -199,6 +202,25 @@ class NoteSyntax {
       t.inlines = true;
     }
     return readLine(t.node, line, text.lineStart(i) - text.lineStart(t.line) + t.base);
+  }
+
+  /// The innermost link or picture holding the character at [offset].
+  NoteLink? linkAt(int offset) {
+    final i = text.lineAt(offset);
+    final t = _blockAt(i);
+    if (t == null) return null;
+    line(i);
+    final shift = text.lineStart(t.line) - t.base;
+    final at = offset - shift;
+    MdNode? found;
+    t.node.walk((n) {
+      if (n.start > at || n.end <= at) return false;
+      if (n.kind == MdKind.link || n.kind == MdKind.image) found = n;
+      return true;
+    });
+    final n = found;
+    if (n == null) return null;
+    return (start: n.start + shift, end: n.end + shift, dest: n.dest, wiki: n.form == LinkForm.wiki, image: n.kind == MdKind.image);
   }
 
   /// The lines to show as they are written when [first] to [last] are: the
