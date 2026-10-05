@@ -1,9 +1,14 @@
+import 'package:bref/src/note_syntax.dart';
+import 'package:bref/src/note_text.dart';
 import 'package:bref/src/syntax.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// The pieces of a line marked [mark], as text.
-List<String> _pieces(String line, int mark, {BlockState state = BlockState.text, int index = 1}) {
-  final s = readLine(line, index, state);
+LineSyntax _line(String note, [int i = 0]) => NoteSyntax(NoteText('$note\n')).line(i);
+
+/// The pieces of line [i] of [note] marked [mark], as text.
+List<String> _pieces(String note, int mark, [int i = 0]) {
+  final line = note.split('\n')[i];
+  final s = _line(note, i);
   final out = <String>[];
   var from = 0;
   for (var k = 0; k < s.ends.length; k++) {
@@ -19,22 +24,46 @@ List<String> _pieces(String line, int mark, {BlockState state = BlockState.text,
   return out;
 }
 
+/// What the preview shows of line [i] of [note]: its text without what it
+/// hides, other swaps in brackets.
+String _preview(String note, [int i = 0]) {
+  final line = note.split('\n')[i];
+  final out = StringBuffer();
+  var col = 0;
+  for (final s in _line(note, i).swaps) {
+    out.write(line.substring(col, s.start));
+    switch (s.kind) {
+      case SwapKind.hide:
+        break;
+      case SwapKind.text:
+        out.write(s.text);
+      default:
+        out.write('[${s.kind.name}${s.text.isEmpty ? '' : ' ${s.text}'}]');
+    }
+    col = s.end;
+  }
+  out.write(line.substring(col));
+  return out.toString();
+}
+
 void main() {
   test('headings, quotes, lists and rules', () {
-    expect(readLine('## Titre ##', 1, BlockState.text).heading, 2);
+    expect(_line('## Titre ##').heading, 2);
     expect(_pieces('## Titre ##', Mark.markup), ['## ', ' ##']);
-    expect(readLine('#hashtag', 1, BlockState.text).heading, 0);
+    expect(_line('#hashtag').heading, 0);
     expect(_pieces('> > cité', Mark.markup), ['> > ']);
     expect(_pieces('> > cité', Mark.quote), ['> > cité']);
-    expect(_pieces('  - [x] fait', Mark.listMarker), ['  - ']);
+    expect(_pieces('  - [x] fait', Mark.listMarker), ['-']);
     expect(_pieces('  - [x] fait', Mark.task), ['[x]']);
-    expect(_pieces('12) douze', Mark.listMarker), ['12) ']);
+    expect(_pieces('12) douze', Mark.listMarker), ['12)']);
     expect(_pieces('* * *', Mark.rule), ['* * *']);
-    expect(_pieces('| a | b |', Mark.table), ['|', '|', '|']);
-    expect(_pieces('|---|:-:|', Mark.table), ['|---|:-:|']);
+    expect(_pieces('| a | b |\n|---|:-:|', Mark.table), ['|', '|', '|']);
+    expect(_pieces('| a | b |\n|---|:-:|', Mark.table, 1), ['|---|:-:|']);
+    expect(_line('Titre\n===').heading, 1);
+    expect(_line('Titre\n===', 1).heading, 1);
   });
 
-  test('emphasis pairs as CommonMark pairs it', () {
+  test('emphasis pairs as CommonMark pairs it, over several lines', () {
     expect(_pieces('a **gras** b', Mark.strong), ['gras']);
     expect(_pieces('a *it* b', Mark.emphasis), ['it']);
     expect(_pieces('***les deux***', Mark.strong), ['les deux']);
@@ -45,6 +74,7 @@ void main() {
     expect(_pieces('~~barré~~ et ==surligné==', Mark.strike), ['barré']);
     expect(_pieces('~~barré~~ et ==surligné==', Mark.highlight), ['surligné']);
     expect(_pieces(r'\*pas\* *oui*', Mark.emphasis), ['oui']);
+    expect(_pieces('un *début\net une fin*', Mark.emphasis, 1), ['et une fin']);
   });
 
   test('code spans hide everything inside them', () {
@@ -65,6 +95,8 @@ void main() {
     expect(_pieces('va sur https://citadelle.fr/a_b_c.', Mark.emphasis), isEmpty);
     expect(_pieces('<https://x.fr> et <b>gras</b>', Mark.url), ['https://x.fr']);
     expect(_pieces('<https://x.fr> et <b>gras</b>', Mark.html), ['<b>', '</b>']);
+    expect(_pieces('[a][r]\n\n[r]: /x', Mark.link), ['a']);
+    expect(_pieces('[a][r]', Mark.link), isEmpty);
   });
 
   test('math hugs its dollars, prices are left alone', () {
@@ -74,23 +106,31 @@ void main() {
   });
 
   test('blocks over several lines', () {
-    var state = nextState('```dart', 1, BlockState.text);
-    expect(state, const BlockState.code('```', 0));
-    expect(_pieces('**pas gras**', Mark.code, state: state), ['**pas gras**']);
-    expect(nextState('~~~', 2, state), state);
-    expect(nextState('````', 2, state), BlockState.text);
-    expect(nextState('``` rust', 2, state), state);
+    const code = '```dart\n**pas gras**\n```';
+    expect(_pieces(code, Mark.code, 1), ['**pas gras**']);
+    expect(_pieces(code, Mark.fence, 0), ['```dart']);
+    expect([for (var i = 0; i < 3; i++) _line(code, i).block], [true, true, true]);
+    expect(_line('a\n\nb', 1).block, isFalse);
+    expect(_pieces('---\ntitre: x\n---\ntexte', Mark.frontMatter, 1), ['titre: x']);
+    expect(_pieces('> ```\n> code', Mark.code, 1), ['code']);
+    expect(_line('```a`b').block, isFalse);
+  });
 
-    state = nextState(r'$$', 1, BlockState.text);
-    expect(state, BlockState.math);
-    expect(nextState(r'$$', 2, state), BlockState.text);
-
-    expect(nextState('---', 0, BlockState.text), BlockState.frontMatter);
-    expect(nextState('---', 3, BlockState.text), BlockState.text);
-    expect(nextState('titre: x', 1, BlockState.frontMatter), BlockState.frontMatter);
-    expect(nextState('---', 2, BlockState.frontMatter), BlockState.text);
-
-    expect(nextState('> ```', 1, BlockState.text), const BlockState.code('```', 0));
-    expect(nextState('```a`b', 1, BlockState.text), BlockState.text);
+  test('the preview hides the syntax, and shows bullets, boxes, bars and rules', () {
+    expect(_preview('## Titre ##'), 'Titre');
+    expect(_preview('Un **gras** et un [lien](https://x.fr).'), 'Un gras et un lien.');
+    expect(_preview(r'\*pas\* &amp; `code`'), '*pas* & code');
+    expect(_preview('- item'), '• item');
+    expect(_preview('3. item'), '3. item');
+    expect(_preview('- [ ] à faire\n- [x] fait'), '• [box] à faire');
+    expect(_preview('- [ ] à faire\n- [x] fait', 1), '• [doneBox] fait');
+    expect(_preview('> cité'), '[bar]cité');
+    expect(_preview('***'), '[rule]');
+    expect(_preview('```dart\nx\n```'), '[fold dart]');
+    expect(_preview('```dart\nx\n```', 1), 'x');
+    expect(_preview('```dart\nx\n```', 2), '[fold]');
+    expect(_preview('Titre\n---', 1), '[fold]');
+    expect(_preview('[[Note|alias]]'), 'alias');
+    expect(_preview('| a | b |\n|---|---|'), '| a | b |');
   });
 }

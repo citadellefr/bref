@@ -24,7 +24,7 @@ void main() {
     var watch = Stopwatch()..start();
     final note = NoteText('$text\n');
     final syntax = NoteSyntax(note);
-    final layout = NoteLayout(note, syntax, theme: theme, scaler: TextScaler.noScaling)..width = 700;
+    final layout = NoteLayout(note, syntax, theme: theme, scaler: TextScaler.noScaling, preview: true)..width = 700;
     for (var i = 0; i < 40; i++) {
       layout.painter(i);
     }

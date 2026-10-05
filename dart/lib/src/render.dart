@@ -4,6 +4,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 import 'layout.dart';
+import 'syntax.dart';
+import 'theme.dart';
 
 /// Someone else's selection, as the note shows it.
 typedef PeerMark = ({int sid, String name, int base, int extent});
@@ -186,6 +188,10 @@ class RenderNote extends RenderBox {
   /// The offset of the text nearest to [local], a point of this box.
   int offsetAt(Offset local) => _layout.offsetAt(local - Offset(_padding.left, -_viewTop));
 
+  /// The offset of the box of a task at [local], a point of this box, or
+  /// null.
+  int? taskAt(Offset local) => _layout.taskAt(local - Offset(_padding.left, -_viewTop));
+
   /// The caret before [offset], in the coordinates of this box.
   Rect caretRect(int offset) => _layout.caretRect(offset).shift(Offset(_padding.left, -_viewTop));
 
@@ -212,17 +218,20 @@ class RenderNote extends RenderBox {
       final h = _layout.lineHeight(i);
       if (y > bottom) break;
       if (y + h < top) continue;
-      final painter = _layout.painter(i);
+      final view = _layout.view(i);
       final start = text.lineStart(i), end = text.lineEnd(i);
       if (_layout.syntax.inBlock(i)) canvas.drawRect(Rect.fromLTWH(-8, y, width + 16, h), block);
       for (final peer in s.peers) {
         final from = math.min(peer.base, peer.extent), to = math.max(peer.base, peer.extent);
-        _range(canvas, painter, y, start, end, from, to, Paint()..color = theme.peer(peer.sid).withValues(alpha: 0.2));
+        _range(canvas, i, y, start, end, from, to, Paint()..color = theme.peer(peer.sid).withValues(alpha: 0.2));
       }
-      _range(canvas, painter, y, start, end, s.start, s.end, selection);
-      painter.paint(canvas, Offset(0, y));
+      _range(canvas, i, y, start, end, s.start, s.end, selection);
+      view.painter.paint(canvas, Offset(0, y));
+      for (final o in view.ornaments) {
+        _ornament(canvas, o.kind, o.rect.shift(Offset(0, y)), y, h, theme);
+      }
       if (s.composing.isValid && !s.composing.isCollapsed) {
-        _underline(canvas, painter, y, start, end, s.composing, theme.text.color ?? const Color(0xFF000000));
+        _underline(canvas, i, y, start, end, s.composing, theme.text.color ?? const Color(0xFF000000));
       }
     }
     for (final peer in s.peers) {
@@ -235,30 +244,66 @@ class RenderNote extends RenderBox {
     canvas.restore();
   }
 
-  /// Fills what [from] to [to] covers of a line; a selection going on past
+  /// Fills what [from] to [to] covers of line [i]; a selection going on past
   /// the line's end covers a space's width after it, standing for its "\n".
-  void _range(Canvas canvas, TextPainter painter, double y, int start, int end, int from, int to, Paint paint) {
+  void _range(Canvas canvas, int i, double y, int start, int end, int from, int to, Paint paint) {
     if (from >= to || to < start || from > end) return;
-    final a = math.max(from, start) - start, b = math.min(to, end) - start;
-    for (final box in painter.getBoxesForSelection(TextSelection(baseOffset: a, extentOffset: b))) {
-      canvas.drawRect(box.toRect().shift(Offset(0, y)), paint);
+    for (final box in _layout.boxes(i, math.max(from, start) - start, math.min(to, end) - start)) {
+      canvas.drawRect(box.shift(Offset(0, y)), paint);
     }
     if (to > end) {
-      final caret = painter.getOffsetForCaret(TextPosition(offset: end - start), Rect.zero);
-      final h = painter.getFullHeightForCaret(TextPosition(offset: end - start), Rect.zero);
-      canvas.drawRect(Rect.fromLTWH(caret.dx, y + caret.dy, h / 3, h), paint);
+      final caret = _layout.caretRect(end);
+      canvas.drawRect(Rect.fromLTWH(caret.left, caret.top, caret.height / 3, caret.height), paint);
     }
   }
 
-  void _underline(Canvas canvas, TextPainter painter, double y, int start, int end, TextRange range, Color color) {
+  void _underline(Canvas canvas, int i, double y, int start, int end, TextRange range, Color color) {
     if (range.end < start || range.start > end) return;
-    final a = math.max(range.start, start) - start, b = math.min(range.end, end) - start;
     final paint = Paint()
       ..color = color
       ..strokeWidth = 1;
-    for (final box in painter.getBoxesForSelection(TextSelection(baseOffset: a, extentOffset: b))) {
-      final r = box.toRect().shift(Offset(0, y));
+    for (final box in _layout.boxes(i, math.max(range.start, start) - start, math.min(range.end, end) - start)) {
+      final r = box.shift(Offset(0, y));
       canvas.drawLine(r.bottomLeft.translate(0, -1), r.bottomRight.translate(0, -1), paint);
+    }
+  }
+
+  /// The box of a task, the bar of a quote or a rule, over [rect]; a bar
+  /// runs the height of the line, from [y] for [h].
+  void _ornament(Canvas canvas, SwapKind kind, Rect rect, double y, double h, BrefTheme theme) {
+    switch (kind) {
+      case SwapKind.bar:
+        canvas.drawRect(Rect.fromLTWH(rect.left + 1, y, 3, h), Paint()..color = theme.markup);
+      case SwapKind.rule:
+        canvas.drawRect(Rect.fromLTWH(rect.left, rect.center.dy - 0.5, rect.width, 1), Paint()..color = theme.markup);
+      case SwapKind.box || SwapKind.doneBox:
+        final side = math.min(rect.width, rect.height) * 0.8;
+        final box = RRect.fromRectAndRadius(Rect.fromCenter(center: rect.center, width: side, height: side), Radius.circular(side / 5));
+        if (kind == SwapKind.box) {
+          canvas.drawRRect(
+            box,
+            Paint()
+              ..color = theme.markup
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.5,
+          );
+          break;
+        }
+        canvas.drawRRect(box, Paint()..color = theme.accent);
+        final check = Path()
+          ..moveTo(box.left + side * 0.22, box.top + side * 0.52)
+          ..lineTo(box.left + side * 0.42, box.top + side * 0.72)
+          ..lineTo(box.left + side * 0.78, box.top + side * 0.3);
+        canvas.drawPath(
+          check,
+          Paint()
+            ..color = const Color(0xFFFFFFFF)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = side / 8
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round,
+        );
+      default:
     }
   }
 

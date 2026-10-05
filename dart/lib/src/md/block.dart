@@ -164,9 +164,11 @@ class BlockParser {
   bool _allClosed = true;
   int _lastMatched = 0;
 
-  /// Whether every block is closed: what follows is read alike whatever came
-  /// before.
-  bool get clean => _open.length == 1;
+  /// Whether every block is closed, or is a heading or a rule the next line
+  /// closes: what follows is read alike whatever came before.
+  bool get clean =>
+      _open.length == 1 ||
+      (_open.length == 2 && (_top.node.kind == MdKind.heading || _top.node.kind == MdKind.thematicBreak));
 
   _Block get _top => _open.last;
 
@@ -567,7 +569,7 @@ class BlockParser {
       case MdKind.item:
         n.end = n.children.isNotEmpty ? n.children.last.end : n.marks.last.end;
       case MdKind.table:
-        n.end = n.children.last.end;
+        n.end = n.children.last.end > n.marks.first.end ? n.children.last.end : n.marks.first.end;
       default:
     }
   }

@@ -13,9 +13,9 @@ shown as you type. It comes in two parts:
 It is developed by [Citadelle](https://github.com/citadellefr), where it is the
 default format for notes, and is released under the MIT license.
 
-> Bref is at its beginning: notes are edited together as Markdown source,
-> marked as they are typed. Live preview, mentions, pictures, comments,
-> math, charts and diagrams come next.
+> Bref is at its beginning: notes are edited together in live preview, the
+> syntax of the lines being edited shown as written. Mentions, pictures,
+> comments, math, charts and diagrams come next.
 
 ## Principles
 
@@ -54,10 +54,26 @@ final session = DocSession(
 BrefEditor(session: session);
 ```
 
-The editor shows the Markdown as it is written, its marks styled as they are
-typed, with the carets and selections of everyone else. It keeps the keys of
+The editor shows the note as it reads, the Markdown of the lines being edited
+shown as it is written, with the carets and selections of everyone else;
+`preview: false` shows all of it as written. It keeps the keys of
 text editors, goes on with lists and quotes on Enter, indents them with Tab,
 and undoes this person's edits only.
+
+## Markdown
+
+Package `md` reads Markdown as CommonMark and GitHub do, with front matter,
+`$math$`, `==highlights==` and `[[wiki links]]`. Each node knows where it lies
+in the source and which of its characters are syntax:
+
+```go
+doc := md.Parse(src)
+html := md.HTML(doc) // raw HTML shown as text
+```
+
+The Dart editor reads notes with the same parser, written again in Dart and
+checked against the trees of Go in `testdata/md/vectors.json`
+(`go test ./md -update` writes them).
 
 ## Tests
 

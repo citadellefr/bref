@@ -257,4 +257,52 @@ void main() {
     expect(find.byType(SelectionHandles), findsNothing);
     await finish(tester);
   });
+
+  testWidgets('the lines being edited show their syntax, the others read as they render', (tester) async {
+    await pumpEditor(tester, '**gras** fin\n**gras** fin');
+    double end(int offset) => note(tester).caretRect(offset).left;
+    expect(end(12), greaterThan(end(25)));
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    expect(end(12), lessThan(end(25)));
+    expect(end(25) - end(12), moreOrLessEquals(4 * 16, epsilon: 4));
+    await finish(tester);
+  });
+
+  testWidgets('a click in a line read as it renders lands where its text is written', (tester) async {
+    await pumpEditor(tester, '**gras** fin\n[un lien](https://x.fr) ici');
+    final render = note(tester);
+    final row = render.caretRect(13);
+    final left = render.caretRect(0).left;
+    await tester.tapAt(render.localToGlobal(Offset(left + 8 * 16 + 4, row.center.dy)), kind: PointerDeviceKind.mouse);
+    await tester.pump(kDoubleTapTimeout);
+    expect(marks(tester).extent, 13 + 24);
+    await finish(tester);
+  });
+
+  testWidgets('a click on the box of a task ticks it, and leaves the caret', (tester) async {
+    await pumpEditor(tester, '- [ ] à faire\nsuite');
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    final render = note(tester);
+    final row = render.caretRect(0);
+    final box = Offset(render.caretRect(0).left + 2 * 16 + 9, row.center.dy);
+    await tester.tapAt(render.localToGlobal(box), kind: PointerDeviceKind.mouse);
+    await settle(tester);
+    expect(hub.text, '- [x] à faire\nsuite');
+    expect(marks(tester).extent, 14);
+    await tester.pump(kDoubleTapTimeout);
+    await tester.tapAt(render.localToGlobal(box), kind: PointerDeviceKind.mouse);
+    await settle(tester);
+    expect(hub.text, '- [ ] à faire\nsuite');
+    await finish(tester);
+  });
+
+  testWidgets('shows the whole note as written when asked to', (tester) async {
+    hub = FakeHub('**gras** fin\n**gras** fin');
+    mine = DocSession(hub.connect)..start();
+    addTearDown(mine.dispose);
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: BrefEditor(session: mine, autofocus: true, preview: false))));
+    await settle(tester);
+    expect(note(tester).caretRect(12).left, note(tester).caretRect(25).left);
+    await finish(tester);
+  });
 }

@@ -548,7 +548,7 @@ func (p *blockParser) close(here bool) {
 			n.End = n.Marks[len(n.Marks)-1].End
 		}
 	case Table:
-		n.End = n.Children[len(n.Children)-1].End
+		n.End = max(n.Children[len(n.Children)-1].End, n.Marks[0].End)
 	}
 }
 

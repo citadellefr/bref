@@ -1,9 +1,27 @@
+import 'md/block.dart';
+import 'md/inline.dart';
+import 'md/node.dart';
 import 'note_text.dart';
 import 'syntax.dart';
 
-/// The syntax of every line of a note. What each line leaves open is known
-/// for all of them; the marks of a line are read when it is first shown,
-/// and read again only when its text or what precedes it changes.
+/// A block of the document itself, with the lines it spans. Its offsets are
+/// those of the text when it was read, [base] being where its first line
+/// started then: lines inserted above move it without reading it again.
+class _Top {
+  _Top(this.node, this.line, this.last, this.base, this.leaves);
+
+  final MdNode node;
+  int line;
+  int last;
+  final int base;
+  final List<Leaf> leaves;
+  var inlines = false;
+}
+
+/// The syntax of a note, read as Markdown. Blocks are read again from the
+/// last line before an edit where nothing was open, up to where what is
+/// open matches what was before; inlines are read when a block is first
+/// shown, and the marks of a line when the line is.
 class NoteSyntax {
   NoteSyntax(this.text) {
     reset();
@@ -11,46 +29,199 @@ class NoteSyntax {
 
   final NoteText text;
 
-  /// What the lines before each line left open, and after the last.
-  final _states = <BlockState>[];
-  final _lines = <LineSyntax?>[];
+  final _tops = <_Top>[];
 
-  LineSyntax line(int i) => _lines[i] ??= readLine(text.line(i), i, _states[i]);
+  /// Whether every block was closed before each line, and after the last.
+  final _clean = <bool>[];
+  final _lines = <LineSyntax?>[];
+  var _refs = <String, MdNode>{};
+
+  LineSyntax line(int i) => _lines[i] ??= _read(i);
 
   /// Whether line [i] belongs to a block of code or math, its fences
   /// included: it is drawn on a background of its own.
-  bool inBlock(int i) => _block(_states[i]) || _block(_states[i + 1]);
-
-  static bool _block(BlockState s) => s != BlockState.text && s != BlockState.frontMatter;
+  bool inBlock(int i) => line(i).block;
 
   void reset() {
-    _states
+    _tops.clear();
+    _clean
       ..clear()
-      ..add(BlockState.text);
+      ..addAll(List.filled(text.lineCount + 1, true));
     _lines
       ..clear()
       ..length = text.lineCount;
-    for (var i = 0; i < text.lineCount; i++) {
-      _states.add(nextState(text.line(i), i, _states[i]));
-    }
+    _parse(0, text.lineCount, 0, const []);
+    _refs = definitionMap(_definitions(_tops));
   }
 
-  /// Follows a splice the text made, and answers the lines after the new
-  /// ones whose syntax changed with it: a fence opened changes all those up
-  /// to the next fence.
-  int splice(LineSplice s) {
+  /// Follows a splice the text made, and answers the lines around it whose
+  /// syntax may have changed with it, the new ones aside: from the first to
+  /// before the last.
+  (int, int) splice(LineSplice s) {
+    final delta = s.inserted - s.removed;
     _lines.replaceRange(s.index, s.index + s.removed, List.filled(s.inserted, null));
-    _states.replaceRange(s.index + 1, s.index + s.removed + 1, List.filled(s.inserted, BlockState.text));
-    var changed = 0;
-    for (var i = s.index; i < text.lineCount; i++) {
-      final next = nextState(text.line(i), i, _states[i]);
-      if (i >= s.index + s.inserted && next == _states[i + 1]) break;
-      _states[i + 1] = next;
-      if (i + 1 < text.lineCount) {
-        _lines[i + 1] = null;
-        if (i + 1 >= s.index + s.inserted) changed++;
+    var from = s.index;
+    while (!_clean[from]) {
+      from--;
+    }
+    if (from > 0 && _maybeFrontMatter(s)) from = 0;
+    final old = _clean.toList();
+    _clean.replaceRange(s.index + 1, s.index + s.removed + 1, List.filled(s.inserted, false));
+
+    var first = _tops.indexWhere((t) => t.line >= from);
+    if (first < 0) first = _tops.length;
+    final after = _tops.sublist(first);
+    _tops.removeRange(first, _tops.length);
+    final to = _parse(from, s.index + s.inserted, delta, old);
+    final removed = after.where((t) => t.line < to - delta).toList();
+    for (final t in after.skip(removed.length)) {
+      _tops.add(t
+        ..line += delta
+        ..last += delta);
+    }
+    for (var i = from; i < to; i++) {
+      _lines[i] = null;
+    }
+    final added = _tops.where((t) => t.line >= from && t.line < to);
+    if (!_sameDefinitions(_definitions(removed), _definitions(added))) {
+      _refs = definitionMap(_definitions(_tops));
+      for (final t in _tops) {
+        t.inlines = false;
+      }
+      _lines.fillRange(0, _lines.length, null);
+      return (0, text.lineCount);
+    }
+    return (from, to);
+  }
+
+  /// Whether the first line opens front matter the edit may close: then it
+  /// is read again from the first line.
+  bool _maybeFrontMatter(LineSplice s) {
+    if (text.line(0).trimRight() != '---' || (_tops.isNotEmpty && _tops.first.node.kind == MdKind.frontMatter)) return false;
+    for (var i = s.index; i < s.index + s.inserted; i++) {
+      final t = text.line(i).trimRight();
+      if (t == '---' || t == '...') return true;
+    }
+    return false;
+  }
+
+  /// Reads the blocks from line [from], where nothing is open, at least up
+  /// to line [edited], then up to a line where nothing is open as nothing
+  /// was in [old], which tells it for the lines [delta] before; answers
+  /// where it stopped.
+  int _parse(int from, int edited, int delta, List<bool> old) {
+    final p = BlockParser(MdSyntax.bref);
+    var i = from;
+    if (from == 0) {
+      final matter = readFrontMatter(text.lineCount, text.line, text.lineStart);
+      if (matter != null) {
+        p.doc.add(matter.node);
+        i = matter.lines;
+        for (var k = 1; k < i; k++) {
+          _clean[k] = false;
+        }
+        _clean[i] = true;
       }
     }
-    return changed;
+    while (i < text.lineCount) {
+      if (i > from) _clean[i] = p.clean;
+      if (i >= edited && i > from && p.clean && i - delta < old.length && old[i - delta]) break;
+      p.addLine(text.line(i), text.lineStart(i));
+      i++;
+    }
+    p.finish();
+    if (i == text.lineCount) _clean[i] = true;
+    final tops = [
+      for (final n in p.doc.children) _Top(n, text.lineAt(n.start), text.lineAt(n.end), text.lineStart(text.lineAt(n.start)), []),
+    ];
+    for (final leaf in p.leaves) {
+      _topAt(tops, leaf.node.start).leaves.add(leaf);
+    }
+    _tops.addAll(tops);
+    return i;
+  }
+
+  static _Top _topAt(List<_Top> tops, int offset) {
+    var lo = 0, hi = tops.length - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (tops[mid].node.start <= offset) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return tops[lo];
+  }
+
+  static List<MdNode> _definitions(Iterable<_Top> tops) {
+    final out = <MdNode>[];
+    for (final t in tops) {
+      t.node.walk((n) {
+        if (n.kind == MdKind.definition) out.add(n);
+        return n.kind == MdKind.document || n.kind == MdKind.quote || n.kind == MdKind.list || n.kind == MdKind.item;
+      });
+    }
+    return out;
+  }
+
+  static bool _sameDefinitions(List<MdNode> a, List<MdNode> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].label != b[i].label || a[i].dest != b[i].dest || a[i].title != b[i].title) return false;
+    }
+    return true;
+  }
+
+  /// The block holding line [i], if any.
+  _Top? _blockAt(int i) {
+    var lo = 0, hi = _tops.length - 1;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (_tops[mid].line <= i) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (_tops.isEmpty || _tops[lo].line > i || _tops[lo].last < i) return null;
+    return _tops[lo];
+  }
+
+  LineSyntax _read(int i) {
+    final line = text.line(i);
+    final t = _blockAt(i);
+    if (t == null) return line.isEmpty ? const LineSyntax([], []) : LineSyntax([line.length], const [0]);
+    if (!t.inlines) {
+      for (final leaf in t.leaves) {
+        leaf.node.children = parseInlines(leaf, _refs, MdSyntax.bref);
+      }
+      t.inlines = true;
+    }
+    return readLine(t.node, line, text.lineStart(i) - text.lineStart(t.line) + t.base);
+  }
+
+  /// The lines to show as they are written when [first] to [last] are: the
+  /// whole of the blocks of code, of math, the headings underlined and the
+  /// front matter they touch.
+  (int, int) revealed(int first, int last) => (_whole(first).$1, _whole(last).$2);
+
+  (int, int) _whole(int i) {
+    final t = _blockAt(i);
+    if (t == null) return (i, i);
+    final lo = text.lineStart(i) - text.lineStart(t.line) + t.base;
+    final hi = lo + text.line(i).length;
+    MdNode? found;
+    t.node.walk((n) {
+      if (n.end < lo || n.start > hi) return false;
+      if (n.kind == MdKind.codeBlock || n.kind == MdKind.mathBlock || n.kind == MdKind.frontMatter || n.kind == MdKind.heading) {
+        found = n;
+      }
+      return n.kind != MdKind.paragraph && n.kind != MdKind.heading && n.kind != MdKind.table;
+    });
+    final n = found;
+    if (n == null) return (i, i);
+    final shift = text.lineStart(t.line) - t.base;
+    return (text.lineAt(n.start + shift), text.lineAt(n.end + shift));
   }
 }

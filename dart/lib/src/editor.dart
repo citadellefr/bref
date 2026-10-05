@@ -18,8 +18,9 @@ import 'theme.dart';
 /// The node of a note's text in its document.
 const noteBody = 'body';
 
-/// The editor of a note: its Markdown as it is written, marked as it is
-/// typed, with the carets and selections of the others.
+/// The editor of a note: its Markdown as it reads, the syntax of the lines
+/// being edited shown as it is written, with the carets and selections of
+/// the others.
 ///
 /// Undo and redo are the session's: they revert this person's edits only.
 class BrefEditor extends StatefulWidget {
@@ -31,6 +32,7 @@ class BrefEditor extends StatefulWidget {
     this.width = 760,
     this.focusNode,
     this.autofocus = false,
+    this.preview = true,
   });
 
   final DocSession session;
@@ -45,6 +47,10 @@ class BrefEditor extends StatefulWidget {
   final double width;
   final FocusNode? focusNode;
   final bool autofocus;
+
+  /// Whether the note reads as it renders, the syntax hidden but on the
+  /// lines being edited; else all of it is shown as written.
+  final bool preview;
 
   @override
   State<BrefEditor> createState() => _BrefEditorState();
@@ -125,7 +131,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
     final scaler = MediaQuery.textScalerOf(context);
     final layout = _layout;
     if (layout == null) {
-      _layout = NoteLayout(_text, _syntax, theme: theme, scaler: scaler);
+      _layout = NoteLayout(_text, _syntax, theme: theme, scaler: scaler, preview: widget.preview);
     } else {
       layout
         ..theme = theme
@@ -152,6 +158,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
       _focus.addListener(_focusChanged);
     }
     if (widget.theme != null && old.theme != widget.theme) _layout?.theme = widget.theme!;
+    _layout?.preview = widget.preview;
   }
 
   @override
@@ -183,6 +190,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
     } else {
       _closeInput();
     }
+    _revealSelection();
     _restartBlink();
     setState(() {});
   }
@@ -343,9 +351,33 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
       ..changed();
     if (!keepGoal) _goalX = null;
     if (publish) _session.select(DocSelection(noteBody, _marks.base, _marks.extent));
+    _revealSelection();
     _restartBlink();
     if (reveal) _reveal(_marks.extent);
     _syncInput();
+  }
+
+  /// Shows the lines of the selection as written, when they can be edited.
+  void _revealSelection() {
+    final layout = _layout;
+    if (layout == null) return;
+    if (!_focus.hasFocus || !_editable) {
+      layout.reveal(-1, -1);
+      return;
+    }
+    final (first, last) = _syntax.revealed(_text.lineAt(_marks.start), _text.lineAt(_marks.end));
+    layout.reveal(first, last);
+  }
+
+  /// Ticks or unticks the box of a task at [local], if there is one.
+  bool _toggleTask(Offset local) {
+    final at = _render?.taskAt(local);
+    if (at == null || !_editable) return false;
+    final done = _text.substring(at + 1, at + 2) != ' ';
+    _local = true;
+    _session.replaceText(noteBody, at + 1, at + 2, done ? ' ' : 'x');
+    _local = false;
+    return true;
   }
 
   void _moveTo(int to, {required bool extend, bool keepGoal = false}) {
@@ -485,6 +517,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
       _closeInput();
       _menu.remove();
     }
+    _revealSelection();
     _restartBlink();
   }
 
@@ -648,6 +681,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
 
   void _pointerDown(PointerDownEvent e) {
     _menu.remove();
+    if (e.kind == PointerDeviceKind.mouse && e.buttons == kPrimaryMouseButton && _toggleTask(e.localPosition)) return;
     _focus.requestFocus();
     _touch.value = e.kind != PointerDeviceKind.mouse;
     final render = _render;
@@ -732,7 +766,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
   void _tapUp(TapUpDetails d) {
     if (d.kind == PointerDeviceKind.mouse) return;
     final render = _render;
-    if (render == null) return;
+    if (render == null || _toggleTask(d.localPosition)) return;
     _select(render.offsetAt(d.localPosition));
     _openInput();
     _input?.show();

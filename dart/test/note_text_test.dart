@@ -18,7 +18,7 @@ void main() {
 
   test('follows random deltas, and tells which lines they replaced', () {
     final random = Random(7);
-    const pieces = ['a', 'bc', '\n', 'é', '\n\n', '😀', '```\n'];
+    const pieces = ['a', 'bc', '\n', 'é', '\n\n', '😀', '```\n', '- ', '> ', '---\n', r'$$', '*', '[a]: /b\n', '[a]', '|x|\n|-|\n', '===', '    ', '1. '];
     for (var round = 0; round < 300; round++) {
       var text = 'one\ntwo\n\nthree';
       final t = NoteText('$text\n');
@@ -57,4 +57,4 @@ void main() {
   });
 }
 
-List<Object> _marks(LineSyntax s) => [s.ends, s.marks, s.heading, s.after.kind];
+List<Object> _marks(LineSyntax s) => [s.ends, s.marks, s.heading, s.block, s.swaps];
