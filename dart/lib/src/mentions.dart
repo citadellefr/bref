@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 
 import 'host.dart';
 
-/// The Markdown of a link to [m]: `[@Alice](user:42)`.
-String mentionMarkdown(Mention m) {
-  final text = m.text.replaceAllMapped(RegExp(r'[\\\[\]*_`<]'), (c) => '\\${c[0]}');
-  var dest = m.uri.toString();
+/// The Markdown of a link: `[@Alice](user:42)`.
+String linkMarkdown(String text, Uri uri) {
+  text = text.replaceAllMapped(RegExp(r'[\\\[\]*_`<]'), (c) => '\\${c[0]}');
+  var dest = uri.toString();
   if (RegExp(r'[\s()<>]').hasMatch(dest)) dest = '<${dest.replaceAll('<', '%3C').replaceAll('>', '%3E')}>';
   return '[$text]($dest)';
 }

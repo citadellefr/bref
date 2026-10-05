@@ -61,13 +61,15 @@ abstract class BrefHost {
 
 const _web = {'http', 'https', 'mailto', 'tel'};
 
-/// The URI a link leads to, or null when it leads nowhere [host] goes. A
-/// wiki link leads to the path of the note it names.
+/// The URI of a wiki link: the path of the note it names.
+Uri wikiUri(String dest) {
+  final hash = dest.indexOf('#');
+  return hash < 0 ? Uri(path: dest) : Uri(path: dest.substring(0, hash), fragment: dest.substring(hash + 1));
+}
+
+/// The URI a link leads to, or null when it leads nowhere [host] goes.
 Uri? linkUri(BrefHost host, String dest, {required bool wiki}) {
-  if (wiki) {
-    final hash = dest.indexOf('#');
-    return hash < 0 ? Uri(path: dest) : Uri(path: dest.substring(0, hash), fragment: dest.substring(hash + 1));
-  }
+  if (wiki) return wikiUri(dest);
   final uri = Uri.tryParse(dest);
   if (uri == null || uri.hasScheme && !_web.contains(uri.scheme) && !host.schemes.contains(uri.scheme)) return null;
   return uri;

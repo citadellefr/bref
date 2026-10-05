@@ -26,11 +26,14 @@ List<String> _pieces(String note, int mark, [int i = 0]) {
 
 /// What the preview shows of line [i] of [note]: its text without what it
 /// hides, other swaps in brackets.
+/// Line [i] of [note] as the preview shows it, the host having said
+/// nothing of its pictures and links.
 String _preview(String note, [int i = 0]) {
   final line = note.split('\n')[i];
   final out = StringBuffer();
   var col = 0;
   for (final s in _line(note, i).swaps) {
+    if (s.start < col || s.kind == SwapKind.picture || s.kind == SwapKind.label) continue;
     out.write(line.substring(col, s.start));
     switch (s.kind) {
       case SwapKind.hide:
@@ -132,5 +135,20 @@ void main() {
     expect(_preview('Titre\n---', 1), '[fold]');
     expect(_preview('[[Note|alias]]'), 'alias');
     expect(_preview('| a | b |\n|---|---|'), '| a | b |');
+  });
+
+  test('pictures and the text of links are what the host may show otherwise', () {
+    List<Swap> asked(String line) =>
+        _line(line).swaps.where((s) => s.kind == SwapKind.picture || s.kind == SwapKind.label).toList();
+    expect(asked('Hi [@A](user:1) <https://x.fr>'), [(start: 4, end: 6, kind: SwapKind.label, text: 'user:1')]);
+    expect(asked('[[My note|this]] ![[pic.png]]'), [
+      (start: 10, end: 14, kind: SwapKind.label, text: 'My%20note'),
+      (start: 17, end: 29, kind: SwapKind.picture, text: 'pic.png'),
+    ]);
+    expect(asked('[![a](p.png)](x)'), [
+      (start: 1, end: 12, kind: SwapKind.picture, text: 'p.png'),
+      (start: 1, end: 12, kind: SwapKind.label, text: 'x'),
+    ]);
+    expect(_preview('![a *b*](p.png)'), 'a b');
   });
 }

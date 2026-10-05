@@ -3,18 +3,22 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
+import 'host_cache.dart';
 import 'note_syntax.dart';
 import 'note_text.dart';
 import 'syntax.dart';
 import 'theme.dart';
 
 /// What is drawn over a line shown in preview: the box of a task, the bar
-/// of a quote, a rule; [column] is where its syntax starts in the line.
-typedef Ornament = ({SwapKind kind, int column, Rect rect});
+/// of a quote, a rule, a picture; [column] is where its syntax starts in the
+/// line, [text] what a picture leads to.
+typedef Ornament = ({SwapKind kind, int column, String text, Rect rect});
+
+typedef _Ornament = ({SwapKind kind, int column, String text});
 
 /// A line laid out, as written or in preview.
 class LineView {
-  LineView._(this.painter, this._toSource, this._ornaments, {required this.preview});
+  LineView._(this.painter, this._toSource, this._ornaments, {required this.preview, this.asked = const []});
 
   final TextPainter painter;
   final bool preview;
@@ -22,7 +26,10 @@ class LineView {
   /// The column each offset of the text shown stands for, and the line's
   /// end after the last; null when the text shown is the line itself.
   final Int32List? _toSource;
-  final List<({SwapKind kind, int column})> _ornaments;
+  final List<_Ornament> _ornaments;
+
+  /// The links whose pictures or labels the line asked the host for.
+  final List<String> asked;
 
   /// The column of the line offset [d] of the text shown stands for.
   int column(int d) => _toSource?[d] ?? d;
@@ -49,7 +56,7 @@ class LineView {
     final boxes = painter.inlinePlaceholderBoxes ?? const [];
     return [
       for (var k = 0; k < _ornaments.length && k < boxes.length; k++)
-        (kind: _ornaments[k].kind, column: _ornaments[k].column, rect: boxes[k].toRect()),
+        (kind: _ornaments[k].kind, column: _ornaments[k].column, text: _ornaments[k].text, rect: boxes[k].toRect()),
     ];
   }
 
@@ -75,6 +82,7 @@ class NoteLayout extends ChangeNotifier {
   TextScaler _scaler;
   bool _preview;
   double _width = 0;
+  HostCache? _cache;
 
   final _heights = <double>[];
   final _measured = <bool>[];
@@ -118,6 +126,27 @@ class NoteLayout extends ChangeNotifier {
   set preview(bool value) {
     if (value == _preview) return;
     _preview = value;
+    notifyListeners();
+  }
+
+  /// What the host said of pictures and links, shown in preview.
+  HostCache? get cache => _cache;
+
+  set cache(HostCache? value) {
+    if (value == _cache) return;
+    _cache = value;
+    _reset();
+    notifyListeners();
+  }
+
+  /// Lays out again the lines that asked about [dest], whose answer came.
+  void answered(String dest) {
+    for (var i = 0; i < _views.length; i++) {
+      if (_views[i]?.asked.contains(dest) ?? false) {
+        _views[i]!.dispose();
+        _views[i] = null;
+      }
+    }
     notifyListeners();
   }
 
@@ -319,7 +348,7 @@ class NoteLayout extends ChangeNotifier {
             PlaceholderDimensions(size: Size(math.max(_width - 1, 1), _lineHeight), alignment: PlaceholderAlignment.middle),
           ]),
           Int32List.fromList([0, line.length]),
-          [(kind: SwapKind.rule, column: swap.start)],
+          [(kind: SwapKind.rule, column: swap.start, text: '')],
           preview: true,
         );
       }
@@ -337,8 +366,9 @@ class NoteLayout extends ChangeNotifier {
 
     final children = <InlineSpan>[];
     final toSource = <int>[];
-    final ornaments = <({SwapKind kind, int column})>[];
+    final ornaments = <_Ornament>[];
     final placeholders = <PlaceholderDimensions>[];
+    final asked = <String>[];
     var piece = 0;
     int marksAt(int c) {
       while (piece < s.ends.length && s.ends[piece] <= c) {
@@ -362,6 +392,35 @@ class NoteLayout extends ChangeNotifier {
     var col = 0;
     for (final swap in s.swaps) {
       if (swap.start < col) continue;
+      if (swap.kind == SwapKind.picture || swap.kind == SwapKind.label) {
+        final cache = _cache;
+        if (cache == null) continue;
+        asked.add(swap.text);
+        if (swap.kind == SwapKind.picture) {
+          final size = _pictureSize(cache.picture(swap.text));
+          if (size == null) continue;
+          written(col, swap.start);
+          children.add(const WidgetSpan(child: SizedBox.shrink(), alignment: PlaceholderAlignment.bottom));
+          placeholders.add(PlaceholderDimensions(size: size, alignment: PlaceholderAlignment.bottom));
+          ornaments.add((kind: SwapKind.picture, column: swap.start, text: swap.text));
+          toSource.add(swap.start);
+        } else {
+          final label = cache.label(swap.text);
+          if (label == null) continue;
+          written(col, swap.start);
+          final style = _style(marksAt(swap.start), s.heading);
+          final icon = label.icon;
+          final glyph = icon == null ? '' : '${String.fromCharCode(icon.codePoint)}\u2009';
+          if (icon != null) {
+            final family = icon.fontPackage == null ? icon.fontFamily : 'packages/${icon.fontPackage}/${icon.fontFamily}';
+            children.add(TextSpan(text: glyph, style: style.copyWith(fontFamily: family)));
+          }
+          children.add(TextSpan(text: label.text, style: style));
+          toSource.addAll(List.filled(glyph.length + label.text.length, swap.start));
+        }
+        col = swap.end;
+        continue;
+      }
       written(col, swap.start);
       switch (swap.kind) {
         case SwapKind.text:
@@ -373,7 +432,7 @@ class NoteLayout extends ChangeNotifier {
           final size = swap.kind == SwapKind.bar ? Size(_fontSize * 0.9, _fontSize) : Size(_fontSize * 1.2, _fontSize);
           children.add(const WidgetSpan(child: SizedBox.shrink(), alignment: PlaceholderAlignment.middle));
           placeholders.add(PlaceholderDimensions(size: size, alignment: PlaceholderAlignment.middle));
-          ornaments.add((kind: swap.kind, column: swap.start));
+          ornaments.add((kind: swap.kind, column: swap.start, text: ''));
           toSource.add(swap.start);
         default:
       }
@@ -386,7 +445,17 @@ class NoteLayout extends ChangeNotifier {
       Int32List.fromList(toSource),
       ornaments,
       preview: true,
+      asked: asked,
     );
+  }
+
+  /// The size a picture is shown at: its own, narrowed to the column.
+  Size? _pictureSize(ImageInfo? info) {
+    if (info == null) return null;
+    final width = info.image.width / info.scale, height = info.image.height / info.scale;
+    if (width <= 0 || height <= 0) return null;
+    final shown = math.min(width, math.max(_width - 1, 1.0));
+    return Size(shown, height * shown / width);
   }
 
   /// The style of what a folded line still shows.

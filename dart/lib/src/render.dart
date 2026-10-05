@@ -232,7 +232,7 @@ class RenderNote extends RenderBox {
       _range(canvas, i, y, start, end, s.start, s.end, selection);
       view.painter.paint(canvas, Offset(0, y));
       for (final o in view.ornaments) {
-        _ornament(canvas, o.kind, o.rect.shift(Offset(0, y)), y, h, theme);
+        _ornament(canvas, o, o.rect.shift(Offset(0, y)), y, h, theme);
       }
       if (s.composing.isValid && !s.composing.isCollapsed) {
         _underline(canvas, i, y, start, end, s.composing, theme.text.color ?? const Color(0xFF000000));
@@ -272,10 +272,14 @@ class RenderNote extends RenderBox {
     }
   }
 
-  /// The box of a task, the bar of a quote or a rule, over [rect]; a bar
-  /// runs the height of the line, from [y] for [h].
-  void _ornament(Canvas canvas, SwapKind kind, Rect rect, double y, double h, BrefTheme theme) {
+  /// The box of a task, the bar of a quote, a rule or a picture, over
+  /// [rect]; a bar runs the height of the line, from [y] for [h].
+  void _ornament(Canvas canvas, Ornament o, Rect rect, double y, double h, BrefTheme theme) {
+    final kind = o.kind;
     switch (kind) {
+      case SwapKind.picture:
+        final info = _layout.cache?.picture(o.text);
+        if (info != null) paintImage(canvas: canvas, rect: rect, image: info.image, fit: BoxFit.fill, filterQuality: FilterQuality.medium);
       case SwapKind.bar:
         canvas.drawRect(Rect.fromLTWH(rect.left + 1, y, 3, h), Paint()..color = theme.markup);
       case SwapKind.rule:

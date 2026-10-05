@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:ui' as ui;
+
 import 'package:bref/bref.dart';
 import 'package:bref/src/handles.dart';
 import 'package:bref/src/render.dart';
@@ -82,13 +85,13 @@ void main() {
     await tester.pump();
   }
 
-  Future<void> pumpEditor(WidgetTester tester, String text, {BrefHost? host}) async {
+  Future<void> pumpEditor(WidgetTester tester, String text, {BrefHost? host, Key? key}) async {
     hub = FakeHub(text);
     mine = DocSession(hub.connect)..start();
     theirs = DocSession(hub.connect)..start();
     addTearDown(mine.dispose);
     addTearDown(theirs.dispose);
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: BrefEditor(session: mine, host: host, autofocus: true))));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: BrefEditor(key: key, session: mine, host: host, autofocus: true))));
     await settle(tester);
     await tester.pump();
   }
@@ -376,6 +379,36 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('lines read as they render show the pictures and labels of the host', (tester) async {
+    final host = _Host();
+    host.picture = (await tester.runAsync(() => _png(200, 100)))!;
+    await pumpEditor(tester, 'first\n![chart](drive:9) [@A](user:1) [@B](user:2)\nlast', host: host);
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+    await tester.pump();
+    final render = note(tester);
+    final layout = tester.widget<NoteViewport>(find.byType(NoteViewport)).layout;
+    expect(render.caretRect(layout.text.lineStart(2)).top - render.caretRect(layout.text.lineStart(1)).top, greaterThan(100));
+    expect(layout.view(1).painter.plainText, endsWith(' ${String.fromCharCode(Icons.person.codePoint)}\u2009Alice Martin @B'));
+    await finish(tester);
+  });
+
+  testWidgets('a picture uploads to the host, and lands on a line of its own where the caret was', (tester) async {
+    final host = _Host();
+    final editor = GlobalKey<BrefEditorState>();
+    await pumpEditor(tester, 'one two', host: host, key: editor);
+    await key(tester, LogicalKeyboardKey.arrowRight, control: true);
+    final done = editor.currentState!.insertPicture(Uint8List(4), 'my chart.png', 'image/png');
+    theirs.replace(0, 0, '>> ');
+    await settle(tester);
+    host.uploaded.complete(Uri.parse('drive:9'));
+    await tester.pump();
+    await done;
+    await settle(tester);
+    expect(hub.text, '>> one\n![my chart](drive:9)\n two');
+    expect(host.uploads, [('my chart.png', 'image/png', 4)]);
+    await finish(tester);
+  });
+
   testWidgets('shows the whole note as written when asked to', (tester) async {
     hub = FakeHub('**gras** fin\n**gras** fin');
     mine = DocSession(hub.connect)..start();
@@ -387,14 +420,39 @@ void main() {
   });
 }
 
+/// A picture of [width] by [height] pixels, as a PNG.
+Future<Uint8List> _png(int width, int height) async {
+  final recorder = ui.PictureRecorder();
+  Canvas(recorder).drawRect(Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()), Paint()..color = Colors.teal);
+  final image = await recorder.endRecording().toImage(width, height);
+  final data = await image.toByteData(format: ui.ImageByteFormat.png);
+  return data!.buffer.asUint8List();
+}
+
 class _Host extends BrefHost {
   final opened = <Uri>[];
+  Uint8List? picture;
+  final uploaded = Completer<Uri>();
+  final uploads = <(String, String, int)>[];
 
   @override
-  Set<String> get schemes => const {'user'};
+  Set<String> get schemes => const {'user', 'drive'};
 
   @override
   void open(Uri uri) => opened.add(uri);
+
+  @override
+  ImageProvider? image(Uri uri) => uri.toString() == 'drive:9' && picture != null ? MemoryImage(picture!) : null;
+
+  @override
+  Future<LinkLabel?> describe(Uri uri) async =>
+      uri.toString() == 'user:1' ? const LinkLabel('Alice Martin', icon: Icons.person) : null;
+
+  @override
+  Future<Uri> upload(Uint8List bytes, String name, String type) {
+    uploads.add((name, type, bytes.length));
+    return uploaded.future;
+  }
 
   @override
   Map<String, MentionSource> get mentions => {

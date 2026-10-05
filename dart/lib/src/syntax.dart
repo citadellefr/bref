@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'host.dart';
 import 'md/node.dart';
 
 /// What a piece of a line is, as flags: a piece can be several at once, a
@@ -48,6 +49,13 @@ enum SwapKind {
   /// The line folded small, showing [Swap.text]: the fence of a block of
   /// code, the underline of a heading.
   fold,
+
+  /// The picture [Swap.text] leads to, once the host gave it; its
+  /// description until then.
+  picture,
+
+  /// The text of a link to [Swap.text] as the host labels it, once it did.
+  label,
 }
 
 /// A piece of a line, in its columns, the preview shows otherwise.
@@ -87,7 +95,7 @@ LineSyntax readLine(MdNode block, String line, int lo) {
       kinds.add(marks[i]);
     }
   }
-  r.swaps.sort((a, b) => a.start.compareTo(b.start));
+  r.swaps.sort((a, b) => a.start != b.start ? a.start - b.start : (a.end != b.end ? b.end - a.end : a.kind.index - b.kind.index));
   return LineSyntax(ends, kinds, heading: r.heading, block: r.block, swaps: r.swaps);
 }
 
@@ -175,9 +183,15 @@ class _LineReader {
         flags = Mark.code;
         markFlags = Mark.code | Mark.markup;
       case MdKind.link:
-        flags = n.form == LinkForm.bare || n.form == LinkForm.angle ? Mark.url : Mark.link;
+        final address = n.form == LinkForm.bare || n.form == LinkForm.angle;
+        flags = address ? Mark.url : Mark.link;
+        if (!address && n.marks.length > 1 && n.dest.isNotEmpty) {
+          final text = (start: n.marks[0].end, end: n.marks[1].start);
+          if (text.start >= lo && text.end <= hi && text.start < text.end) _swap(text, SwapKind.label, _uri(n));
+        }
       case MdKind.image:
         flags = Mark.link | Mark.image;
+        if (n.start >= lo && n.end <= hi && n.dest.isNotEmpty) _swap((start: n.start, end: n.end), SwapKind.picture, _uri(n));
       case MdKind.inlineHtml:
         flags = Mark.html;
       case MdKind.math:
@@ -213,6 +227,9 @@ class _LineReader {
     if (inlines && line.length > longLine) return;
     _children(n);
   }
+
+  /// Where a link or a picture leads, as the host is asked about it.
+  static String _uri(MdNode n) => n.form == LinkForm.wiki ? wikiUri(n.dest).toString() : n.dest;
 
   void _item(MdNode n, MdNode list) {
     for (var k = 0; k < n.marks.length; k++) {

@@ -10,6 +10,7 @@ import 'package:trame/trame.dart';
 import 'editing.dart';
 import 'handles.dart';
 import 'host.dart';
+import 'host_cache.dart';
 import 'layout.dart';
 import 'mentions.dart';
 import 'note_syntax.dart';
@@ -59,10 +60,12 @@ class BrefEditor extends StatefulWidget {
   final bool preview;
 
   @override
-  State<BrefEditor> createState() => _BrefEditorState();
+  State<BrefEditor> createState() => BrefEditorState();
 }
 
-class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient {
+/// The state of a [BrefEditor], which pictures are given to, from the
+/// clipboard of the app or dropped on it.
+class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient {
   late final NoteText _text = NoteText(_flow);
   late final NoteSyntax _syntax = NoteSyntax(_text);
   NoteLayout? _layout;
@@ -120,6 +123,11 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
   var _searches = 0;
   final _mentionMenu = OverlayPortalController();
 
+  HostCache? _cache;
+
+  /// Where the pictures being uploaded go, following the edits.
+  final _uploads = <_Upload>[];
+
   DocSession get _session => widget.session;
 
   FocusNode get _focus => widget.focusNode ?? (_ownFocus ??= FocusNode());
@@ -148,20 +156,29 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
     final scaler = MediaQuery.textScalerOf(context);
     final layout = _layout;
     if (layout == null) {
-      _layout = NoteLayout(_text, _syntax, theme: theme, scaler: scaler, preview: widget.preview);
+      _makeCache();
+      _layout = NoteLayout(_text, _syntax, theme: theme, scaler: scaler, preview: widget.preview)..cache = _cache;
     } else {
       layout
         ..theme = theme
         ..scaler = scaler;
     }
+    _cache?.configuration = createLocalImageConfiguration(context);
+  }
+
+  void _makeCache() {
+    _cache?.dispose();
+    final host = widget.host;
+    _cache = host == null ? null : HostCache(host, onChanged: (dest) => _layout?.answered(dest), onFrame: _marks.changed);
+    _cache?.configuration = createLocalImageConfiguration(context);
   }
 
   @override
-  void didUpdateWidget(BrefEditor old) {
-    super.didUpdateWidget(old);
-    if (old.session != widget.session) {
+  void didUpdateWidget(BrefEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session != widget.session) {
       unawaited(_changes?.cancel());
-      old.session
+      oldWidget.session
         ..removeListener(_sessionChanged)
         ..presence.removeListener(_peersMoved);
       _changes = _session.changes.listen(_changed);
@@ -170,11 +187,16 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
         ..presence.addListener(_peersMoved);
       _reload();
     }
-    if (old.focusNode != widget.focusNode) {
-      (old.focusNode ?? _ownFocus)?.removeListener(_focusChanged);
+    if (oldWidget.focusNode != widget.focusNode) {
+      (oldWidget.focusNode ?? _ownFocus)?.removeListener(_focusChanged);
       _focus.addListener(_focusChanged);
     }
-    if (widget.theme != null && old.theme != widget.theme) _layout?.theme = widget.theme!;
+    if (oldWidget.host != widget.host) {
+      _endMention();
+      _makeCache();
+      _layout?.cache = _cache;
+    }
+    if (widget.theme != null && oldWidget.theme != widget.theme) _layout?.theme = widget.theme!;
     _layout?.preview = widget.preview;
   }
 
@@ -192,6 +214,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
     _blink?.cancel();
     _autoScroll?.cancel();
     _layout?.dispose();
+    _cache?.dispose();
     _marks.dispose();
     _touch.dispose();
     _scroll.dispose();
@@ -244,6 +267,9 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
       windowStart = delta.transformPosition(windowStart, thisFirst: true);
       windowEnd = delta.transformPosition(windowEnd, thisFirst: false);
       if (mention != null) mention = (trigger: mention.trigger, start: delta.transformPosition(mention.start, thisFirst: true));
+      for (final u in _uploads) {
+        u.at = delta.transformPosition(u.at, thisFirst: true);
+      }
     }
     _windowStart = windowStart;
     _windowEnd = windowEnd;
@@ -454,7 +480,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
     final end = _marks.extent;
     _endMention();
     final next = end < _text.length ? _text.substring(end, end + 1) : '';
-    _replace(mention.start, end, next == ' ' ? mentionMarkdown(m) : '${mentionMarkdown(m)} ');
+    _replace(mention.start, end, next == ' ' ? linkMarkdown(m.text, m.uri) : '${linkMarkdown(m.text, m.uri)} ');
   }
 
   void _chooseMention(int by) => setState(() => _chosen = (_chosen + by) % _found.length);
@@ -472,6 +498,29 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
       chosen: _chosen,
       onPick: _pickMention,
     );
+  }
+
+  // pictures
+
+  /// Gives a picture to the host, and writes it on a line of its own where
+  /// the caret was. It throws what the host's upload threw.
+  Future<void> insertPicture(Uint8List bytes, String name, String type) async {
+    final host = widget.host;
+    if (host == null || !_editable) return;
+    final upload = _Upload(_marks.end);
+    _uploads.add(upload);
+    try {
+      final uri = await host.upload(bytes, name, type);
+      if (!mounted || !_editable) return;
+      final at = upload.at;
+      final line = _text.lineAt(at);
+      final before = at > _text.lineStart(line) ? '\n' : '';
+      final after = at < _text.lineEnd(line) ? '\n' : '';
+      final alt = name.replaceFirst(RegExp(r'\.[^.]*$'), '');
+      _replace(at, at, '$before!${linkMarkdown(alt, uri)}$after');
+    } finally {
+      _uploads.remove(upload);
+    }
   }
 
   // the selection
@@ -704,6 +753,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
       this,
       TextInputConfiguration(
         inputType: TextInputType.multiline,
+        allowedMimeTypes: widget.host == null ? const [] : const ['image/png', 'image/jpeg', 'image/gif', 'image/webp'],
         inputAction: TextInputAction.newline,
         enableDeltaModel: true,
         textCapitalization: TextCapitalization.sentences,
@@ -851,7 +901,12 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
   void performSelector(String selectorName) {}
 
   @override
-  void insertContent(KeyboardInsertedContent content) {}
+  void insertContent(KeyboardInsertedContent content) {
+    final data = content.data;
+    if (data == null) return;
+    final name = Uri.tryParse(content.uri)?.pathSegments.lastOrNull ?? 'picture';
+    insertPicture(data, name, content.mimeType).ignore();
+  }
 
   // pointers
 
@@ -1068,4 +1123,10 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
       },
     );
   }
+}
+
+class _Upload {
+  _Upload(this.at);
+
+  int at;
 }
