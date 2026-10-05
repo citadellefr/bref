@@ -5,18 +5,43 @@ import (
 	"strings"
 )
 
-// HTML renders a document. Raw HTML is shown as text, as the editor shows
-// it, and links that could run code lead nowhere.
+// HTML renders a document, its links leading where they are written.
 func HTML(doc *Node) string {
-	w := htmlWriter{}
+	return Renderer{}.HTML(doc)
+}
+
+// Renderer renders documents in HTML. Raw HTML is shown as text, as the
+// editor shows it, and links that could run code lead nowhere.
+type Renderer struct {
+	// URL is where a link or a picture leads, "" for nowhere: the host
+	// knows what [[Note]], user:42 or the pictures it keeps stand for. Nil
+	// keeps destinations as written.
+	URL func(link *Node) string
+}
+
+func (r Renderer) HTML(doc *Node) string {
+	w := htmlWriter{url: r.URL}
 	w.node(doc, false)
 	return w.b.String()
 }
 
 type htmlWriter struct {
-	b strings.Builder
+	b   strings.Builder
+	url func(*Node) string
 	// raw lets raw HTML through, as CommonMark renders it.
 	raw bool
+}
+
+// href is where a link or a picture leads, "" for nowhere.
+func (w *htmlWriter) href(n *Node) string {
+	dest := n.Dest
+	if w.url != nil {
+		dest = w.url(n)
+	}
+	if dest == "" || !w.raw && !safeURL(dest) {
+		return ""
+	}
+	return normalizeURL(dest)
 }
 
 func (w *htmlWriter) cr() {
@@ -197,8 +222,8 @@ func (w *htmlWriter) node(n *Node, tight bool) {
 		w.b.WriteString("</" + tag + ">")
 	case Link:
 		w.b.WriteString("<a")
-		if w.raw || safeURL(n.Dest) {
-			w.b.WriteString(` href="` + escapeHTML(normalizeURL(n.Dest)) + `"`)
+		if href := w.href(n); href != "" || w.raw {
+			w.b.WriteString(` href="` + escapeHTML(href) + `"`)
 		}
 		if n.Title != "" {
 			w.b.WriteString(` title="` + escapeHTML(n.Title) + `"`)
@@ -207,11 +232,12 @@ func (w *htmlWriter) node(n *Node, tight bool) {
 		w.children(n)
 		w.b.WriteString("</a>")
 	case Image:
-		src := ""
-		if w.raw || safeURL(n.Dest) {
-			src = normalizeURL(n.Dest)
+		src := w.href(n)
+		if src == "" && !w.raw {
+			w.out(Plain(n))
+			return
 		}
-		w.b.WriteString(`<img src="` + escapeHTML(src) + `" alt="` + escapeHTML(plainText(n)) + `"`)
+		w.b.WriteString(`<img src="` + escapeHTML(src) + `" alt="` + escapeHTML(Plain(n)) + `"`)
 		if n.Title != "" {
 			w.b.WriteString(` title="` + escapeHTML(n.Title) + `"`)
 		}
@@ -229,9 +255,9 @@ func (w *htmlWriter) node(n *Node, tight bool) {
 	}
 }
 
-// plainText is the text of a node without its formatting: the description
-// of an image.
-func plainText(n *Node) string {
+// Plain is the text of a node without its syntax: what a link reads as,
+// the description of a picture.
+func Plain(n *Node) string {
 	var b strings.Builder
 	n.Walk(func(c *Node) bool {
 		switch c.Kind {

@@ -147,3 +147,16 @@ func (n *Node) Walk(f func(*Node) bool) {
 		c.Walk(f)
 	}
 }
+
+// Links are the links and pictures of a document, in order, those in the
+// text of others included.
+func Links(doc *Node) []*Node {
+	var links []*Node
+	doc.Walk(func(n *Node) bool {
+		if n.Kind == Link || n.Kind == Image {
+			links = append(links, n)
+		}
+		return true
+	})
+	return links
+}
