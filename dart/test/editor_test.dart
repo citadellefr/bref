@@ -338,6 +338,44 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('a trigger typed at the start of a word proposes what the host has', (tester) async {
+    await pumpEditor(tester, 'Ask ', host: _Host());
+    final keyboard = Keyboard(tester);
+    await key(tester, LogicalKeyboardKey.end);
+    await keyboard.type('a@');
+    await tester.pump();
+    expect(find.text('@Alice'), findsNothing);
+
+    await keyboard.backspace();
+    await keyboard.backspace();
+    await keyboard.type('@');
+    await tester.pump();
+    expect(find.text('@Alice'), findsOneWidget);
+    expect(find.text('@Bob'), findsOneWidget);
+    await keyboard.type('b');
+    await tester.pump();
+    expect(find.text('@Alice'), findsNothing);
+    await key(tester, LogicalKeyboardKey.enter);
+    await settle(tester);
+    expect(hub.text, 'Ask [@Bob](user:2) ');
+    expect(find.text('@Bob'), findsNothing);
+
+    await keyboard.type('[[');
+    await tester.pump();
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    await keyboard.type('\n');
+    await settle(tester);
+    expect(hub.text, 'Ask [@Bob](user:2) [My \\[draft\\]](<note:draft(2)>) ');
+
+    await keyboard.type('@');
+    await tester.pump();
+    await key(tester, LogicalKeyboardKey.escape);
+    await keyboard.type('\n');
+    await settle(tester);
+    expect(hub.text, 'Ask [@Bob](user:2) [My \\[draft\\]](<note:draft(2)>) @\n');
+    await finish(tester);
+  });
+
   testWidgets('shows the whole note as written when asked to', (tester) async {
     hub = FakeHub('**gras** fin\n**gras** fin');
     mine = DocSession(hub.connect)..start();
@@ -357,4 +395,13 @@ class _Host extends BrefHost {
 
   @override
   void open(Uri uri) => opened.add(uri);
+
+  @override
+  Map<String, MentionSource> get mentions => {
+    '@': (query) async => [
+      for (final (i, name) in ['Alice', 'Bob'].indexed)
+        if (name.toLowerCase().startsWith(query)) Mention('@$name', Uri.parse('user:${i + 1}')),
+    ],
+    '[[': (query) async => [Mention('Plan', Uri.parse('note:1')), Mention('My [draft]', Uri.parse('note:draft(2)'))],
+  };
 }

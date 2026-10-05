@@ -11,6 +11,7 @@ import 'editing.dart';
 import 'handles.dart';
 import 'host.dart';
 import 'layout.dart';
+import 'mentions.dart';
 import 'note_syntax.dart';
 import 'note_text.dart';
 import 'render.dart';
@@ -110,6 +111,15 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
 
   var _cursor = SystemMouseCursors.text;
 
+  /// The mention being typed: its trigger and where it starts, the text
+  /// typed after it, and what the host proposes for that text.
+  ({String trigger, int start})? _mention;
+  String? _query;
+  List<Mention> _found = const [];
+  var _chosen = 0;
+  var _searches = 0;
+  final _mentionMenu = OverlayPortalController();
+
   DocSession get _session => widget.session;
 
   FocusNode get _focus => widget.focusNode ?? (_ownFocus ??= FocusNode());
@@ -203,6 +213,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
   }
 
   void _reload() {
+    _endMention();
     _text.reset(_flow);
     _syntax.reset();
     _layout?.reload();
@@ -214,6 +225,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
   void _changed(Edit edit) {
     var base = _marks.base, extent = _marks.extent;
     var windowStart = _windowStart, windowEnd = _windowEnd;
+    var mention = _mention;
     for (final c in edit.changes) {
       if (c.id != noteBody) continue;
       if (c.kind != ChangeKind.text) {
@@ -231,9 +243,11 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
       }
       windowStart = delta.transformPosition(windowStart, thisFirst: true);
       windowEnd = delta.transformPosition(windowEnd, thisFirst: false);
+      if (mention != null) mention = (trigger: mention.trigger, start: delta.transformPosition(mention.start, thisFirst: true));
     }
     _windowStart = windowStart;
     _windowEnd = windowEnd;
+    _mention = mention;
     if (!_local) _select(base, extent: extent, keepGoal: true, reveal: _travelling, publish: _travelling);
     _peersMoved();
   }
@@ -289,7 +303,9 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
 
   /// Replaces [start] to [end] by [text], and puts the caret after it.
   void _replace(int start, int end, String text) {
-    if (_editable && _edit(start, end, text)) _select(start + text.length);
+    if (!_editable || !_edit(start, end, text)) return;
+    _select(start + text.length);
+    if (text.isNotEmpty && text.length <= 2 && _mention == null) _startMention();
   }
 
   /// Several replacements made as one edit, the selection following them.
@@ -313,6 +329,10 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
   }
 
   void _type(String text) {
+    if (text == '\n' && _found.isNotEmpty) {
+      _pickMention(_found[_chosen]);
+      return;
+    }
     if (text == '\n') {
       final r = _marks.base == _marks.extent ? enter(_text, _marks.extent) : null;
       if (r != null) {
@@ -361,6 +381,99 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
     _replaceAll(indent(_text, s.start, s.end, outdent: outdent));
   }
 
+  // mentions
+
+  /// Starts a mention when what was just typed ends a trigger, typed at the
+  /// start of a word.
+  void _startMention() {
+    final triggers = widget.host?.mentions.keys ?? const <String>[];
+    final at = _marks.extent;
+    final lineStart = _text.lineStart(_text.lineAt(at));
+    for (final trigger in triggers) {
+      final start = at - trigger.length;
+      if (_marks.base != at || start < lineStart || _text.substring(start, at) != trigger) continue;
+      if (start > lineStart && _wordCharacter.hasMatch(_text.substring(start - 1, start))) continue;
+      _mention = (trigger: trigger, start: start);
+      _followMention();
+      return;
+    }
+  }
+
+  static final _wordCharacter = RegExp(r'[\p{L}\p{N}]', unicode: true);
+
+  /// Asks the host what to propose for the text typed after the trigger,
+  /// and ends the mention when the caret leaves it.
+  void _followMention() {
+    final m = _mention;
+    if (m == null) return;
+    final from = m.start + m.trigger.length;
+    final at = _marks.extent;
+    if (_marks.base != at || at < from || at - from > 60 || _text.substring(m.start, from) != m.trigger) {
+      _endMention();
+      return;
+    }
+    final query = _text.substring(from, at);
+    if (query.contains('\n') || query.startsWith(' ')) {
+      _endMention();
+      return;
+    }
+    if (query == _query) return;
+    _query = query;
+    final search = ++_searches;
+    final source = widget.host?.mentions[m.trigger];
+    if (source == null) return;
+    source(query).then(
+      (found) => _proposed(search, found),
+      onError: (Object _) => _proposed(search, const []),
+    );
+  }
+
+  void _proposed(int search, List<Mention> found) {
+    if (search != _searches || !mounted) return;
+    setState(() {
+      _found = found.take(8).toList();
+      _chosen = 0;
+    });
+    _found.isEmpty ? _mentionMenu.hide() : _mentionMenu.show();
+  }
+
+  void _endMention() {
+    if (_mention == null) return;
+    _mention = null;
+    _query = null;
+    _found = const [];
+    _searches++;
+    _mentionMenu.hide();
+  }
+
+  /// Writes the link to [m] in place of the trigger and the text after it,
+  /// followed by a space.
+  void _pickMention(Mention m) {
+    final mention = _mention;
+    if (mention == null) return;
+    final end = _marks.extent;
+    _endMention();
+    final next = end < _text.length ? _text.substring(end, end + 1) : '';
+    _replace(mention.start, end, next == ' ' ? mentionMarkdown(m) : '${mentionMarkdown(m)} ');
+  }
+
+  void _chooseMention(int by) => setState(() => _chosen = (_chosen + by) % _found.length);
+
+  Widget _mentionMenuBuilder(BuildContext context) {
+    final render = _render;
+    final m = _mention;
+    if (render == null || !render.hasSize || m == null || _found.isEmpty) return const SizedBox.shrink();
+    final overlay = Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final caret = render.caretRect(m.start);
+    Offset local(Offset p) => overlay.globalToLocal(render.localToGlobal(p));
+    return MentionMenu(
+      anchor: Rect.fromPoints(local(caret.topLeft), local(caret.bottomRight)),
+      found: _found,
+      chosen: _chosen,
+      onPick: _pickMention,
+    );
+  }
+
   // the selection
 
   /// Selects [base] to [extent], the caret alone at [base] by default.
@@ -374,6 +487,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
       ..changed();
     if (!keepGoal) _goalX = null;
     if (publish) _session.select(DocSelection(noteBody, _marks.base, _marks.extent));
+    _followMention();
     _revealSelection();
     _restartBlink();
     if (reveal) _reveal(_marks.extent);
@@ -485,6 +599,23 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
     final shift = keys.isShiftPressed;
     final command = _apple ? keys.isMetaPressed : keys.isControlPressed;
     final word = _apple ? keys.isAltPressed : keys.isControlPressed;
+    if (_mention != null) {
+      final picking = _found.isNotEmpty;
+      switch (e.logicalKey) {
+        case LogicalKeyboardKey.arrowDown when picking:
+          _chooseMention(1);
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.arrowUp when picking:
+          _chooseMention(-1);
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter || LogicalKeyboardKey.tab when picking:
+          _pickMention(_found[_chosen]);
+          return KeyEventResult.handled;
+        case LogicalKeyboardKey.escape:
+          _endMention();
+          return KeyEventResult.handled;
+      }
+    }
     final s = _marks;
     final collapsed = s.base == s.extent;
     switch (e.logicalKey) {
@@ -560,6 +691,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
     } else {
       _closeInput();
       _menu.remove();
+      _endMention();
     }
     _revealSelection();
     _restartBlink();
@@ -912,22 +1044,26 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
             ),
           ),
         );
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            editor,
-            ValueListenableBuilder(
-              valueListenable: _touch,
-              builder: (context, touch, _) => touch
-                  ? SelectionHandles(
-                      marks: _marks,
-                      scroll: _scroll,
-                      note: () => _render,
-                      onMoved: (base, extent) => _select(base, extent: extent),
-                    )
-                  : const SizedBox.shrink(),
-            ),
-          ],
+        return OverlayPortal(
+          controller: _mentionMenu,
+          overlayChildBuilder: _mentionMenuBuilder,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              editor,
+              ValueListenableBuilder(
+                valueListenable: _touch,
+                builder: (context, touch, _) => touch
+                    ? SelectionHandles(
+                        marks: _marks,
+                        scroll: _scroll,
+                        note: () => _render,
+                        onMoved: (base, extent) => _select(base, extent: extent),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
+          ),
         );
       },
     );
