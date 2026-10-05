@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.7.0 — unreleased
+## 0.7.0 — 2026-10-05
 
 - The Go package serves `.md` notes on trame's hub: a note is its text, written
   back as it was read; its characters carry no attributes.
