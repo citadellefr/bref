@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.0 — 2026-10-05
+
+- On trame 0.3.0. The characters of a note carry `by`, the ID of who wrote
+  them: the editor signs what it writes, and the hub signs again what was
+  not signed by its author, such as text whose deletion is undone.
+  `bref.NewHub` takes `bref.Options`; `bref.Open` gives way to
+  `bref.Format(opt)`.
+- `Options.OnLinks` is told, as a note is saved, of the links, mentions and
+  pictures added since the last save, each with who wrote most of it.
+- `md.Links` lists the links and pictures of a document, `md.Plain` the
+  text of a node; `md.Renderer` renders HTML whose links and pictures lead
+  where the host says.
+- Dart: `BrefHost`, what the app provides. Typing a trigger, `@` or `[[`,
+  proposes what the host has, written `[@Alice](user:42)`. Lines read as
+  they render show the host's pictures and its labels of links; a click
+  opens a link where the host goes, never to a scheme it does not know.
+  `BrefEditorState.insertPicture` uploads a picture and writes it where the
+  caret was.
+
 ## 0.7.0 — 2026-10-05
 
 - The Go package serves `.md` notes on trame's hub: a note is its text, written

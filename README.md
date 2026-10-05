@@ -14,8 +14,8 @@ It is developed by [Citadelle](https://github.com/citadellefr), where it is the
 default format for notes, and is released under the MIT license.
 
 > Bref is at its beginning: notes are edited together in live preview, the
-> syntax of the lines being edited shown as written. Mentions, pictures,
-> comments, math, charts and diagrams come next.
+> syntax of the lines being edited shown as written, with mentions, links and
+> pictures your app provides. Comments, math, charts and diagrams come next.
 
 ## Principles
 
@@ -68,6 +68,44 @@ shown as it is written, with the carets and selections of everyone else;
 `preview: false` shows all of it as written. It keeps the keys of
 text editors, goes on with lists and quotes on Enter, indents them with Tab,
 and undoes this person's edits only.
+
+What links stand for is the app's, through a `BrefHost`:
+
+```dart
+class Host extends BrefHost {
+  @override
+  Map<String, MentionSource> get mentions => {
+    '@': (query) async => [for (final u in await people(query)) Mention('@${u.name}', Uri.parse('user:${u.id}'))],
+  };
+
+  @override
+  Set<String> get schemes => {'user', 'doc'};
+
+  @override
+  Future<Uri> upload(Uint8List bytes, String name, String type) => drive.put(bytes, name, type);
+
+  @override
+  ImageProvider? image(Uri uri) => uri.scheme == 'doc' ? NetworkImage(drive.url(uri)) : null;
+
+  @override
+  Future<LinkLabel?> describe(Uri uri) async => uri.scheme == 'user' ? LinkLabel(await nameOf(uri.path)) : null;
+
+  @override
+  void open(Uri uri) => router.go(uri);
+}
+
+BrefEditor(session: session, host: Host());
+```
+
+Typing `@` proposes what the host has, written as a standard link:
+`[@Alice](user:42)`. Lines read as they render show the pictures the host
+gives and links as it labels them; a click opens a link, with the command
+key on the lines being edited. A link to a scheme that is neither the web's
+nor the host's is never opened. The host gives pictures from its own
+clipboard or drops to `BrefEditorState.insertPicture`, which uploads them
+and writes them where the caret was; keyboards that insert pictures go the
+same way. `file:` is best avoided as a scheme of the host: Dart reads
+`file:9` as `file:///9`.
 
 ## Markdown
 
