@@ -260,13 +260,29 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
 
   // editing
 
+  /// Who this person is, which signs what they write; the server signs it
+  /// when it does not know.
+  Attributes? get _by => _session.id.isEmpty ? null : {'by': _session.id};
+
+  /// Replaces [start] to [end] by [text], signed, as an edit of this person.
+  bool _edit(int start, int end, String text) {
+    _local = true;
+    final done = _session.edit(Edit([
+      Change.text(
+        noteBody,
+        Delta()
+          ..retain(start)
+          ..delete(end - start)
+          ..insert(text, _by),
+      ),
+    ]));
+    _local = false;
+    return done;
+  }
+
   /// Replaces [start] to [end] by [text], and puts the caret after it.
   void _replace(int start, int end, String text) {
-    if (!_editable) return;
-    _local = true;
-    final done = _session.replaceText(noteBody, start, end, text);
-    _local = false;
-    if (done) _select(start + text.length);
+    if (_editable && _edit(start, end, text)) _select(start + text.length);
   }
 
   /// Several replacements made as one edit, the selection following them.
@@ -278,7 +294,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
       delta
         ..retain(r.start - at)
         ..delete(r.end - r.start)
-        ..insert(r.text);
+        ..insert(r.text, _by);
       at = r.end;
     }
     final base = delta.transformPosition(_marks.base, thisFirst: false);
@@ -374,9 +390,7 @@ class _BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient
     final at = _render?.taskAt(local);
     if (at == null || !_editable) return false;
     final done = _text.substring(at + 1, at + 2) != ' ';
-    _local = true;
-    _session.replaceText(noteBody, at + 1, at + 2, done ? ' ' : 'x');
-    _local = false;
+    _edit(at + 1, at + 2, done ? ' ' : 'x');
     return true;
   }
 

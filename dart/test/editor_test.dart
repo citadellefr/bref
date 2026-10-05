@@ -127,6 +127,16 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('signs what it writes', (tester) async {
+    await pumpEditor(tester, 'one');
+    final keyboard = Keyboard(tester);
+    await keyboard.type('Hi\n');
+    await settle(tester);
+    expect(hub.text, 'Hi\none');
+    expect(hub.doc['body']!.text!.ops.first, Op.insert('Hi\n', {'by': mine.id}));
+    await finish(tester);
+  });
+
   testWidgets('Enter goes on with a list, and ends it on an empty item', (tester) async {
     await pumpEditor(tester, '- un');
     final keyboard = Keyboard(tester);
