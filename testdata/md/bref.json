@@ -1,0 +1,303 @@
+[
+ {
+  "example": 1,
+  "section": "",
+  "extension": "",
+  "markdown": "---\ntitle: Notes\ntags: [a, b]\n---\n# Hello\n",
+  "html": "<h1>Hello</h1>\n"
+ },
+ {
+  "example": 2,
+  "section": "",
+  "extension": "",
+  "markdown": "---\n...\nText\n",
+  "html": "<p>Text</p>\n"
+ },
+ {
+  "example": 3,
+  "section": "",
+  "extension": "",
+  "markdown": "---\nnot closed\n",
+  "html": "<hr />\n<p>not closed</p>\n"
+ },
+ {
+  "example": 4,
+  "section": "",
+  "extension": "",
+  "markdown": "Text\n---\nmore\n---\n",
+  "html": "<h2>Text</h2>\n<h2>more</h2>\n"
+ },
+ {
+  "example": 5,
+  "section": "",
+  "extension": "",
+  "markdown": "Euler: $e^{i\\pi} + 1 = 0$ and $$\\int_0^1 x\\,dx$$.\n",
+  "html": "<p>Euler: <span class=\"math\">e^{i\\pi} + 1 = 0</span> and <span class=\"math\">\\int_0^1 x\\,dx</span>.</p>\n"
+ },
+ {
+  "example": 6,
+  "section": "",
+  "extension": "",
+  "markdown": "It costs $5 and $10, or $ 3 $.\n",
+  "html": "<p>It costs $5 and $10, or $ 3 $.</p>\n"
+ },
+ {
+  "example": 7,
+  "section": "",
+  "extension": "",
+  "markdown": "a $x $ b\n\nc $ x$ d\n\ne $x$2 f\n\ng \\$x$ h\n",
+  "html": "<p>a $x $ b</p>\n<p>c $ x$ d</p>\n<p>e $x$2 f</p>\n<p>g $x$ h</p>\n"
+ },
+ {
+  "example": 8,
+  "section": "",
+  "extension": "",
+  "markdown": "$$\nx = \\frac{a}{b}\n\\\\ y\n$$\n",
+  "html": "<div class=\"math\">x = \\frac{a}{b}\n\\\\ y\n</div>\n"
+ },
+ {
+  "example": 9,
+  "section": "",
+  "extension": "",
+  "markdown": "> $$\n> a\n> $$\n",
+  "html": "<blockquote>\n<div class=\"math\">a\n</div>\n</blockquote>\n"
+ },
+ {
+  "example": 10,
+  "section": "",
+  "extension": "",
+  "markdown": "- $$\n  a\n  $$\n",
+  "html": "<ul>\n<li>\n<div class=\"math\">a\n</div>\n</li>\n</ul>\n"
+ },
+ {
+  "example": 11,
+  "section": "",
+  "extension": "",
+  "markdown": "$$\nunclosed\n",
+  "html": "<div class=\"math\">unclosed\n</div>\n"
+ },
+ {
+  "example": 12,
+  "section": "",
+  "extension": "",
+  "markdown": "Text\n$$\nx\n$$\n",
+  "html": "<p>Text</p>\n<div class=\"math\">x\n</div>\n"
+ },
+ {
+  "example": 13,
+  "section": "",
+  "extension": "",
+  "markdown": "==marked== and ===not=== and a==b==c\n",
+  "html": "<p><mark>marked</mark> and ===not=== and a<mark>b</mark>c</p>\n"
+ },
+ {
+  "example": 14,
+  "section": "",
+  "extension": "",
+  "markdown": "==a\n\nb==\n",
+  "html": "<p>==a</p>\n<p>b==</p>\n"
+ },
+ {
+  "example": 15,
+  "section": "",
+  "extension": "",
+  "markdown": "~one~ ~~two~~ ~~~three~~~ ~~mixed~\n",
+  "html": "<p><del>one</del> <del>two</del> ~~~three~~~ ~~mixed~</p>\n"
+ },
+ {
+  "example": 16,
+  "section": "",
+  "extension": "",
+  "markdown": "**==strong mark==**\n",
+  "html": "<p><strong><mark>strong mark</mark></strong></p>\n"
+ },
+ {
+  "example": 17,
+  "section": "",
+  "extension": "",
+  "markdown": "See [[Note]], [[Other note|that one]] and ![[picture.png]].\n",
+  "html": "<p>See <a href=\"Note\">Note</a>, <a href=\"Other%20note\">that one</a> and <img src=\"picture.png\" alt=\"picture.png\" />.</p>\n"
+ },
+ {
+  "example": 18,
+  "section": "",
+  "extension": "",
+  "markdown": "[[a]b]] [[ ]] [[x\ny]] [[Note|]]\n",
+  "html": "<p>[[a]b]] [[ ]] [[x\ny]] <a href=\"Note\">Note</a></p>\n"
+ },
+ {
+  "example": 19,
+  "section": "",
+  "extension": "",
+  "markdown": "[link [[Inner]]](/url)\n",
+  "html": "<p>[link <a href=\"Inner\">Inner</a>](/url)</p>\n"
+ },
+ {
+  "example": 20,
+  "section": "",
+  "extension": "",
+  "markdown": "[[Note#Heading|alias with *stars*]]\n",
+  "html": "<p><a href=\"Note#Heading\">alias with *stars*</a></p>\n"
+ },
+ {
+  "example": 21,
+  "section": "",
+  "extension": "",
+  "markdown": "- [ ] open\n- [x] done\n- [X] done too\n- [ ]\n- [ ]text\n- [-] no\n",
+  "html": "<ul>\n<li><input disabled=\"\" type=\"checkbox\"> open</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> done</li>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> done too</li>\n<li><input disabled=\"\" type=\"checkbox\"> </li>\n<li>[ ]text</li>\n<li>[-] no</li>\n</ul>\n"
+ },
+ {
+  "example": 22,
+  "section": "",
+  "extension": "",
+  "markdown": "1. [x] first\n2. [ ] second\n   - [ ] nested\n",
+  "html": "<ol>\n<li><input checked=\"\" disabled=\"\" type=\"checkbox\"> first</li>\n<li><input disabled=\"\" type=\"checkbox\"> second\n<ul>\n<li><input disabled=\"\" type=\"checkbox\"> nested</li>\n</ul>\n</li>\n</ol>\n"
+ },
+ {
+  "example": 23,
+  "section": "",
+  "extension": "",
+  "markdown": "* [ ]   spaced\n",
+  "html": "<ul>\n<li><input disabled=\"\" type=\"checkbox\"> spaced</li>\n</ul>\n"
+ },
+ {
+  "example": 24,
+  "section": "",
+  "extension": "",
+  "markdown": "| Name | Score |\n|:-----|------:|\n| *Ann* | 12 |\n| `a\\|b` | [x](y) |\n",
+  "html": "<table>\n<thead>\n<tr>\n<th align=\"left\">Name</th>\n<th align=\"right\">Score</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td align=\"left\"><em>Ann</em></td>\n<td align=\"right\">12</td>\n</tr>\n<tr>\n<td align=\"left\"><code>a|b</code></td>\n<td align=\"right\"><a href=\"y\">x</a></td>\n</tr>\n</tbody>\n</table>\n"
+ },
+ {
+  "example": 25,
+  "section": "",
+  "extension": "",
+  "markdown": "Intro line\n| a | b |\n| - | - |\n| 1 | 2 |\n",
+  "html": "<p>Intro line</p>\n<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>1</td>\n<td>2</td>\n</tr>\n</tbody>\n</table>\n"
+ },
+ {
+  "example": 26,
+  "section": "",
+  "extension": "",
+  "markdown": "> | a |\n> |---|\n> | b |\n\nafter\n",
+  "html": "<blockquote>\n<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>b</td>\n</tr>\n</tbody>\n</table>\n</blockquote>\n<p>after</p>\n"
+ },
+ {
+  "example": 27,
+  "section": "",
+  "extension": "",
+  "markdown": "| a |\n| --- |\n|\n",
+  "html": "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n<p>|</p>\n"
+ },
+ {
+  "example": 28,
+  "section": "",
+  "extension": "",
+  "markdown": "> # Title\n> - item **bold**\n>   continued\n",
+  "html": "<blockquote>\n<h1>Title</h1>\n<ul>\n<li>item <strong>bold</strong>\ncontinued</li>\n</ul>\n</blockquote>\n"
+ },
+ {
+  "example": 29,
+  "section": "",
+  "extension": "",
+  "markdown": "1. one\n\n   para\n2. two\n",
+  "html": "<ol>\n<li>\n<p>one</p>\n<p>para</p>\n</li>\n<li>\n<p>two</p>\n</li>\n</ol>\n"
+ },
+ {
+  "example": 30,
+  "section": "",
+  "extension": "",
+  "markdown": "-\tTabbed item\n\n\tcode in item?\n",
+  "html": "<ul>\n<li>\n<p>Tabbed item</p>\n<p>code in item?</p>\n</li>\n</ul>\n"
+ },
+ {
+  "example": 31,
+  "section": "",
+  "extension": "",
+  "markdown": "Hard  \nbreak\\\nand soft\nbreak\n",
+  "html": "<p>Hard<br />\nbreak<br />\nand soft\nbreak</p>\n"
+ },
+ {
+  "example": 32,
+  "section": "",
+  "extension": "",
+  "markdown": "&copy; &amp; &#169; &#xA9; &nope; \\* \\a\n",
+  "html": "<p>© &amp; © © &amp;nope; * \\a</p>\n"
+ },
+ {
+  "example": 33,
+  "section": "",
+  "extension": "",
+  "markdown": "[ref]: https://example.com \"Title\"\n[*ref*] and [ref][] and [text][ref]\n",
+  "html": "<p>[<em>ref</em>] and <a href=\"https://example.com\" title=\"Title\">ref</a> and <a href=\"https://example.com\" title=\"Title\">text</a></p>\n"
+ },
+ {
+  "example": 34,
+  "section": "",
+  "extension": "",
+  "markdown": "Visit www.example.com/path?q=1, https://x.org/a_(b) or mail me@example.org.\n",
+  "html": "<p>Visit <a href=\"http://www.example.com/path?q=1\">www.example.com/path?q=1</a>, <a href=\"https://x.org/a_(b)\">https://x.org/a_(b)</a> or mail <a href=\"mailto:me@example.org\">me@example.org</a>.</p>\n"
+ },
+ {
+  "example": 35,
+  "section": "",
+  "extension": "",
+  "markdown": "*www.example.com* (http://a.b/c) <https://angle.example>\n",
+  "html": "<p><em><a href=\"http://www.example.com\">www.example.com</a></em> (<a href=\"http://a.b/c\">http://a.b/c</a>) <a href=\"https://angle.example\">https://angle.example</a></p>\n"
+ },
+ {
+  "example": 36,
+  "section": "",
+  "extension": "",
+  "markdown": "Héllo *wörld* 😀 **ünïcode** `cödé` [lïnk](/é)\n",
+  "html": "<p>Héllo <em>wörld</em> 😀 <strong>ünïcode</strong> <code>cödé</code> <a href=\"/%C3%A9\">lïnk</a></p>\n"
+ },
+ {
+  "example": 37,
+  "section": "",
+  "extension": "",
+  "markdown": "Setext *title*\n==\n\nAnother\n---\n",
+  "html": "<h1>Setext <em>title</em></h1>\n<h2>Another</h2>\n"
+ },
+ {
+  "example": 38,
+  "section": "",
+  "extension": "",
+  "markdown": "```js title\nconst a = 1;\n```\n\n    indented\n    code\n",
+  "html": "<pre><code class=\"language-js\">const a = 1;\n</code></pre>\n<pre><code>indented\ncode\n</code></pre>\n"
+ },
+ {
+  "example": 39,
+  "section": "",
+  "extension": "",
+  "markdown": "<div>\n*not md*\n</div>\n\nInline <b>html</b> <!-- c -->\n",
+  "html": "<p>&lt;div&gt;\n*not md*\n&lt;/div&gt;</p>\n<p>Inline &lt;b&gt;html&lt;/b&gt; &lt;!-- c --&gt;</p>\n"
+ },
+ {
+  "example": 40,
+  "section": "",
+  "extension": "",
+  "markdown": "![alt *em*](/img.png \"T\") and ![ref img][ref2]\n\n[ref2]: /r.png\n",
+  "html": "<p><img src=\"/img.png\" alt=\"alt em\" title=\"T\" /> and <img src=\"/r.png\" alt=\"ref img\" /></p>\n"
+ },
+ {
+  "example": 41,
+  "section": "",
+  "extension": "",
+  "markdown": "Line with trailing spaces   \n# Heading #\n## Closed ##   \n",
+  "html": "<p>Line with trailing spaces</p>\n<h1>Heading</h1>\n<h2>Closed</h2>\n"
+ },
+ {
+  "example": 42,
+  "section": "",
+  "extension": "",
+  "markdown": "a\r\nb\r\n\r\n- c\r\n",
+  "html": "<p>a\nb</p>\n<ul>\n<li>c</li>\n</ul>\n"
+ },
+ {
+  "example": 43,
+  "section": "",
+  "extension": "",
+  "markdown": "Paragraph\n> lazy\ncontinuation\n",
+  "html": "<p>Paragraph</p>\n<blockquote>\n<p>lazy\ncontinuation</p>\n</blockquote>\n"
+ }
+]
