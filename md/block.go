@@ -524,7 +524,7 @@ func (p *blockParser) close(here bool) {
 		p.leaves = append(p.leaves, leaf{node: n, lines: b.lines})
 	case CodeBlock:
 		if b.fenceLen > 0 {
-			n.Info = unescape(strings.Trim(p.text(b.lines[:1]), " \t"))
+			n.Info = unescape(strings.Trim(p.text(b.lines[:1]), " \t\n"))
 			n.Literal = p.text(b.lines[1:])
 			break
 		}

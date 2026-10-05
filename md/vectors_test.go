@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"math/rand/v2"
 	"os"
+	"strings"
 	"testing"
 	"unicode/utf8"
 )
@@ -45,6 +47,9 @@ func TestVectors(t *testing.T) {
 			vectors = append(vectors, vector{set.dialect, e.Markdown, dump(parse(e.Markdown, set.ext), utf16Offsets(e.Markdown))})
 		}
 	}
+	for _, src := range mixed(t, 400) {
+		vectors = append(vectors, vector{"bref", src, dump(Parse(src), utf16Offsets(src))})
+	}
 	var b bytes.Buffer
 	b.WriteString("[\n")
 	for i, v := range vectors {
@@ -67,6 +72,37 @@ func TestVectors(t *testing.T) {
 	if !bytes.Equal(b.Bytes(), want) {
 		t.Fatal("the trees differ from testdata/md/vectors.json: run go test ./md -update and review the change")
 	}
+}
+
+// mixed are documents made of lines of the examples, cut and spliced with
+// syntax, characters beyond ASCII and beyond the basic plane.
+func mixed(t *testing.T, n int) []string {
+	var lines []string
+	for _, set := range []string{"commonmark.json", "gfm.json", "bref.json"} {
+		for _, e := range readExamples(t, set) {
+			lines = append(lines, strings.Split(strings.TrimSuffix(e.Markdown, "\n"), "\n")...)
+		}
+	}
+	bits := []string{"*", "**", "_", "~~", "==", "$", "$$", "[", "]", "[[", "]]", "(", ")", "<", ">", "!", "`", "|", "#", "- ", "1. ", "> ", "\\", "&amp;", "\t", "    ", "é", "😀", "\u00a0", "www.a.b", "https://x.y", "a@b.co", "\r\n"}
+	r := rand.New(rand.NewPCG(1, 2))
+	docs := make([]string, n)
+	for i := range docs {
+		var b strings.Builder
+		for range 2 + r.IntN(8) {
+			line := lines[r.IntN(len(lines))]
+			for range r.IntN(3) {
+				at := r.IntN(len(line) + 1)
+				for at > 0 && at < len(line) && !utf8.RuneStart(line[at]) {
+					at--
+				}
+				line = line[:at] + bits[r.IntN(len(bits))] + line[at:]
+			}
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+		docs[i] = b.String()
+	}
+	return docs
 }
 
 func utf16Offsets(s string) []int {

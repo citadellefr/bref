@@ -6,7 +6,7 @@ import "slices"
 // the current line the delimiter row under it, with as many cells.
 func (p *blockParser) openTable(c *block) bool {
 	rest := p.line[p.nextNonspace:]
-	if !delimiterRow(rest) {
+	if len(c.lines) == 0 || !delimiterRow(rest) {
 		return false
 	}
 	delims, _ := splitRow(rest)
