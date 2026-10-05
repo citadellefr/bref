@@ -10,31 +10,37 @@ import (
 
 // BenchmarkKeystroke measures what applying a keystroke costs the hub in a
 // note of 1 MB, of lines or of a single paragraph: a character typed, then
-// deleted, so that the note keeps its size.
+// deleted, so that the note keeps its size. Half the characters come
+// unsigned, which the hub signs.
 func BenchmarkKeystroke(b *testing.B) {
 	for _, c := range []struct{ name, line string }{
 		{"lines", strings.Repeat("lorem ipsum ", 8) + "\n"},
 		{"paragraph", strings.Repeat("lorem ipsum ", 8)},
 	} {
 		b.Run(c.name, func(b *testing.B) {
-			doc, f, err := Open("b.md", []byte(strings.Repeat(c.line, 1<<20/len(c.line))))
+			doc, f, err := Format(Options{})("b.md", []byte(strings.Repeat(c.line, 1<<20/len(c.line))))
 			if err != nil {
 				b.Fatal(err)
 			}
 			middle := doc.Node(Body).Text.Len() / 2
 			keys := []ot.Edit{
+				{{Op: ot.OpTxt, ID: Body, Text: ot.Delta{{Retain: middle}, {Insert: "a", Attrs: ot.Attrs{By: "1"}}}}},
+				{{Op: ot.OpTxt, ID: Body, Text: ot.Delta{{Retain: middle}, {Delete: 1}}}},
 				{{Op: ot.OpTxt, ID: Body, Text: ot.Delta{{Retain: middle}, {Insert: "a"}}}},
 				{{Op: ot.OpTxt, ID: Body, Text: ot.Delta{{Retain: middle}, {Delete: 1}}}},
 			}
+			follow := f.(trame.Follower)
+			alice := trame.Peer{ID: "1"}
 			b.ReportAllocs()
 			for i := 0; b.Loop(); i++ {
-				e := keys[i%2]
-				if err := f.Check(doc, e, trame.Peer{}); err != nil {
+				e := keys[i%len(keys)]
+				if err := f.Check(doc, e, alice); err != nil {
 					b.Fatal(err)
 				}
 				if err := doc.Apply(e); err != nil {
 					b.Fatal(err)
 				}
+				follow.Follow(doc, e, nil, alice)
 			}
 		})
 	}

@@ -33,16 +33,25 @@ default format for notes, and is released under the MIT license.
 ## Server
 
 ```go
-hub := bref.NewHub(store, trame.Options{})
+hub := bref.NewHub(store, bref.Options{
+	OnLinks: func(key string, added []bref.Link) {
+		// [@Alice](user:42) was written by added[i].By: tell Alice
+	},
+})
 
 // in the handler of an authorized WebSocket
 err := hub.Serve(ctx, conn, "notes/meeting.md", trame.Peer{ID: "42", Name: "Alice", Client: clientID})
 ```
 
-A hub that serves other documents too takes `bref.Open` as the format of its
-notes. The protocol is [trame's](https://github.com/citadellefr/trame#protocol):
+A hub that serves other documents too takes `bref.Format(opt)` as the format
+of its notes. The protocol is [trame's](https://github.com/citadellefr/trame#protocol):
 a note is a single node, `body`, whose text is the file's, one paragraph per
-line.
+line. Its characters carry one attribute, `by`, the ID of who wrote them,
+which the hub sets and never writes in the file.
+
+`OnLinks` is told, as a note is saved, of the links, mentions and pictures
+added since the last save, each with who wrote it: to notify people
+mentioned, or to index the links between notes.
 
 ## Client
 
