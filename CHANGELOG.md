@@ -18,6 +18,20 @@
   version would change and restores it as one edit (`DocSession.restoreText`).
   Drafts are trame's: `DocSession(drafts:)`.
 - `Options.OnSave` is given each version of a note with those who edited it.
+- Footnotes, in `md` and its Dart port: `[^label]: text` (a block of its own,
+  its lines indented by four spaces to go on) and `[^label]` where the
+  footnote is defined; `md.HTML` numbers them and lists them at the end.
+  Autolinks no longer decode the entities in their address.
+- Dart: a `> [!note] Title` quote reads as a callout in the color of its
+  kind; fenced code and front matter are colored by language (JavaScript and
+  TypeScript, Python, Go, Rust, C and C++, Java, C#, Kotlin, Swift, Dart,
+  Zig, Ruby, shell, SQL, JSON, YAML, CSS, HTML and XML); the front matter is a
+  panel of properties.
+- Dart: tables read as a grid whose columns line up from row to row,
+  narrowed to the note when they are wider, and are edited in it: Tab and
+  Shift+Tab go from cell to cell, Enter to the cell below, and a row is
+  added past the end. The delimiter row shows as written only when the
+  caret is on it. `BrefTheme` gained `tokens` and `callouts`.
 
 ## 0.8.0 — 2026-10-05
 
