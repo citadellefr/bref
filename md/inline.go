@@ -604,6 +604,9 @@ func (ip *inlineParser) addBracket(node *inl, index int, image bool) {
 
 func (ip *inlineParser) openBracket(p *inl) bool {
 	start := ip.pos
+	if ip.ext(extFootnotes) && ip.footnote(p, start) {
+		return true
+	}
 	if ip.ext(extWiki) && ip.wiki(p, start, false) {
 		return true
 	}
@@ -624,6 +627,25 @@ func (ip *inlineParser) bang(p *inl) bool {
 	}
 	ip.pos += 2
 	ip.addBracket(ip.addText(p, start, start+2), start+1, true)
+	return true
+}
+
+// footnote reads [^label], a reference to a footnote that is defined.
+func (ip *inlineParser) footnote(p *inl, start int) bool {
+	if !strings.HasPrefix(ip.text[start:], "[^") {
+		return false
+	}
+	end := strings.IndexByte(ip.text[start:], ']')
+	if end < 0 {
+		return false
+	}
+	label := ip.text[start+2 : start+end]
+	if !noteLabel(label) || ip.p.notes[noteKey(label)] == nil {
+		return false
+	}
+	end += start + 1
+	ip.add(p, &Node{Kind: FootnoteRef, Span: ip.span(start, end), Label: label})
+	ip.pos = end
 	return true
 }
 
@@ -1005,7 +1027,7 @@ func (ip *inlineParser) autolink(p *inl) bool {
 		}
 	}
 	start, end := ip.pos, ip.pos+m[1]
-	dest := decodeEntities(ip.text[start+1 : end-1])
+	dest := ip.text[start+1 : end-1]
 	link := &inl{n: &Node{Kind: Link, Form: LinkAngle, Span: ip.span(start, end), Marks: []Span{ip.span(start, start+1), ip.span(end-1, end)}, Dest: dest, URL: ip.span(start+1, end-1)}}
 	if mail {
 		link.n.Dest = "mailto:" + dest
@@ -1085,18 +1107,6 @@ func decodeEntity(s string) (string, bool) {
 		return "", false
 	}
 	return v, true
-}
-
-func decodeEntities(s string) string {
-	if !strings.Contains(s, "&") {
-		return s
-	}
-	return entityRef.ReplaceAllStringFunc(s, func(m string) string {
-		if v, ok := decodeEntity(m); ok {
-			return v
-		}
-		return m
-	})
 }
 
 // unescape decodes the backslash escapes and entities of a destination, a

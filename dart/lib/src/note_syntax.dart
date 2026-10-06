@@ -52,7 +52,7 @@ class NoteSyntax {
   /// Whether every block was closed before each line, and after the last.
   final _clean = <bool>[];
   final _lines = <LineSyntax?>[];
-  var _refs = <String, MdNode>{};
+  var _refs = Refs();
 
   LineSyntax line(int i) => _lines[i] ??= _read(i);
 
@@ -183,7 +183,7 @@ class NoteSyntax {
     final out = <MdNode>[];
     for (final t in tops) {
       t.node.walk((n) {
-        if (n.kind == MdKind.definition) out.add(n);
+        if (n.kind == MdKind.definition || n.kind == MdKind.footnoteDef) out.add(n);
         return n.kind == MdKind.document || n.kind == MdKind.quote || n.kind == MdKind.list || n.kind == MdKind.item;
       });
     }

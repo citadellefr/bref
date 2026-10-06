@@ -17,9 +17,10 @@ const (
 	extMath
 	extHighlight
 	extWiki
+	extFootnotes
 
 	gfm  = extTables | extTasks | extStrike | extAutolinks
-	bref = gfm | extFrontMatter | extMath | extHighlight | extWiki
+	bref = gfm | extFrontMatter | extMath | extHighlight | extWiki | extFootnotes
 )
 
 // Parse reads a Markdown document, whose lines end with "\n", "\r\n" or
@@ -102,6 +103,7 @@ type blockParser struct {
 	open   []*block
 	leaves []leaf
 	refs   map[string]*Node
+	notes  map[string]*Node
 
 	line                             string
 	start, end, prevEnd              int
@@ -118,7 +120,7 @@ type blockParser struct {
 
 func newBlockParser(src string, ext extensions) *blockParser {
 	doc := &Node{Kind: Document, Span: Span{0, len(src)}}
-	return &blockParser{src: src, ext: ext, doc: doc, open: []*block{{node: doc}}, refs: map[string]*Node{}, allClosed: true}
+	return &blockParser{src: src, ext: ext, doc: doc, open: []*block{{node: doc}}, refs: map[string]*Node{}, notes: map[string]*Node{}, allClosed: true}
 }
 
 func (p *blockParser) top() *block { return p.open[len(p.open)-1] }
@@ -262,7 +264,7 @@ func (p *blockParser) addLine(l Span) {
 
 func maybeSpecial(c int) bool {
 	switch c {
-	case '#', '`', '~', '*', '+', '_', '=', '<', '>', '-', '|', ':', '$':
+	case '#', '`', '~', '*', '+', '_', '=', '<', '>', '-', '|', ':', '$', '[':
 		return true
 	}
 	return c >= '0' && c <= '9'
@@ -274,8 +276,10 @@ func acceptsLines(k Kind) bool {
 
 func canContain(parent, child Kind) bool {
 	switch parent {
-	case Document, Quote, Item:
+	case Document:
 		return child != Item
+	case Quote, Item, FootnoteDef:
+		return child != Item && child != FootnoteDef
 	case List:
 		return child == Item
 	}
@@ -301,6 +305,15 @@ func (p *blockParser) continues(b *block) int {
 		switch {
 		case p.indent >= b.markerOffset+b.padding:
 			p.advanceOffset(b.markerOffset+b.padding, true)
+		case p.blank && len(b.node.Children) > 0:
+			p.advanceNextNonspace()
+		default:
+			return 1
+		}
+	case FootnoteDef:
+		switch {
+		case p.indent >= codeIndent:
+			p.advanceOffset(codeIndent, true)
 		case p.blank && len(b.node.Children) > 0:
 			p.advanceNextNonspace()
 		default:
@@ -376,6 +389,22 @@ func (p *blockParser) blockStart(container int) int {
 			b := p.addChild(Quote, at)
 			b.node.Marks = append(b.node.Marks, Span{p.start + at, p.start + p.offset})
 			return 1
+		case rest[0] == '[' && p.ext&extFootnotes != 0 && c.node.Kind == Document:
+			if n := noteMarker(rest); n > 0 {
+				p.advanceNextNonspace()
+				p.advanceOffset(n, false)
+				p.closeUnmatched()
+				b := p.addChild(FootnoteDef, at)
+				b.node.Label = rest[2 : n-2]
+				b.node.Marks = append(b.node.Marks, Span{p.start + at, p.start + p.offset})
+				if isSpaceOrTab(p.peek(p.offset)) {
+					p.advanceOffset(1, true)
+				}
+				if key := noteKey(b.node.Label); p.notes[key] == nil {
+					p.notes[key] = b.node
+				}
+				return 1
+			}
 		case rest[0] == '#':
 			if n, level := atxMarker(rest); n > 0 {
 				p.advanceNextNonspace()
@@ -541,7 +570,7 @@ func (p *blockParser) close(here bool) {
 	case List:
 		n.Tight = p.tight(n)
 		n.End = n.Children[len(n.Children)-1].End
-	case Item:
+	case Item, FootnoteDef:
 		if len(n.Children) > 0 {
 			n.End = n.Children[len(n.Children)-1].End
 		} else {
@@ -725,6 +754,25 @@ func (p *blockParser) listMarker(container *block) (listData, bool) {
 	}
 	return d, true
 }
+
+// noteMarker is the length of the `[^label]:` a footnote starts with, or 0.
+func noteMarker(s string) int {
+	if !strings.HasPrefix(s, "[^") {
+		return 0
+	}
+	end := strings.IndexByte(s, ']')
+	if end < 0 || end+1 >= len(s) || s[end+1] != ':' || !noteLabel(s[2:end]) {
+		return 0
+	}
+	return end + 2
+}
+
+// noteLabel tells what may name a footnote: no spaces, no brackets.
+func noteLabel(s string) bool {
+	return s != "" && !strings.ContainsAny(s, " \t\n\r[]^")
+}
+
+func noteKey(label string) string { return normalizeLabel("[" + label + "]") }
 
 func taskBox(s string) Task {
 	if len(s) < 3 || s[0] != '[' || s[2] != ']' || (len(s) > 3 && s[3] != ' ' && s[3] != '\t') {

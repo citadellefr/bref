@@ -159,9 +159,9 @@ func dump(n *Node, u []int) map[string]any {
 	}
 	if n.Kind == Link || n.Kind == Image || n.Kind == Definition {
 		d["dest"], d["title"], d["form"], d["url"] = n.Dest, n.Title, int(n.Form), span(n.URL)
-		if n.Label != "" {
-			d["label"] = n.Label
-		}
+	}
+	if n.Label != "" {
+		d["label"] = n.Label
 	}
 	if n.Display {
 		d["display"] = true

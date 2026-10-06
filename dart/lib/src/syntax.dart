@@ -249,6 +249,11 @@ class _LineReader {
         swap = null;
       case MdKind.definition:
         swap = null;
+      case MdKind.footnoteDef:
+        markFlags = Mark.listMarker | Mark.markup;
+        swap = null;
+      case MdKind.footnoteRef:
+        flags = Mark.link;
       case MdKind.item:
         _item(n, parent!);
         swap = null;

@@ -69,11 +69,19 @@ MdNode parseMarkdown(String src, {int syntax = MdSyntax.bref}) {
   return p.doc;
 }
 
-/// The definitions by their normalized label, the first of each winning.
-Map<String, MdNode> definitionMap(Iterable<MdNode> definitions) {
-  final refs = <String, MdNode>{};
+/// What links and footnote references are resolved against: the definitions
+/// and the footnotes by their normalized label, the first of each winning.
+class Refs {
+  final links = <String, MdNode>{};
+  final notes = <String, MdNode>{};
+}
+
+/// The [Refs] of [definitions], link definitions and footnotes together.
+Refs definitionMap(Iterable<MdNode> definitions) {
+  final refs = Refs();
   for (final d in definitions) {
-    refs.putIfAbsent(normalizeLabel('[${d.label}]'), () => d);
+    final map = d.kind == MdKind.footnoteDef ? refs.notes : refs.links;
+    map.putIfAbsent(normalizeLabel('[${d.label}]'), () => d);
   }
   return refs;
 }
@@ -144,7 +152,7 @@ class BlockParser {
   /// The leaf blocks whose inlines are still to read.
   final leaves = <Leaf>[];
 
-  /// The definitions, in the order of the document.
+  /// The definitions and the footnotes, in the order of the document.
   final definitions = <MdNode>[];
 
   String _line = '';
@@ -301,7 +309,7 @@ class BlockParser {
   }
 
   static bool _maybeSpecial(int c) => switch (c) {
-        0x23 || 0x60 || 0x7E || 0x2A || 0x2B || 0x5F || 0x3D || 0x3C || 0x3E || 0x2D || 0x7C || 0x3A || 0x24 => true,
+        0x23 || 0x60 || 0x7E || 0x2A || 0x2B || 0x5F || 0x3D || 0x3C || 0x3E || 0x2D || 0x7C || 0x3A || 0x24 || 0x5B => true,
         _ => c >= 0x30 && c <= 0x39,
       };
 
@@ -309,7 +317,8 @@ class BlockParser {
       k == MdKind.paragraph || k == MdKind.codeBlock || k == MdKind.htmlBlock || k == MdKind.mathBlock;
 
   static bool _canContain(MdKind parent, MdKind child) => switch (parent) {
-        MdKind.document || MdKind.quote || MdKind.item => child != MdKind.item,
+        MdKind.document => child != MdKind.item,
+        MdKind.quote || MdKind.item || MdKind.footnoteDef => child != MdKind.item && child != MdKind.footnoteDef,
         MdKind.list => child == MdKind.item,
         _ => false,
       };
@@ -328,6 +337,14 @@ class BlockParser {
       case MdKind.item:
         if (_indent >= b.markerOffset + b.padding) {
           _advanceOffset(b.markerOffset + b.padding, columns: true);
+        } else if (_blank && b.node.children.isNotEmpty) {
+          _advanceNextNonspace();
+        } else {
+          return 1;
+        }
+      case MdKind.footnoteDef:
+        if (_indent >= _codeIndent) {
+          _advanceOffset(_codeIndent, columns: true);
         } else if (_blank && b.node.children.isNotEmpty) {
           _advanceNextNonspace();
         } else {
@@ -390,6 +407,21 @@ class BlockParser {
         _closeUnmatched();
         _addChild(MdKind.quote, at).node.mark(_start + at, _start + _offset);
         return 1;
+      }
+      if (first == 0x5B && syntax & MdSyntax.footnotes != 0 && c.node.kind == MdKind.document) {
+        final n = _noteMarker(_line, at);
+        if (n > 0) {
+          _advanceNextNonspace();
+          _advanceOffset(n, columns: false);
+          _closeUnmatched();
+          final b = _addChild(MdKind.footnoteDef, at);
+          b.node
+            ..label = _line.substring(at + 2, at + n - 2)
+            ..mark(_start + at, _start + _offset);
+          if (_spaceOrTab(_peek(_offset))) _advanceOffset(1, columns: true);
+          definitions.add(b.node);
+          return 1;
+        }
       }
       if (first == 0x23) {
         final (n, level) = _atxMarker(_line, at);
@@ -566,7 +598,7 @@ class BlockParser {
         n
           ..tight = _tight(n)
           ..end = n.children.last.end;
-      case MdKind.item:
+      case MdKind.item || MdKind.footnoteDef:
         n.end = n.children.isNotEmpty ? n.children.last.end : n.marks.last.end;
       case MdKind.table:
         n.end = n.children.last.end > n.marks.first.end ? n.children.last.end : n.marks.first.end;
@@ -648,7 +680,7 @@ class BlockParser {
     if (b.lines.isEmpty) return;
     final first = b.lines.first;
     if (first.from >= first.line.length || first.line.codeUnitAt(first.from) != 0x5B) return;
-    final ip = InlineParser(b.lines, const {}, syntax);
+    final ip = InlineParser(b.lines, Refs(), syntax);
     final defs = <MdNode>[];
     while (ip.pos < ip.text.length && ip.text.codeUnitAt(ip.pos) == 0x5B) {
       final def = ip.definition();
@@ -856,6 +888,17 @@ int _skipTableSpaces(String s, int i) {
 }
 
 bool _tableTrim(int c) => c == _space || c == _tab || c == 0x0A || c == 0x0B || c == 0x0C || c == 0x0D;
+
+/// The length of the `[^label]:` a footnote starts with at [i], or 0.
+int _noteMarker(String s, int i) {
+  if (!s.startsWith('[^', i)) return 0;
+  final end = s.indexOf(']', i);
+  if (end < 0 || end + 1 >= s.length || s.codeUnitAt(end + 1) != 0x3A || !noteLabel(s.substring(i + 2, end))) return 0;
+  return end + 2 - i;
+}
+
+/// Whether [s] may name a footnote: no spaces, no brackets.
+bool noteLabel(String s) => s.isNotEmpty && !RegExp(r'[ \t\n\r\[\]^]').hasMatch(s);
 
 Task _taskBox(String s, int i) {
   if (i + 3 > s.length || s.codeUnitAt(i) != 0x5B || s.codeUnitAt(i + 2) != 0x5D) return Task.none;

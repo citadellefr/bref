@@ -20,7 +20,15 @@ type Renderer struct {
 }
 
 func (r Renderer) HTML(doc *Node) string {
-	w := htmlWriter{url: r.URL}
+	w := htmlWriter{url: r.URL, notes: &notes{defs: map[string]*Node{}, number: map[*Node]int{}}}
+	for _, c := range doc.Children {
+		if c.Kind != FootnoteDef {
+			continue
+		}
+		if key := noteKey(c.Label); w.notes.defs[key] == nil {
+			w.notes.defs[key] = c
+		}
+	}
 	w.node(doc, false)
 	return w.b.String()
 }
@@ -29,7 +37,52 @@ type htmlWriter struct {
 	b   strings.Builder
 	url func(*Node) string
 	// raw lets raw HTML through, as CommonMark renders it.
-	raw bool
+	raw   bool
+	notes *notes
+}
+
+// notes are the footnotes of a document: those referred to are numbered in
+// the order they are first referred to, and rendered at its end.
+type notes struct {
+	defs   map[string]*Node
+	order  []*Node
+	number map[*Node]int
+}
+
+// ref is the number of the footnote [def], and whether it is the first
+// reference to it.
+func (s *notes) ref(def *Node) (int, bool) {
+	if i, ok := s.number[def]; ok {
+		return i, false
+	}
+	s.order = append(s.order, def)
+	s.number[def] = len(s.order)
+	return len(s.order), true
+}
+
+func (w *htmlWriter) footnotes() {
+	if w.notes == nil || len(w.notes.order) == 0 {
+		return
+	}
+	w.cr()
+	w.b.WriteString("<section class=\"footnotes\">\n<ol>\n")
+	for i := 0; i < len(w.notes.order); i++ {
+		num := strconv.Itoa(i + 1)
+		sub := htmlWriter{url: w.url, raw: w.raw, notes: w.notes}
+		for _, c := range w.notes.order[i].Children {
+			sub.node(c, false)
+		}
+		sub.cr()
+		body := sub.b.String()
+		back := `<a href="#fnref-` + num + `" class="footnote-back">↩</a>`
+		if rest, ok := strings.CutSuffix(body, "</p>\n"); ok {
+			body = rest + " " + back + "</p>\n"
+		} else {
+			body += "<p>" + back + "</p>\n"
+		}
+		w.b.WriteString(`<li id="fn-` + num + "\">\n" + body + "</li>\n")
+	}
+	w.b.WriteString("</ol>\n</section>\n")
 }
 
 // href is where a link or a picture leads, "" for nowhere.
@@ -62,9 +115,10 @@ func (w *htmlWriter) children(n *Node) {
 // whose paragraphs have no tags.
 func (w *htmlWriter) node(n *Node, tight bool) {
 	switch n.Kind {
-	case Document, Definition, FrontMatter:
+	case Document, Definition, FrontMatter, FootnoteDef:
 		if n.Kind == Document {
 			w.children(n)
+			w.footnotes()
 		}
 	case Paragraph:
 		if tight {
@@ -252,6 +306,18 @@ func (w *htmlWriter) node(n *Node, tight bool) {
 		w.b.WriteString(`<span class="math">`)
 		w.out(n.Literal)
 		w.b.WriteString("</span>")
+	case FootnoteRef:
+		def := w.notes.defs[noteKey(n.Label)]
+		if def == nil {
+			w.out("[^" + n.Label + "]")
+			return
+		}
+		num, first := w.notes.ref(def)
+		id := ""
+		if first {
+			id = ` id="fnref-` + strconv.Itoa(num) + `"`
+		}
+		w.b.WriteString(`<sup class="footnote-ref"><a href="#fn-` + strconv.Itoa(num) + `"` + id + ">" + strconv.Itoa(num) + "</a></sup>")
 	}
 }
 

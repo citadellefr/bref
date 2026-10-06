@@ -103,6 +103,16 @@ void main() {
     expect(_pieces('[a][r]', Mark.link), isEmpty);
   });
 
+  test('a footnote is a marker in the color of a list and its references, those of a link', () {
+    const note = 'Vu[^1] mais pas[^2].\n\n[^1]: La note\n    suite *ici*\n\nfin';
+    expect(_pieces(note, Mark.link), ['[^1]']);
+    expect(_pieces(note, Mark.listMarker, 2), ['[^1]:']);
+    expect(_pieces(note, Mark.emphasis, 3), ['ici']);
+    expect(_preview(note, 2), '[^1]: La note');
+    expect(_pieces('[^a]: x', Mark.listMarker), ['[^a]:']);
+    expect(_pieces('Vu[^a]', Mark.link), isEmpty);
+  });
+
   test('math hugs its dollars, prices are left alone', () {
     expect(_pieces(r'soit $x^2$ ici', Mark.math), [r'$x^2$']);
     expect(_pieces(r'de 5 $ à 10 $', Mark.math), isEmpty);

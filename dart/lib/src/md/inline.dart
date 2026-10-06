@@ -3,7 +3,7 @@ import 'entities.dart';
 import 'node.dart';
 
 /// Reads the inlines of a leaf block, links resolved by [refs].
-List<MdNode> parseInlines(Leaf leaf, Map<String, MdNode> refs, int syntax) =>
+List<MdNode> parseInlines(Leaf leaf, Refs refs, int syntax) =>
     InlineParser(leaf.lines, refs, syntax, table: leaf.table).parse();
 
 /// An inline being read, in a list its siblings share, which emphasis and
@@ -110,7 +110,7 @@ class InlineParser {
   }
 
   final List<Segment> _lines;
-  final Map<String, MdNode> _refs;
+  final Refs _refs;
   final int _syntax;
   final bool table;
   final _starts = <int>[];
@@ -566,6 +566,7 @@ class InlineParser {
 
   bool _openBracket(_Inl p) {
     final start = pos;
+    if (_ext(MdSyntax.footnotes) && _footnote(p, start)) return true;
     if (_ext(MdSyntax.wiki) && _wiki(p, start, image: false)) return true;
     pos++;
     _addBracket(_addText(p, start, start + 1), start, image: false);
@@ -586,6 +587,18 @@ class InlineParser {
   }
 
   /// Reads `[[dest]]`, `[[dest|text]]` and their `![[…]]` embeds, on one line.
+  /// Reads `[^label]`, a reference to a footnote that is defined.
+  bool _footnote(_Inl p, int start) {
+    if (!text.startsWith('[^', start)) return false;
+    final close = text.indexOf(']', start);
+    if (close < 0) return false;
+    final label = text.substring(start + 2, close);
+    if (!noteLabel(label) || _refs.notes[normalizeLabel('[$label]')] == null) return false;
+    p.append(_Inl(_node(MdKind.footnoteRef, start, close + 1)..label = label));
+    pos = close + 1;
+    return true;
+  }
+
   bool _wiki(_Inl p, int start, {required bool image}) {
     final from = start + (image ? 3 : 2);
     if (!text.startsWith('[[', from - 2)) return false;
@@ -679,7 +692,7 @@ class InlineParser {
       }
       if (n == 0) pos = after;
       if (ref.isNotEmpty) {
-        final def = _refs[normalizeLabel(ref)];
+        final def = _refs.links[normalizeLabel(ref)];
         if (def != null) {
           matched = true;
           link
@@ -894,7 +907,7 @@ class InlineParser {
       if (m == null) return false;
     }
     final start = pos, end = m.end;
-    final dest = decodeEntities(text.substring(start + 1, end - 1));
+    final dest = text.substring(start + 1, end - 1);
     final link = _Inl(
       _node(MdKind.link, start, end)
         ..form = LinkForm.angle
@@ -1313,11 +1326,6 @@ String? decodeEntity(String s) {
     return String.fromCharCode(n);
   }
   return entities[s.substring(1, s.length - 1)];
-}
-
-String decodeEntities(String s) {
-  if (!s.contains('&')) return s;
-  return s.replaceAllMapped(_entityRef, (m) => decodeEntity(m[0]!) ?? m[0]!);
 }
 
 /// Decodes the backslash escapes and entities of a destination, a title or

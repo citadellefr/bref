@@ -15,6 +15,7 @@ enum MdKind {
   mathBlock,
   frontMatter,
   definition,
+  footnoteDef,
 
   text,
   softBreak,
@@ -30,6 +31,7 @@ enum MdKind {
   image,
   inlineHtml,
   math,
+  footnoteRef,
 }
 
 /// How a link or an image is written.
@@ -68,10 +70,11 @@ abstract final class MdSyntax {
   static const math = 1 << 5;
   static const highlight = 1 << 6;
   static const wiki = 1 << 7;
+  static const footnotes = 1 << 8;
 
   static const commonMark = 0;
   static const gfm = tables | tasks | strike | autolinks;
-  static const bref = gfm | frontMatter | math | highlight | wiki;
+  static const bref = gfm | frontMatter | math | highlight | wiki | footnotes;
 }
 
 /// A block or an inline of a document, as the Go package of Bref reads it.
@@ -118,7 +121,8 @@ class MdNode {
   String title = '';
   Span url = (start: 0, end: 0);
 
-  /// The label of a definition or a reference, as written.
+  /// The label of a definition, a footnote, a footnote reference or a
+  /// reference, as written.
   String label = '';
   LinkForm form = LinkForm.inline;
 

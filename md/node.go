@@ -1,6 +1,6 @@
 // Package md parses Markdown: CommonMark, the extensions of GitHub (tables,
 // task lists, strikethrough, autolinks) and those of Bref (front matter,
-// math, highlights, wiki links). Each node knows where it lies in the source
+// math, highlights, wiki links, footnotes). Each node knows where it lies in the source
 // and which of its characters are syntax rather than text, so that an editor
 // can hide them and a host can find what a person wrote.
 //
@@ -27,6 +27,7 @@ const (
 	MathBlock
 	FrontMatter
 	Definition
+	FootnoteDef
 
 	Text
 	SoftBreak
@@ -42,13 +43,14 @@ const (
 	Image
 	InlineHTML
 	Math
+	FootnoteRef
 )
 
 var kindNames = [...]string{
 	"document", "paragraph", "heading", "thematic_break", "code_block", "html_block", "quote", "list", "item",
-	"table", "row", "cell", "math_block", "front_matter", "definition",
+	"table", "row", "cell", "math_block", "front_matter", "definition", "footnote_def",
 	"text", "soft_break", "hard_break", "escape", "entity", "code", "emphasis", "strong", "strike", "highlight",
-	"link", "image", "inline_html", "math",
+	"link", "image", "inline_html", "math", "footnote_ref",
 }
 
 func (k Kind) String() string { return kindNames[k] }
@@ -126,7 +128,8 @@ type Node struct {
 
 	// Dest, Title and URL describe a Link, an Image or a Definition: URL is
 	// where Dest is written, empty when it comes from a definition. Label is
-	// that of a Definition or a reference, as written.
+	// that of a Definition, a FootnoteDef, a FootnoteRef or a reference, as
+	// written.
 	Dest  string
 	Title string
 	URL   Span

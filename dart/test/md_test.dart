@@ -32,8 +32,8 @@ Map<String, Object?> dump(MdNode n) {
       ..['title'] = n.title
       ..['form'] = n.form.index
       ..['url'] = span(n.url);
-    if (n.label.isNotEmpty) d['label'] = n.label;
   }
+  if (n.label.isNotEmpty) d['label'] = n.label;
   if (n.display) d['display'] = true;
   if (n.children.isNotEmpty) d['c'] = [for (final c in n.children) dump(c)];
   return d;
