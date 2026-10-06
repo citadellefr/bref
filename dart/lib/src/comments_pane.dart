@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'comments.dart';
 import 'controller.dart';
 import 'strings.dart';
-import 'theme.dart';
 
 /// The comments of a note beside it: a card by thread, in the order of the
 /// text, answered, resolved, edited and deleted there, and the comment being
@@ -188,7 +187,7 @@ class _CommentsPaneState extends State<CommentsPane> {
     theme,
     active: true,
     child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _header(theme, _comments.session.name, _comments.session.id, null),
+      _header(theme, _comments.session.name, null),
       const SizedBox(height: 8),
       _field(_draft, _s.startConversation, focus: _draftFocus, submit: _post, cancel: _comments.cancelDraft),
       const SizedBox(height: 8),
@@ -277,7 +276,7 @@ class _CommentsPaneState extends State<CommentsPane> {
     ];
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [
-        Expanded(child: _header(theme, m.name, m.by, m.at, small: !first)),
+        Expanded(child: _header(theme, m.name, m.at, small: !first)),
         if (first && t.done)
           Padding(
             padding: const EdgeInsets.only(right: 4),
@@ -304,8 +303,8 @@ class _CommentsPaneState extends State<CommentsPane> {
     ]);
   }
 
-  Widget _header(ThemeData theme, String name, String by, DateTime? date, {bool small = false}) {
-    final color = BrefTheme.of(context).author(by);
+  Widget _header(ThemeData theme, String name, DateTime? date, {bool small = false}) {
+    final color = theme.colorScheme.primary;
     final initials = name.trim().isEmpty ? '?' : name.trim().characters.first.toUpperCase();
     return Row(children: [
       CircleAvatar(

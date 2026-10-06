@@ -1,6 +1,7 @@
 /// Collaborative Markdown notes: the client of the Bref Go server.
 library;
 
+export 'package:trame/trame.dart' show DocDrafts;
 export 'src/comments.dart' show CommentMessage, CommentThread, Comments, readThreads;
 export 'src/comments_pane.dart' show CommentsPane;
 export 'src/controller.dart' show BrefComments, BrefFollow;
