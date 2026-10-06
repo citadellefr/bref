@@ -1,3 +1,4 @@
+import 'package:bref/src/highlight.dart';
 import 'package:bref/src/note_syntax.dart';
 import 'package:bref/src/note_text.dart';
 import 'package:bref/src/syntax.dart';
@@ -117,6 +118,20 @@ void main() {
     expect(_pieces('---\ntitre: x\n---\ntexte', Mark.frontMatter, 1), ['titre: x']);
     expect(_pieces('> ```\n> code', Mark.code, 1), ['code']);
     expect(_line('```a`b').block, isFalse);
+  });
+
+  test('code of a known language is colored line by line, over containers too', () {
+    const code = '```dart\nfinal a = 1; /* un\ndeux */\n```';
+    expect(_pieces(code, Mark.token(Token.keyword), 1), ['final']);
+    expect(_pieces(code, Mark.token(Token.number), 1), ['1']);
+    expect(_pieces(code, Mark.token(Token.comment), 1), ['/* un']);
+    expect(_pieces(code, Mark.token(Token.comment), 2), ['deux */']);
+    expect(_pieces(code, Mark.code, 1), ['final a = 1; /* un']);
+    expect(_pieces(code, Mark.token(Token.keyword), 0), isEmpty);
+    expect(_pieces('```klingon\nfinal a\n```', Mark.tokens, 1), isEmpty);
+    expect(_pieces('> ```go\n> func f() {}\n> ```', Mark.token(Token.keyword), 1), ['func']);
+    expect(_pieces('- ```go\n  func f() {}\n  ```', Mark.token(Token.keyword), 1), ['func']);
+    expect(_pieces('`final` seul', Mark.tokens), isEmpty);
   });
 
   test('the preview hides the syntax, and shows bullets, boxes, bars and rules', () {

@@ -1,3 +1,4 @@
+import 'highlight.dart';
 import 'md/block.dart';
 import 'md/inline.dart';
 import 'md/node.dart';
@@ -19,6 +20,17 @@ class _Top {
   final int base;
   final List<Leaf> leaves;
   var inlines = false;
+
+  /// The code of the blocks of code, read when a line of it is.
+  final code = <MdNode, _Code>{};
+}
+
+/// A block of code, its lines and the pieces of each.
+class _Code {
+  _Code(this.lines, this.runs);
+
+  final List<String> lines;
+  final List<List<Run>> runs;
 }
 
 /// The syntax of a note, read as Markdown. Blocks are read again from the
@@ -201,7 +213,24 @@ class NoteSyntax {
       }
       t.inlines = true;
     }
-    return readLine(t.node, line, text.lineStart(i) - text.lineStart(t.line) + t.base);
+    final s = readLine(t.node, line, text.lineStart(i) - text.lineStart(t.line) + t.base);
+    return s.block ? _colored(s, t, i, line) : s;
+  }
+
+  /// The line [s] of a block of code, its pieces colored when the language is known.
+  LineSyntax _colored(LineSyntax s, _Top t, int i, String line) {
+    final found = _nodeAt(i);
+    final n = found?.node;
+    if (n == null || n.kind != MdKind.codeBlock || n.marks.isEmpty) return s;
+    final language = languageOf(n.info);
+    if (language == null) return s;
+    final code = t.code[n] ??= () {
+      final lines = n.literal.split('\n');
+      return _Code(lines, highlight(language, n.literal));
+    }();
+    final k = i - text.lineAt(n.start + found!.shift) - 1;
+    if (k < 0 || k >= code.lines.length - 1 || !line.endsWith(code.lines[k])) return s;
+    return s.coded(line.length, line.length - code.lines[k].length, code.runs[k]);
   }
 
   /// The innermost link or picture holding the character at [offset].
@@ -229,8 +258,16 @@ class NoteSyntax {
   (int, int) revealed(int first, int last) => (_whole(first).$1, _whole(last).$2);
 
   (int, int) _whole(int i) {
+    final found = _nodeAt(i);
+    if (found == null) return (i, i);
+    return (text.lineAt(found.node.start + found.shift), text.lineAt(found.node.end + found.shift));
+  }
+
+  /// The block of code, of math, the front matter or the heading holding line
+  /// [i], with how far its offsets are from those of the text.
+  ({MdNode node, int shift})? _nodeAt(int i) {
     final t = _blockAt(i);
-    if (t == null) return (i, i);
+    if (t == null) return null;
     final lo = text.lineStart(i) - text.lineStart(t.line) + t.base;
     final hi = lo + text.line(i).length;
     MdNode? found;
@@ -242,8 +279,6 @@ class NoteSyntax {
       return n.kind != MdKind.paragraph && n.kind != MdKind.heading && n.kind != MdKind.table;
     });
     final n = found;
-    if (n == null) return (i, i);
-    final shift = text.lineStart(t.line) - t.base;
-    return (text.lineAt(n.start + shift), text.lineAt(n.end + shift));
+    return n == null ? null : (node: n, shift: text.lineStart(t.line) - t.base);
   }
 }

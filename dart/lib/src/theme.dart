@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'highlight.dart';
 import 'syntax.dart';
 
 /// How a note looks: the style of its text, of each kind of mark, and the
@@ -18,6 +19,7 @@ class BrefTheme {
     required this.selection,
     required this.caret,
     required this.peers,
+    required this.tokens,
     this.headings = const [1.8, 1.5, 1.3, 1.15, 1.05, 1.0],
   });
 
@@ -38,6 +40,13 @@ class BrefTheme {
       highlight: Color.alphaBlend(Colors.amber.withValues(alpha: 0.35), colors.surface),
       selection: colors.primary.withValues(alpha: 0.25),
       caret: colors.primary,
+      tokens: [
+        colors.primary,
+        colors.tertiary,
+        colors.onSurfaceVariant,
+        colors.secondary,
+        Color.lerp(colors.primary, colors.onSurface, 0.5)!,
+      ],
       peers: const [
         Color(0xFFE8590C),
         Color(0xFF2F9E44),
@@ -62,6 +71,9 @@ class BrefTheme {
   final Color highlight;
   final Color selection;
   final Color caret;
+
+  /// The colors of the pieces of code, by [Token].
+  final List<Color> tokens;
 
   /// The colors of the others, by the number of their connection.
   final List<Color> peers;
@@ -101,6 +113,13 @@ class BrefTheme {
     if (marks & Mark.code != 0 && marks & Mark.fence == 0) {
       style = style.copyWith(backgroundColor: codeBackground);
     }
+    if (marks & Mark.tokens != 0) {
+      for (final t in Token.values) {
+        if (marks & Mark.token(t) == 0) continue;
+        style = style.copyWith(color: tokens[t.index]);
+        if (t == Token.comment) style = style.copyWith(fontStyle: FontStyle.italic);
+      }
+    }
     if (marks & Mark.strong != 0) style = style.copyWith(fontWeight: FontWeight.w700);
     if (marks & Mark.emphasis != 0) style = style.copyWith(fontStyle: FontStyle.italic);
     if (marks & Mark.strike != 0) style = style.copyWith(decoration: TextDecoration.lineThrough);
@@ -125,9 +144,10 @@ class BrefTheme {
       other.selection == selection &&
       other.caret == caret &&
       listEquals(other.peers, peers) &&
+      listEquals(other.tokens, tokens) &&
       listEquals(other.headings, headings);
 
   @override
   int get hashCode => Object.hash(text, monospace, markup, accent, muted, codeBackground, highlight, selection, caret,
-      Object.hashAll(peers), Object.hashAll(headings));
+      Object.hashAll(peers), Object.hashAll(tokens), Object.hashAll(headings));
 }

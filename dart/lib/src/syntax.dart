@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'highlight.dart';
 import 'host.dart';
 import 'md/node.dart';
 
@@ -26,6 +27,11 @@ abstract final class Mark {
   static const task = 1 << 16;
   static const table = 1 << 17;
   static const frontMatter = 1 << 18;
+
+  /// The pieces of a block of code, one flag for each [Token].
+  static int token(Token t) => 1 << (19 + t.index);
+
+  static const tokens = 31 << 19;
 }
 
 /// What the preview shows in place of a piece of a line.
@@ -77,6 +83,31 @@ final class LineSyntax {
 
   /// What the preview shows otherwise, in order.
   final List<Swap> swaps;
+
+  /// This line of [length] with [runs] of code marked on top of what it is,
+  /// the code starting at column [from].
+  LineSyntax coded(int length, int from, Iterable<Run> runs) {
+    final each = Uint32List(length);
+    var at = 0;
+    for (var k = 0; k < ends.length; k++) {
+      each.fillRange(at, ends[k], marks[k]);
+      at = ends[k];
+    }
+    for (final r in runs) {
+      final flag = Mark.token(r.kind);
+      for (var c = from + r.start; c < from + r.end; c++) {
+        each[c] |= flag;
+      }
+    }
+    final ends2 = <int>[], marks2 = <int>[];
+    for (var c = 0; c < length; c++) {
+      if (c + 1 == length || each[c + 1] != each[c]) {
+        ends2.add(c + 1);
+        marks2.add(each[c]);
+      }
+    }
+    return LineSyntax(ends2, marks2, heading: heading, block: block, swaps: swaps);
+  }
 }
 
 /// Lines longer than this are shown without the marks of their text: they
