@@ -18,7 +18,7 @@ void main() {
 
   test('follows random deltas, and tells which lines they replaced', () {
     final random = Random(7);
-    const pieces = ['a', 'bc', '\n', 'é', '\n\n', '😀', '```\n', '- ', '> ', '---\n', r'$$', '*', '[a]: /b\n', '[a]', '|x|\n|-|\n', '===', '    ', '1. ', '[^a]: ', '[^a]', '> [!tip] ', '```dart\n', '/*', '*/'];
+    const pieces = ['a', 'bc', '\n', 'é', '\n\n', '😀', '```\n', '- ', '> ', '---\n', r'$$', '*', '[a]: /b\n', '[a]', '|x|\n|-|\n', '| a | b |\n|:-|-:|\n', '|', '===', '    ', '1. ', '[^a]: ', '[^a]', '> [!tip] ', '```dart\n', '/*', '*/'];
     for (var round = 0; round < 300; round++) {
       var text = 'one\ntwo\n\nthree';
       final t = NoteText('$text\n');
@@ -57,4 +57,10 @@ void main() {
   });
 }
 
-List<Object?> _marks(LineSyntax s) => [s.ends, s.marks, s.heading, s.block, s.callout, s.swaps];
+List<Object?> _marks(LineSyntax s) {
+  final t = s.table;
+  final table = t == null
+      ? null
+      : [t.first, t.last, t.align, [for (final c in t.cells) (c.start, c.end)], t.header, t.delimiter];
+  return [s.ends, s.marks, s.heading, s.block, s.callout, table, s.swaps];
+}

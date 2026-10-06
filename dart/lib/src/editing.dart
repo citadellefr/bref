@@ -1,5 +1,6 @@
 import 'package:characters/characters.dart';
 
+import 'note_syntax.dart';
 import 'note_text.dart';
 
 /// The offset a character before [offset]: a character as the reader sees
@@ -129,4 +130,42 @@ List<Replacement> indent(NoteText text, int start, int end, {required bool outde
     if (n > 0) out.add((start: at, end: at + n, text: ''));
   }
   return out;
+}
+
+/// Where the caret goes in a table: [base] to [extent] is the selection
+/// after [insert], the row added at the end of the table when there is one.
+typedef CellMove = ({int base, int extent, Replacement? insert});
+
+/// Where moving [columns] cells and [rows] rows from [offset] leads in a
+/// table, or null when [offset] is not in one. Past the last cell, or below
+/// the last row, a row is added; before the first cell nothing moves.
+CellMove? moveInTable(NoteText text, NoteSyntax syntax, int offset, {int rows = 0, int columns = 0}) {
+  final i = text.lineAt(offset);
+  final t = syntax.line(i).table;
+  if (t == null || t.delimiter || t.cells.isEmpty) return null;
+  final column = offset - text.lineStart(i);
+  var k = 0;
+  for (var j = 0; j < t.cells.length; j++) {
+    if (t.cells[j].start <= column) k = j;
+  }
+  var row = i, cell = k + columns;
+  if (rows == 0 && (cell < 0 || cell >= t.cells.length)) {
+    row += columns;
+    cell = columns > 0 ? 0 : t.cells.length - 1;
+  } else {
+    row += rows;
+  }
+  if (row != i && syntax.line(row.clamp(0, text.lineCount - 1)).table?.delimiter == true) row += row > i ? 1 : -1;
+  if (row < t.first) return (base: offset, extent: offset, insert: null);
+  if (row > t.last) {
+    final end = text.lineEnd(t.last);
+    final at = end + 1 + 2 + 4 * cell.clamp(0, t.cells.length - 1);
+    final added = '\n|${'   |' * t.cells.length}';
+    return (base: at, extent: at, insert: (start: end, end: end, text: added));
+  }
+  final target = syntax.line(row).table;
+  if (target == null || target.cells.isEmpty) return null;
+  final range = target.cells[cell.clamp(0, target.cells.length - 1)];
+  final start = text.lineStart(row);
+  return (base: start + range.start, extent: start + range.end, insert: null);
 }

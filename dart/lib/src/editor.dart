@@ -459,6 +459,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       return;
     }
     if (text == '\n') {
+      if (_tableMove(rows: 1)) return;
       final r = _marks.base == _marks.extent ? enter(_text, _marks.extent) : null;
       if (r != null) {
         _replace(r.start, r.end, r.text);
@@ -494,6 +495,18 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
     final text = data?.text;
     if (text == null || text.isEmpty || !mounted) return;
     _replace(_marks.start, _marks.end, text.replaceAll('\r\n', '\n').replaceAll('\r', '\n'));
+  }
+
+  /// Moves the caret in a table, by cells or rows, adding a row past its end;
+  /// whether it was in one.
+  bool _tableMove({int rows = 0, int columns = 0}) {
+    if (_layout?.preview != true) return false;
+    final move = moveInTable(_text, _syntax, _marks.extent, rows: rows, columns: columns);
+    if (move == null) return false;
+    final insert = move.insert;
+    if (insert != null && (!_editable || !_edit(insert.start, insert.end, insert.text))) return true;
+    _select(move.base, extent: move.extent);
+    return true;
   }
 
   void _indent({required bool outdent}) {
@@ -812,6 +825,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
         if (!_editable) return KeyEventResult.ignored;
         _type('\n');
       case LogicalKeyboardKey.tab:
+        if (_tableMove(columns: shift ? -1 : 1)) break;
         if (!_editable) return KeyEventResult.ignored;
         _indent(outdent: shift);
       case LogicalKeyboardKey.keyA when command:

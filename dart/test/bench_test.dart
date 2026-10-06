@@ -26,7 +26,7 @@ void main() {
     final syntax = NoteSyntax(note);
     final layout = NoteLayout(note, syntax, theme: theme, scaler: TextScaler.noScaling, preview: true)..width = 700;
     for (var i = 0; i < 40; i++) {
-      layout.painter(i);
+      layout.view(i);
     }
     final open = watch.elapsedMicroseconds;
 
@@ -47,7 +47,7 @@ void main() {
       final splice = note.apply(delta)!;
       layout
         ..splice(splice, syntax.splice(splice))
-        ..painter(splice.index);
+        ..view(splice.index);
       inEditor += watch.elapsedMicroseconds;
     }
     // ignore: avoid_print

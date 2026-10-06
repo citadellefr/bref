@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'highlight.dart';
@@ -97,9 +98,14 @@ enum SwapKind {
 /// A piece of a line, in its columns, the preview shows otherwise.
 typedef Swap = ({int start, int end, SwapKind kind, String text});
 
+/// A line of a table that is read as a grid: [first] to [last] are the lines
+/// of the table, [cells] the columns of what each cell holds, trimmed.
+/// The delimiter row under the header has none.
+typedef TableLine = ({int first, int last, List<Align> align, List<Span> cells, bool header, bool delimiter});
+
 /// A line's pieces: [ends] are where each one ends, [marks] what it is.
 final class LineSyntax {
-  const LineSyntax(this.ends, this.marks, {this.heading = 0, this.block = false, this.callout, this.swaps = const []});
+  const LineSyntax(this.ends, this.marks, {this.heading = 0, this.block = false, this.callout, this.table, this.swaps = const []});
 
   final List<int> ends;
   final List<int> marks;
@@ -113,6 +119,9 @@ final class LineSyntax {
 
   /// The kind of callout the line belongs to, if it does.
   final CalloutKind? callout;
+
+  /// The table the line is a row of, when it shows as a grid.
+  final TableLine? table;
 
   /// What the preview shows otherwise, in order.
   final List<Swap> swaps;
@@ -139,7 +148,7 @@ final class LineSyntax {
         marks2.add(each[c]);
       }
     }
-    return LineSyntax(ends2, marks2, heading: heading, block: block, callout: callout, swaps: swaps);
+    return LineSyntax(ends2, marks2, heading: heading, block: block, callout: callout, table: table, swaps: swaps);
   }
 }
 
@@ -152,7 +161,10 @@ const longLine = 10000;
 ///
 /// A line of a callout comes with the [callout] it belongs to; its first line
 /// is the [header].
-LineSyntax readLine(MdNode block, String line, int lo, {Callout? callout, bool header = false}) {
+///
+/// A line of a table that is the block itself, lines [table], reads as a row
+/// of its grid.
+LineSyntax readLine(MdNode block, String line, int lo, {Callout? callout, bool header = false, (int, int)? table}) {
   final r = _LineReader(line, lo, callout)..visit(block, null);
   if (header) r.header();
   final ends = <int>[], kinds = <int>[];
@@ -164,7 +176,11 @@ LineSyntax readLine(MdNode block, String line, int lo, {Callout? callout, bool h
     }
   }
   r.swaps.sort((a, b) => a.start != b.start ? a.start - b.start : (a.end != b.end ? b.end - a.end : a.kind.index - b.kind.index));
-  return LineSyntax(ends, kinds, heading: r.heading, block: r.block, callout: callout?.kind, swaps: r.swaps);
+  final cells = r.cells;
+  final grid = table == null || line.length > longLine || (cells == null && !r.delimiter)
+      ? null
+      : (first: table.$1, last: table.$2, align: r.align, cells: cells ?? const <Span>[], header: r.rowHeader, delimiter: r.delimiter);
+  return LineSyntax(ends, kinds, heading: r.heading, block: r.block, callout: callout?.kind, table: grid, swaps: r.swaps);
 }
 
 class _LineReader {
@@ -179,6 +195,13 @@ class _LineReader {
   final swaps = <Swap>[];
   var heading = 0;
   var block = false;
+
+  /// The cells of the row on the line, the alignment of the table, whether
+  /// the row is the header and whether the line is the delimiter row.
+  List<Span>? cells;
+  var align = const <Align>[];
+  var rowHeader = false;
+  var delimiter = false;
 
   /// Where the line's content starts, after the marks of its quotes and
   /// list items.
@@ -245,9 +268,16 @@ class _LineReader {
       case MdKind.thematicBreak:
         markFlags = Mark.rule | Mark.markup;
         swap = SwapKind.rule;
-      case MdKind.table || MdKind.row:
+      case MdKind.table:
         markFlags = Mark.table | Mark.markup;
         swap = null;
+        align = n.align;
+        delimiter = n.marks.isNotEmpty && n.marks.first.start >= lo && n.marks.first.end <= hi;
+      case MdKind.row:
+        markFlags = Mark.table | Mark.markup;
+        swap = null;
+        rowHeader = n.header;
+        cells = [for (final c in n.children) (start: math.max(c.start - lo, 0), end: math.min(c.end - lo, line.length))];
       case MdKind.definition:
         swap = null;
       case MdKind.footnoteDef:

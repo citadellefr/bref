@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:bref/bref.dart';
 import 'package:bref/src/handles.dart';
+import 'package:bref/src/line_view.dart';
 import 'package:bref/src/render.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -289,6 +290,88 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('a table reads as a grid: columns line up, the delimiter row takes no room until the caret is on it', (tester) async {
+    await pumpEditor(tester, '| a | bb |\n|---|:-:|\n| ccc | d |\n\nfin');
+    await key(tester, LogicalKeyboardKey.end, control: true);
+    final render = note(tester);
+    final layout = tester.widget<NoteViewport>(find.byType(NoteViewport)).layout;
+    double x(int offset) => render.caretRect(offset).left;
+    expect(layout.view(2), isA<GridRowView>());
+    expect(x(23), moreOrLessEquals(x(2)));
+    expect(x(6), greaterThan(x(2) + 3 * 8));
+    expect(layout.lineHeight(1), 0);
+    expect(layout.lineHeight(0), greaterThan(layout.lineHeight(3)));
+    await tester.tapAt(render.localToGlobal(render.caretRect(29).center));
+    await tester.pump(kDoubleTapTimeout);
+    expect(marks(tester).extent, inInclusiveRange(29, 30));
+    expect(layout.view(2), isA<GridRowView>());
+    await tester.tapAt(render.localToGlobal(render.caretRect(3).center));
+    await tester.pump(kDoubleTapTimeout);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    await key(tester, LogicalKeyboardKey.arrowRight);
+    expect(marks(tester).extent, 12);
+    expect(layout.view(1), isA<TextView>());
+    expect(layout.lineHeight(1), greaterThan(10));
+    await finish(tester);
+  });
+
+  testWidgets('Tab and Enter go from cell to cell, and add a row past the end of the table', (tester) async {
+    await pumpEditor(tester, '| a | b |\n|---|---|\n| c | d |');
+    (int, int) selection() => (marks(tester).start, marks(tester).end);
+    await key(tester, LogicalKeyboardKey.tab);
+    expect(selection(), (6, 7));
+    await key(tester, LogicalKeyboardKey.tab);
+    expect(selection(), (22, 23));
+    await key(tester, LogicalKeyboardKey.tab);
+    await key(tester, LogicalKeyboardKey.tab, shift: true);
+    expect(selection(), (22, 23));
+    await key(tester, LogicalKeyboardKey.tab, shift: true);
+    expect(selection(), (6, 7));
+    await key(tester, LogicalKeyboardKey.enter);
+    expect(selection(), (26, 27));
+    await key(tester, LogicalKeyboardKey.tab);
+    await settle(tester);
+    expect(hub.text, '| a | b |\n|---|---|\n| c | d |\n|   |   |');
+    expect(selection(), (32, 32));
+    await key(tester, LogicalKeyboardKey.tab, shift: true);
+    expect(selection(), (26, 27));
+    await key(tester, LogicalKeyboardKey.enter);
+    await key(tester, LogicalKeyboardKey.enter);
+    await settle(tester);
+    expect(hub.text, '| a | b |\n|---|---|\n| c | d |\n|   |   |\n|   |   |');
+    await finish(tester);
+  });
+
+  testWidgets('Tab outside a table indents, and Shift+Tab before its first cell stays', (tester) async {
+    await pumpEditor(tester, 'texte\n\n| a |\n|---|');
+    await key(tester, LogicalKeyboardKey.tab);
+    await settle(tester);
+    expect(hub.text, '\ttexte\n\n| a |\n|---|');
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    await key(tester, LogicalKeyboardKey.tab, shift: true);
+    expect(marks(tester).extent, greaterThanOrEqualTo(8));
+    await finish(tester);
+  });
+
+  testWidgets('a table wider than the note is narrowed to it, its cells going over lines', (tester) async {
+    final wide = 'mot ' * 80;
+    await pumpEditor(tester, '| a | b |\n|---|---|\n| $wide| c |\n\nfin');
+    await key(tester, LogicalKeyboardKey.end, control: true);
+    final layout = tester.widget<NoteViewport>(find.byType(NoteViewport)).layout;
+    final row = layout.view(2) as GridRowView;
+    expect(row.grid.width, lessThanOrEqualTo(layout.width));
+    expect(row.height, greaterThan(layout.view(0).height * 3));
+    await finish(tester);
+  });
+
   testWidgets('a click in a line read as it renders lands where its text is written', (tester) async {
     await pumpEditor(tester, '**gras** fin\n[un lien](https://x.fr) ici');
     final render = note(tester);
@@ -396,7 +479,7 @@ void main() {
     final render = note(tester);
     final layout = tester.widget<NoteViewport>(find.byType(NoteViewport)).layout;
     expect(render.caretRect(layout.text.lineStart(2)).top - render.caretRect(layout.text.lineStart(1)).top, greaterThan(100));
-    expect(layout.view(1).painter.plainText, endsWith(' ${String.fromCharCode(Icons.person.codePoint)}\u2009Alice Martin @B'));
+    expect((layout.view(1) as TextView).painter.plainText, endsWith(' ${String.fromCharCode(Icons.person.codePoint)}\u2009Alice Martin @B'));
     await finish(tester);
   });
 

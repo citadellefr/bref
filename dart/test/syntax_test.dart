@@ -172,6 +172,24 @@ void main() {
     expect(_line('- > [!note]').callout, isNull);
   });
 
+  test('the rows of a table that is a block of its own read as a grid', () {
+    const note = '| a | **b** |\n|:-:|--:|\n|c|\n\n> | q |\n> |---|';
+    final head = _line(note).table!;
+    expect((head.first, head.last, head.header, head.delimiter), (0, 2, true, false));
+    expect(head.align.map((a) => a.name), ['center', 'right']);
+    expect([for (final c in head.cells) (c.start, c.end)], [(2, 3), (6, 11)]);
+    final rule = _line(note, 1).table!;
+    expect(rule.delimiter, isTrue);
+    expect(rule.cells, isEmpty);
+    final body = _line(note, 2).table!;
+    expect((body.header, body.delimiter, body.cells.length), (false, false, 2));
+    expect([for (final c in body.cells) (c.start, c.end)], [(1, 2), (3, 3)]);
+    expect(_line(note, 3).table, isNull);
+    expect(_line(note, 4).table, isNull);
+    expect(_line('| a |\n|---|', 0).table, isNotNull);
+    expect(_line('| a | b\n|---|---|', 0).table, isNotNull);
+  });
+
   test('the preview hides the syntax, and shows bullets, boxes, bars and rules', () {
     expect(_preview('## Titre ##'), 'Titre');
     expect(_preview('Un **gras** et un [lien](https://x.fr).'), 'Un gras et un lien.');

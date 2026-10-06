@@ -225,7 +225,8 @@ class NoteSyntax {
     }
     final callout = t.callout;
     final s = readLine(t.node, line, text.lineStart(i) - text.lineStart(t.line) + t.base,
-        callout: callout, header: callout != null && i == t.line);
+        callout: callout, header: callout != null && i == t.line,
+        table: t.node.kind == MdKind.table ? (t.line, t.last) : null);
     return s.block ? _colored(s, t, i, line) : s;
   }
 

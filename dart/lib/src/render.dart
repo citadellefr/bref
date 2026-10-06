@@ -4,6 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 import 'layout.dart';
+import 'line_view.dart' show Ornament;
 import 'note_syntax.dart';
 import 'syntax.dart';
 import 'theme.dart';
@@ -175,13 +176,13 @@ class RenderNote extends RenderBox {
     final count = _layout.text.lineCount;
     var last = anchor;
     while (last < count) {
-      _layout.painter(last);
+      _layout.view(last);
       if (_layout.top(last + 1) > top + size.height + _cache) break;
       last++;
     }
     var first = anchor;
     while (first > 0 && _layout.top(first) > top - _cache) {
-      _layout.painter(--first);
+      _layout.view(--first);
     }
     final moved = _layout.top(anchor) - anchorTop;
     if (moved != 0) _offset.correctBy(moved);
@@ -244,7 +245,7 @@ class RenderNote extends RenderBox {
         _range(canvas, i, y, start, end, from, to, Paint()..color = theme.peer(peer.sid).withValues(alpha: 0.2));
       }
       _range(canvas, i, y, start, end, s.start, s.end, selection);
-      view.painter.paint(canvas, Offset(0, y));
+      view.paint(canvas, Offset(0, y));
       for (final o in view.ornaments) {
         _ornament(canvas, o, o.rect.shift(Offset(0, y)), y, h, theme, callout);
       }
