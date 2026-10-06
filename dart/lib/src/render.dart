@@ -11,6 +11,9 @@ import 'theme.dart';
 /// Someone else's selection, as the note shows it.
 typedef PeerMark = ({int sid, String name, int base, int extent});
 
+/// A passage the note colors: a thread of comments, or what one person wrote.
+typedef Passage = ({int from, int to, Color color});
+
 /// What is drawn over the text: the selection, the caret and those of the
 /// others. Changing it repaints the note without laying it out again.
 class NoteMarks extends ChangeNotifier {
@@ -19,6 +22,9 @@ class NoteMarks extends ChangeNotifier {
   bool caret = false;
   TextRange composing = TextRange.empty;
   List<PeerMark> peers = const [];
+
+  /// Drawn under the selection, in order: later ones over the earlier.
+  List<Passage> passages = const [];
 
   int get start => math.min(base, extent);
 
@@ -225,6 +231,9 @@ class RenderNote extends RenderBox {
       final view = _layout.view(i);
       final start = text.lineStart(i), end = text.lineEnd(i);
       if (_layout.syntax.inBlock(i)) canvas.drawRect(Rect.fromLTWH(-8, y, width + 16, h), block);
+      for (final p in s.passages) {
+        _range(canvas, i, y, start, end, p.from, p.to, Paint()..color = p.color);
+      }
       for (final peer in s.peers) {
         final from = math.min(peer.base, peer.extent), to = math.max(peer.base, peer.extent);
         _range(canvas, i, y, start, end, from, to, Paint()..color = theme.peer(peer.sid).withValues(alpha: 0.2));

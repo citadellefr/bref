@@ -71,6 +71,15 @@ class BrefTheme {
 
   Color peer(int sid) => peers[sid % peers.length];
 
+  /// The color of an author, the same wherever they are shown.
+  Color author(String id) {
+    var h = 0;
+    for (final c in id.codeUnits) {
+      h = (h * 31 + c) & 0x7FFFFFFF;
+    }
+    return peers[h % peers.length];
+  }
+
   /// The style of a piece of text with these marks, in a heading of this
   /// level or 0.
   TextStyle style(int marks, int heading) {

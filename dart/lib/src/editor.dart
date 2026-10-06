@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:trame/trame.dart';
 
+import 'controller.dart';
 import 'editing.dart';
 import 'handles.dart';
 import 'host.dart';
@@ -16,6 +17,7 @@ import 'mentions.dart';
 import 'note_syntax.dart';
 import 'note_text.dart';
 import 'render.dart';
+import 'strings.dart';
 import 'theme.dart';
 
 export 'note_text.dart' show noteBody;
@@ -36,9 +38,17 @@ class BrefEditor extends StatefulWidget {
     this.focusNode,
     this.autofocus = false,
     this.preview = true,
+    this.comments,
+    this.strings = const BrefStrings(),
   });
 
   final DocSession session;
+
+  /// The comments of the note: their passages are marked, and a click on
+  /// one opens its thread. Without it the note has none; give it only when
+  /// the server keeps them.
+  final BrefComments? comments;
+  final BrefStrings strings;
 
   /// What links stand for and how they open; without it, they do not.
   final BrefHost? host;
@@ -146,6 +156,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
     _session.addListener(_sessionChanged);
     _session.presence.addListener(_peersMoved);
     _focus.addListener(_focusChanged);
+    widget.comments?.addListener(_passagesChanged);
   }
 
   @override
@@ -157,6 +168,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
     if (layout == null) {
       _makeCache();
       _layout = NoteLayout(_text, _syntax, theme: theme, scaler: scaler, preview: widget.preview)..cache = _cache;
+      _passagesChanged();
     } else {
       layout
         ..theme = theme
@@ -186,6 +198,11 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
         ..presence.addListener(_peersMoved);
       _reload();
     }
+    if (oldWidget.comments != widget.comments) {
+      oldWidget.comments?.removeListener(_passagesChanged);
+      widget.comments?.addListener(_passagesChanged);
+      _passagesChanged();
+    }
     if (oldWidget.focusNode != widget.focusNode) {
       (oldWidget.focusNode ?? _ownFocus)?.removeListener(_focusChanged);
       _focus.addListener(_focusChanged);
@@ -207,6 +224,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       ..presence.removeListener(_peersMoved)
       ..select(null);
     _focus.removeListener(_focusChanged);
+    widget.comments?.removeListener(_passagesChanged);
     _ownFocus?.dispose();
     _input?.close();
     _menu.remove();
@@ -275,6 +293,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
     _mention = mention;
     if (!_local) _select(base, extent: extent, keepGoal: true, reveal: _travelling, publish: _travelling);
     _peersMoved();
+    if (widget.comments != null) _passagesChanged();
   }
 
   /// Where a delta changed the text: the caret after what it inserted, or
@@ -291,6 +310,61 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       end = at;
     }
     return start < 0 ? (_marks.base, _marks.extent) : (end, end);
+  }
+
+  // comments and authorship
+
+  /// Colors the passages of the threads, the one open stronger and those
+  /// resolved not at all, and under them what each person wrote when the
+  /// note shows it.
+  void _passagesChanged() {
+    final comments = widget.comments;
+    final theme = widget.theme ?? BrefTheme.of(context);
+    final length = _text.length;
+    final passages = <Passage>[];
+    if (comments != null) {
+      if (comments.authorship) {
+        var at = 0;
+        for (final op in _session.document[noteBody]?.text?.ops ?? const <Op>[]) {
+          final by = op.attributes?['by'];
+          if (by != null) passages.add((from: at, to: at + op.length, color: theme.author(by).withValues(alpha: 0.25)));
+          at += op.length;
+        }
+      }
+      for (final t in comments.threads) {
+        final open = t.id == comments.selected;
+        if (t.done && !open) continue;
+        for (final r in t.ranges) {
+          passages.add((from: r.start, to: r.end, color: Colors.amber.withValues(alpha: open ? 0.5 : 0.28)));
+        }
+      }
+      if (comments.draft case final d?) passages.add((from: d.start, to: d.end, color: Colors.amber.withValues(alpha: 0.5)));
+    }
+    _marks
+      ..passages = [for (final p in passages) (from: math.min(p.from, length), to: math.min(p.to, length), color: p.color)]
+      ..changed();
+  }
+
+  /// Starts a comment about the selection, or the word at the caret.
+  void comment() {
+    final comments = widget.comments;
+    if (comments == null || !_editable) return;
+    var (start, end) = (_marks.start, _marks.end);
+    if (start == end) (start, end) = wordAt(_text, start);
+    if (start == end) return;
+    comments.startDraft(TextRange(start: start, end: end));
+  }
+
+  /// Opens the thread of the passage at the caret, if any.
+  void _openThreadAt(int offset) {
+    final comments = widget.comments;
+    if (comments == null || _marks.base != _marks.extent) return;
+    for (final t in comments.threads) {
+      if (t.covers(offset) && (!t.done || t.id == comments.selected)) {
+        comments.select(t.id);
+        return;
+      }
+    }
   }
 
   void _peersMoved() {
@@ -535,6 +609,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       ..changed();
     if (!keepGoal) _goalX = null;
     if (publish) _session.select(DocSelection(noteBody, _marks.base, _marks.extent));
+    _openThreadAt(_marks.extent);
     _followMention();
     _revealSelection();
     _restartBlink();
@@ -724,6 +799,8 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
         _travel(back: !shift);
       case LogicalKeyboardKey.keyY when command && !_apple:
         _travel(back: false);
+      case LogicalKeyboardKey.keyM when command && keys.isAltPressed && widget.comments != null:
+        comment();
       default:
         return KeyEventResult.ignored;
     }
@@ -1045,6 +1122,12 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
             ContextMenuButtonItem(type: ContextMenuButtonType.cut, onPressed: () => _menuDone(_copy(cut: true))),
           if (selected) ContextMenuButtonItem(type: ContextMenuButtonType.copy, onPressed: () => _menuDone(_copy())),
           if (_editable) ContextMenuButtonItem(type: ContextMenuButtonType.paste, onPressed: () => _menuDone(_paste())),
+          if (widget.comments != null && _editable && selected)
+            ContextMenuButtonItem(
+              type: ContextMenuButtonType.custom,
+              label: widget.strings.comment,
+              onPressed: () => _menuDone(Future(comment)),
+            ),
           ContextMenuButtonItem(
             type: ContextMenuButtonType.selectAll,
             onPressed: () => _menuDone(Future(() => _select(0, extent: _text.length, reveal: false))),

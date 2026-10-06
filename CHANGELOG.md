@@ -7,6 +7,11 @@
   passage of a thread carries the attribute `c.<thread>`. The server dates
   messages and only their author edits or deletes them. When the file was
   changed by someone else, passages are found again by their words.
+- Dart: `BrefComments` (the threads of a note, the one open, the passage
+  being commented, who-wrote-what on or off), `CommentsPane` beside the
+  editor, `BrefEditor(comments:, strings:)` marking the passages and opening
+  a thread at the caret; Ctrl+Alt+M or the selection menu starts a comment.
+  `BrefStrings` holds the words the editor says.
 - `Options.OnSave` is given each version of a note with those who edited it.
 
 ## 0.8.0 — 2026-10-05
