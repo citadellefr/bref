@@ -118,6 +118,13 @@ class BrefTheme {
     if (marks & Mark.code != 0 && marks & Mark.fence == 0) {
       style = style.copyWith(backgroundColor: codeBackground);
     }
+    if (marks & Mark.strong != 0) style = style.copyWith(fontWeight: FontWeight.w700);
+    if (marks & Mark.emphasis != 0) style = style.copyWith(fontStyle: FontStyle.italic);
+    if (marks & Mark.strike != 0) style = style.copyWith(decoration: TextDecoration.lineThrough);
+    if (marks & Mark.highlight != 0) style = style.copyWith(backgroundColor: highlight);
+    if (marks & (Mark.quote | Mark.frontMatter) != 0) style = style.copyWith(color: muted);
+    if (marks & (Mark.link | Mark.listMarker | Mark.task) != 0) style = style.copyWith(color: accent);
+    if (marks & (Mark.url | Mark.math | Mark.html) != 0) style = style.copyWith(color: muted);
     if (marks & Mark.tokens != 0) {
       for (final t in Token.values) {
         if (marks & Mark.token(t) == 0) continue;
@@ -128,13 +135,6 @@ class BrefTheme {
     if (marks & Mark.callouts != 0) {
       style = style.copyWith(color: callouts[marks >> 25 & 7], fontWeight: FontWeight.w600);
     }
-    if (marks & Mark.strong != 0) style = style.copyWith(fontWeight: FontWeight.w700);
-    if (marks & Mark.emphasis != 0) style = style.copyWith(fontStyle: FontStyle.italic);
-    if (marks & Mark.strike != 0) style = style.copyWith(decoration: TextDecoration.lineThrough);
-    if (marks & Mark.highlight != 0) style = style.copyWith(backgroundColor: highlight);
-    if (marks & (Mark.quote | Mark.frontMatter) != 0) style = style.copyWith(color: muted);
-    if (marks & (Mark.link | Mark.listMarker | Mark.task) != 0) style = style.copyWith(color: accent);
-    if (marks & (Mark.url | Mark.math | Mark.html) != 0) style = style.copyWith(color: muted);
     if (marks & Mark.markup != 0 && marks & (Mark.listMarker | Mark.task) == 0) style = style.copyWith(color: markup);
     return style;
   }

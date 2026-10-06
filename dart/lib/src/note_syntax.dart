@@ -229,12 +229,12 @@ class NoteSyntax {
     return s.block ? _colored(s, t, i, line) : s;
   }
 
-  /// The line [s] of a block of code, its pieces colored when the language is known.
+  /// The line [s] of a block of code, or of front matter, its pieces colored when the language is known.
   LineSyntax _colored(LineSyntax s, _Top t, int i, String line) {
     final found = _nodeAt(i);
     final n = found?.node;
-    if (n == null || n.kind != MdKind.codeBlock || n.marks.isEmpty) return s;
-    final language = languageOf(n.info);
+    if (n == null || n.kind != MdKind.codeBlock && n.kind != MdKind.frontMatter || n.marks.isEmpty) return s;
+    final language = n.kind == MdKind.frontMatter ? 'yaml' : languageOf(n.info);
     if (language == null) return s;
     final code = t.code[n] ??= () {
       final lines = n.literal.split('\n');

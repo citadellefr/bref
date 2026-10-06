@@ -240,7 +240,8 @@ class _LineReader {
       case MdKind.frontMatter:
         flags = Mark.frontMatter;
         markFlags = Mark.frontMatter | Mark.markup;
-        swap = null;
+        swap = SwapKind.fold;
+        block = true;
       case MdKind.thematicBreak:
         markFlags = Mark.rule | Mark.markup;
         swap = SwapKind.rule;

@@ -126,6 +126,14 @@ void main() {
     expect([for (var i = 0; i < 3; i++) _line(code, i).block], [true, true, true]);
     expect(_line('a\n\nb', 1).block, isFalse);
     expect(_pieces('---\ntitre: x\n---\ntexte', Mark.frontMatter, 1), ['titre: x']);
+    const matter = '---\ntitre: "x" # c\ntags: [a]\n---\ntexte';
+    expect([for (var i = 0; i < 5; i++) _line(matter, i).block], [true, true, true, true, false]);
+    expect(_pieces(matter, Mark.token(Token.name), 1), ['titre']);
+    expect(_pieces(matter, Mark.token(Token.string), 1), ['"x"']);
+    expect(_pieces(matter, Mark.token(Token.comment), 1), ['# c']);
+    expect(_pieces(matter, Mark.token(Token.name), 2), ['tags']);
+    expect(_pieces(matter, Mark.tokens, 4), isEmpty);
+    expect([for (var i = 0; i < 4; i++) _preview(matter, i)], ['[fold]', 'titre: "x" # c', 'tags: [a]', '[fold]']);
     expect(_pieces('> ```\n> code', Mark.code, 1), ['code']);
     expect(_line('```a`b').block, isFalse);
   });
