@@ -134,6 +134,26 @@ void main() {
     expect(_pieces('`final` seul', Mark.tokens), isEmpty);
   });
 
+  test('a quote opened by [!kind] is a callout, whose title is shown in its color', () {
+    const note = '> [!warning]- Attention\n> corps\n>\n> suite\n\n> pas un [!note]';
+    expect([for (var i = 0; i < 6; i++) _line(note, i).callout], [
+      CalloutKind.warning, CalloutKind.warning, CalloutKind.warning, CalloutKind.warning, null, null,
+    ]);
+    expect(_preview(note), '[bar]Attention');
+    expect(_preview(note, 1), '[bar]corps');
+    expect(_preview('> [!tip]'), '[bar]Tip');
+    expect(_preview('> [!QUESTION]  À voir'), '[bar]À voir');
+    expect(_pieces(note, Mark.callout(CalloutKind.warning), 0), ['[!warning]- Attention']);
+    expect(_pieces(note, Mark.callouts, 1), isEmpty);
+    expect(_pieces(note, Mark.quote, 1), isEmpty);
+    expect(_pieces('> citation', Mark.quote), ['> citation']);
+    expect(_line('> [!inconnu] x').callout, CalloutKind.note);
+    expect(_line('> [!note] a\n> [!tip] b', 1).callout, CalloutKind.note);
+    expect(_line('> [! note]').callout, isNull);
+    expect(_line('[!note] seul').callout, isNull);
+    expect(_line('- > [!note]').callout, isNull);
+  });
+
   test('the preview hides the syntax, and shows bullets, boxes, bars and rules', () {
     expect(_preview('## Titre ##'), 'Titre');
     expect(_preview('Un **gras** et un [lien](https://x.fr).'), 'Un gras et un lien.');

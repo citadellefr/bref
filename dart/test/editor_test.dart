@@ -281,6 +281,14 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('a callout loses its [!kind] once read as it renders, and code in color is painted', (tester) async {
+    await pumpEditor(tester, '> [!tip] Astuce\n> corps\n\n```dart\nfinal a = 1; // x\n```\nfin');
+    final written = note(tester).caretRect(15).left;
+    await key(tester, LogicalKeyboardKey.end, control: true);
+    expect(note(tester).caretRect(15).left, lessThan(written - 4 * 16));
+    await finish(tester);
+  });
+
   testWidgets('a click in a line read as it renders lands where its text is written', (tester) async {
     await pumpEditor(tester, '**gras** fin\n[un lien](https://x.fr) ici');
     final render = note(tester);

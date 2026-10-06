@@ -12,13 +12,16 @@ typedef NoteLink = ({int start, int end, String dest, bool wiki, bool image});
 /// those of the text when it was read, [base] being where its first line
 /// started then: lines inserted above move it without reading it again.
 class _Top {
-  _Top(this.node, this.line, this.last, this.base, this.leaves);
+  _Top(this.node, this.line, this.last, this.base, this.leaves, this.callout);
 
   final MdNode node;
   int line;
   int last;
   final int base;
   final List<Leaf> leaves;
+
+  /// What the block opens, if it is a quote that does.
+  final Callout? callout;
   var inlines = false;
 
   /// The code of the blocks of code, read when a line of it is.
@@ -147,13 +150,20 @@ class NoteSyntax {
     p.finish();
     if (i == text.lineCount) _clean[i] = true;
     final tops = [
-      for (final n in p.doc.children) _Top(n, text.lineAt(n.start), text.lineAt(n.end), text.lineStart(text.lineAt(n.start)), []),
+      for (final n in p.doc.children)
+        _Top(n, text.lineAt(n.start), text.lineAt(n.end), text.lineStart(text.lineAt(n.start)), [], _calloutOf(n)),
     ];
     for (final leaf in p.leaves) {
       _topAt(tops, leaf.node.start).leaves.add(leaf);
     }
     _tops.addAll(tops);
     return i;
+  }
+
+  Callout? _calloutOf(MdNode n) {
+    if (n.kind != MdKind.quote || n.marks.isEmpty) return null;
+    final first = text.lineAt(n.start);
+    return calloutOf(text.line(first), n.marks.first.end - text.lineStart(first));
   }
 
   static _Top _topAt(List<_Top> tops, int offset) {
@@ -213,7 +223,9 @@ class NoteSyntax {
       }
       t.inlines = true;
     }
-    final s = readLine(t.node, line, text.lineStart(i) - text.lineStart(t.line) + t.base);
+    final callout = t.callout;
+    final s = readLine(t.node, line, text.lineStart(i) - text.lineStart(t.line) + t.base,
+        callout: callout, header: callout != null && i == t.line);
     return s.block ? _colored(s, t, i, line) : s;
   }
 

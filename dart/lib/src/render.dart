@@ -230,7 +230,12 @@ class RenderNote extends RenderBox {
       if (y + h < top) continue;
       final view = _layout.view(i);
       final start = text.lineStart(i), end = text.lineEnd(i);
-      if (_layout.syntax.inBlock(i)) canvas.drawRect(Rect.fromLTWH(-8, y, width + 16, h), block);
+      final callout = _layout.syntax.line(i).callout;
+      if (callout != null) {
+        canvas.drawRect(Rect.fromLTWH(-8, y, width + 16, h), Paint()..color = theme.callouts[callout.index].withValues(alpha: 0.12));
+      } else if (_layout.syntax.inBlock(i)) {
+        canvas.drawRect(Rect.fromLTWH(-8, y, width + 16, h), block);
+      }
       for (final p in s.passages) {
         _range(canvas, i, y, start, end, p.from, p.to, Paint()..color = p.color);
       }
@@ -241,7 +246,7 @@ class RenderNote extends RenderBox {
       _range(canvas, i, y, start, end, s.start, s.end, selection);
       view.painter.paint(canvas, Offset(0, y));
       for (final o in view.ornaments) {
-        _ornament(canvas, o, o.rect.shift(Offset(0, y)), y, h, theme);
+        _ornament(canvas, o, o.rect.shift(Offset(0, y)), y, h, theme, callout);
       }
       if (s.composing.isValid && !s.composing.isCollapsed) {
         _underline(canvas, i, y, start, end, s.composing, theme.text.color ?? const Color(0xFF000000));
@@ -283,14 +288,14 @@ class RenderNote extends RenderBox {
 
   /// The box of a task, the bar of a quote, a rule or a picture, over
   /// [rect]; a bar runs the height of the line, from [y] for [h].
-  void _ornament(Canvas canvas, Ornament o, Rect rect, double y, double h, BrefTheme theme) {
+  void _ornament(Canvas canvas, Ornament o, Rect rect, double y, double h, BrefTheme theme, CalloutKind? callout) {
     final kind = o.kind;
     switch (kind) {
       case SwapKind.picture:
         final info = _layout.cache?.picture(o.text);
         if (info != null) paintImage(canvas: canvas, rect: rect, image: info.image, fit: BoxFit.fill, filterQuality: FilterQuality.medium);
       case SwapKind.bar:
-        canvas.drawRect(Rect.fromLTWH(rect.left + 1, y, 3, h), Paint()..color = theme.markup);
+        canvas.drawRect(Rect.fromLTWH(rect.left + 1, y, 3, h), Paint()..color = callout == null ? theme.markup : theme.callouts[callout.index]);
       case SwapKind.rule:
         canvas.drawRect(Rect.fromLTWH(rect.left, rect.center.dy - 0.5, rect.width, 1), Paint()..color = theme.markup);
       case SwapKind.box || SwapKind.doneBox:

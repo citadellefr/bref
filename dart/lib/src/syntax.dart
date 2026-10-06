@@ -32,6 +32,36 @@ abstract final class Mark {
   static int token(Token t) => 1 << (19 + t.index);
 
   static const tokens = 31 << 19;
+
+  /// The header of a callout, of this kind.
+  static int callout(CalloutKind k) => 1 << 24 | k.index << 25;
+
+  static const callouts = 1 << 24;
+}
+
+/// What a callout looks like: its color tells them apart.
+enum CalloutKind { note, tip, warning, danger, quote }
+
+final _calloutKinds = {
+  for (final k in ['tip', 'hint', 'important', 'success', 'check', 'done']) k: CalloutKind.tip,
+  for (final k in ['warning', 'caution', 'attention', 'question', 'help', 'faq']) k: CalloutKind.warning,
+  for (final k in ['danger', 'error', 'failure', 'fail', 'missing', 'bug']) k: CalloutKind.danger,
+  for (final k in ['quote', 'cite', 'example']) k: CalloutKind.quote,
+};
+
+/// A quote opened by `[!kind] title`, which reads as a callout: [start] to
+/// [end] of its first line is the `[!kind]` and the spaces after it, [name]
+/// what it says.
+typedef Callout = ({CalloutKind kind, String name, int start, int end});
+
+final _calloutHead = RegExp(r'^([ \t]*)\[!([A-Za-z][A-Za-z0-9-]*)\][+-]?[ \t]*');
+
+/// The callout [line] opens, the text of the quote starting at column [from].
+Callout? calloutOf(String line, int from) {
+  final m = _calloutHead.firstMatch(line.substring(from));
+  if (m == null) return null;
+  final name = m[2]!;
+  return (kind: _calloutKinds[name.toLowerCase()] ?? CalloutKind.note, name: name, start: from + m[1]!.length, end: from + m.end);
 }
 
 /// What the preview shows in place of a piece of a line.
@@ -69,7 +99,7 @@ typedef Swap = ({int start, int end, SwapKind kind, String text});
 
 /// A line's pieces: [ends] are where each one ends, [marks] what it is.
 final class LineSyntax {
-  const LineSyntax(this.ends, this.marks, {this.heading = 0, this.block = false, this.swaps = const []});
+  const LineSyntax(this.ends, this.marks, {this.heading = 0, this.block = false, this.callout, this.swaps = const []});
 
   final List<int> ends;
   final List<int> marks;
@@ -80,6 +110,9 @@ final class LineSyntax {
   /// Whether the line belongs to a block of code or math, drawn on a
   /// background of its own.
   final bool block;
+
+  /// The kind of callout the line belongs to, if it does.
+  final CalloutKind? callout;
 
   /// What the preview shows otherwise, in order.
   final List<Swap> swaps;
@@ -106,7 +139,7 @@ final class LineSyntax {
         marks2.add(each[c]);
       }
     }
-    return LineSyntax(ends2, marks2, heading: heading, block: block, swaps: swaps);
+    return LineSyntax(ends2, marks2, heading: heading, block: block, callout: callout, swaps: swaps);
   }
 }
 
@@ -116,8 +149,12 @@ const longLine = 10000;
 
 /// The syntax of [line], which starts at [lo] in the coordinates of [block],
 /// the block of the document holding it.
-LineSyntax readLine(MdNode block, String line, int lo) {
-  final r = _LineReader(line, lo)..visit(block, null);
+///
+/// A line of a callout comes with the [callout] it belongs to; its first line
+/// is the [header].
+LineSyntax readLine(MdNode block, String line, int lo, {Callout? callout, bool header = false}) {
+  final r = _LineReader(line, lo, callout)..visit(block, null);
+  if (header) r.header();
   final ends = <int>[], kinds = <int>[];
   final marks = r.marks;
   for (var i = 0; i < marks.length; i++) {
@@ -127,15 +164,16 @@ LineSyntax readLine(MdNode block, String line, int lo) {
     }
   }
   r.swaps.sort((a, b) => a.start != b.start ? a.start - b.start : (a.end != b.end ? b.end - a.end : a.kind.index - b.kind.index));
-  return LineSyntax(ends, kinds, heading: r.heading, block: r.block, swaps: r.swaps);
+  return LineSyntax(ends, kinds, heading: r.heading, block: r.block, callout: callout?.kind, swaps: r.swaps);
 }
 
 class _LineReader {
-  _LineReader(this.line, this.lo)
+  _LineReader(this.line, this.lo, this.callout)
       : hi = lo + line.length,
         marks = Uint32List(line.length);
 
   final String line;
+  final Callout? callout;
   final int lo, hi;
   final Uint32List marks;
   final swaps = <Swap>[];
@@ -164,13 +202,25 @@ class _LineReader {
   void _swap(Span s, SwapKind kind, [String text = '']) =>
       swaps.add((start: s.start - lo, end: s.end - lo, kind: kind, text: text));
 
+  /// The first line of a callout: its title is shown in its color, and its
+  /// kind stands for it when it has none.
+  void header() {
+    final c = callout!;
+    final flag = Mark.callout(c.kind);
+    final text = c.name.isEmpty ? '' : '${c.name[0].toUpperCase()}${c.name.substring(1)}';
+    for (var i = c.start; i < line.length; i++) {
+      marks[i] |= flag;
+    }
+    swaps.add((start: c.start, end: c.end, kind: c.end == line.length ? SwapKind.text : SwapKind.hide, text: text));
+  }
+
   void visit(MdNode n, MdNode? parent) {
     if (!_on(n)) return;
     var flags = 0, markFlags = Mark.markup;
     SwapKind? swap = SwapKind.hide;
     switch (n.kind) {
       case MdKind.quote:
-        flags = Mark.quote;
+        flags = callout == null ? Mark.quote : 0;
         swap = SwapKind.bar;
       case MdKind.heading:
         flags = Mark.heading;

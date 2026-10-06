@@ -20,6 +20,7 @@ class BrefTheme {
     required this.caret,
     required this.peers,
     required this.tokens,
+    required this.callouts,
     this.headings = const [1.8, 1.5, 1.3, 1.15, 1.05, 1.0],
   });
 
@@ -47,6 +48,7 @@ class BrefTheme {
         colors.secondary,
         Color.lerp(colors.primary, colors.onSurface, 0.5)!,
       ],
+      callouts: [Colors.blue, Colors.teal, Colors.orange, Colors.red, Colors.grey],
       peers: const [
         Color(0xFFE8590C),
         Color(0xFF2F9E44),
@@ -74,6 +76,9 @@ class BrefTheme {
 
   /// The colors of the pieces of code, by [Token].
   final List<Color> tokens;
+
+  /// The colors of the callouts, by [CalloutKind].
+  final List<Color> callouts;
 
   /// The colors of the others, by the number of their connection.
   final List<Color> peers;
@@ -120,6 +125,9 @@ class BrefTheme {
         if (t == Token.comment) style = style.copyWith(fontStyle: FontStyle.italic);
       }
     }
+    if (marks & Mark.callouts != 0) {
+      style = style.copyWith(color: callouts[marks >> 25 & 7], fontWeight: FontWeight.w600);
+    }
     if (marks & Mark.strong != 0) style = style.copyWith(fontWeight: FontWeight.w700);
     if (marks & Mark.emphasis != 0) style = style.copyWith(fontStyle: FontStyle.italic);
     if (marks & Mark.strike != 0) style = style.copyWith(decoration: TextDecoration.lineThrough);
@@ -145,9 +153,10 @@ class BrefTheme {
       other.caret == caret &&
       listEquals(other.peers, peers) &&
       listEquals(other.tokens, tokens) &&
+      listEquals(other.callouts, callouts) &&
       listEquals(other.headings, headings);
 
   @override
   int get hashCode => Object.hash(text, monospace, markup, accent, muted, codeBackground, highlight, selection, caret,
-      Object.hashAll(peers), Object.hashAll(tokens), Object.hashAll(headings));
+      Object.hashAll(peers), Object.hashAll(tokens), Object.hashAll(callouts), Object.hashAll(headings));
 }
