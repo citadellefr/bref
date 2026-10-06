@@ -408,7 +408,7 @@ class BlockParser {
         _addChild(MdKind.quote, at).node.mark(_start + at, _start + _offset);
         return 1;
       }
-      if (first == 0x5B && syntax & MdSyntax.footnotes != 0 && c.node.kind == MdKind.document) {
+      if (first == 0x5B && syntax & MdSyntax.footnotes != 0 && (c.node.kind == MdKind.document || c.node.kind == MdKind.list && container == 1)) {
         final n = _noteMarker(_line, at);
         if (n > 0) {
           _advanceNextNonspace();

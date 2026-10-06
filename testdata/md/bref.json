@@ -355,5 +355,12 @@
   "extension": "",
   "markdown": "See[^1].\n\n[^1]:\n    after the marker\n\n    ```\n    code\n    ```\n\n[^1]: second definition is ignored\n",
   "html": "<p>See<sup class=\"footnote-ref\"><a href=\"#fn-1\" id=\"fnref-1\">1</a></sup>.</p>\n<section class=\"footnotes\">\n<ol>\n<li id=\"fn-1\">\n<p>after the marker</p>\n<pre><code>code\n</code></pre>\n<p><a href=\"#fnref-1\" class=\"footnote-back\">↩</a></p>\n</li>\n</ol>\n</section>\n"
+ },
+ {
+  "example": 52,
+  "section": "",
+  "extension": "",
+  "markdown": "A[^1]\n\n- item\n\n[^1]: after a list\n\n> quote\n> [^2]: not here\n\n[^2]: nor above\n",
+  "html": "<p>A<sup class=\"footnote-ref\"><a href=\"#fn-1\" id=\"fnref-1\">1</a></sup></p>\n<ul>\n<li>item</li>\n</ul>\n<blockquote>\n<p>quote\n<sup class=\"footnote-ref\"><a href=\"#fn-2\" id=\"fnref-2\">2</a></sup>: not here</p>\n</blockquote>\n<section class=\"footnotes\">\n<ol>\n<li id=\"fn-1\">\n<p>after a list <a href=\"#fnref-1\" class=\"footnote-back\">↩</a></p>\n</li>\n<li id=\"fn-2\">\n<p>nor above <a href=\"#fnref-2\" class=\"footnote-back\">↩</a></p>\n</li>\n</ol>\n</section>\n"
  }
 ]

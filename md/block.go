@@ -389,7 +389,7 @@ func (p *blockParser) blockStart(container int) int {
 			b := p.addChild(Quote, at)
 			b.node.Marks = append(b.node.Marks, Span{p.start + at, p.start + p.offset})
 			return 1
-		case rest[0] == '[' && p.ext&extFootnotes != 0 && c.node.Kind == Document:
+		case rest[0] == '[' && p.ext&extFootnotes != 0 && (c.node.Kind == Document || c.node.Kind == List && container == 1):
 			if n := noteMarker(rest); n > 0 {
 				p.advanceNextNonspace()
 				p.advanceOffset(n, false)
