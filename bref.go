@@ -6,8 +6,11 @@ package bref
 
 import (
 	"errors"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/citadellefr/bref/md"
 	"github.com/citadellefr/trame"
@@ -32,6 +35,11 @@ type Options struct {
 	// mentioned, or to index the links between notes. It is called on the
 	// note's saving goroutine, which it should not hold up.
 	OnLinks func(key string, added []Link)
+	// OnSave is given the file of a note each time it is saved, with the IDs
+	// of those who edited it since the last time: to keep its versions. A
+	// save that failed is tried again, so the host may be given the same
+	// file twice. It is called on the note's saving goroutine.
+	OnSave func(key string, data []byte, authors []string)
 }
 
 // Link is a link, a mention or a picture of a note.
@@ -61,7 +69,7 @@ func Format(opt Options) trame.Format {
 		if err != nil {
 			return nil, nil, err
 		}
-		n := &note{File: f, key: key, onLinks: opt.OnLinks}
+		n := &note{File: f, key: key, onLinks: opt.OnLinks, onSave: opt.OnSave, now: time.Now}
 		if n.onLinks != nil {
 			text, _ := authors(doc)
 			n.links = count(md.Links(md.Parse(text)))
@@ -74,8 +82,15 @@ type note struct {
 	trame.File
 	key     string
 	onLinks func(string, []Link)
+	onSave  func(string, []byte, []string)
+	now     func() time.Time
+	// kept tells that the host keeps what a note holds beside its file: it
+	// takes comments, and the authors of its characters outlive the hub.
+	kept bool
 
 	mu sync.Mutex
+	// editors are those who edited since the note was last saved.
+	editors map[string]bool
 	// links counts those of the note when it was last saved, by
 	// destination.
 	links map[linkKey]int
@@ -99,15 +114,41 @@ func count(links []*md.Node) map[linkKey]int {
 }
 
 func (n *note) Check(doc *ot.Tree, e ot.Edit, by trame.Peer) error {
-	if err := n.File.Check(doc, e, by); err != nil {
-		return err
-	}
 	for _, c := range e {
-		for _, o := range c.Text {
-			if o.Attrs == nil {
-				continue
+		switch {
+		case c.Op == ot.OpTxt && c.ID == Body:
+			if err := n.File.Check(doc, ot.Edit{c}, by); err != nil {
+				return err
 			}
-			if _, ok := o.Attrs[By]; o.Insert == "" || len(o.Attrs) > 1 || !ok {
+			if err := n.checkAttrs(c.Text); err != nil {
+				return err
+			}
+		case !n.kept:
+			return n.File.Check(doc, ot.Edit{c}, by)
+		default:
+			if err := comment(doc, e, c, by); err != nil {
+				return err
+			}
+		}
+	}
+	n.mu.Lock()
+	if n.editors == nil {
+		n.editors = map[string]bool{}
+	}
+	n.editors[by.ID] = true
+	n.mu.Unlock()
+	return nil
+}
+
+// checkAttrs refuses attributes other than the author of what is inserted,
+// and the passages of the threads, which are retained.
+func (n *note) checkAttrs(d ot.Delta) error {
+	for _, o := range d {
+		for k, v := range o.Attrs {
+			switch {
+			case o.Insert != "" && k == By && len(o.Attrs) == 1:
+			case o.Insert == "" && o.Delete == 0 && n.kept && isAnchor(k) && (v == "1" || v == ""):
+			default:
 				return errFormatting
 			}
 		}
@@ -117,6 +158,7 @@ func (n *note) Check(doc *ot.Tree, e ot.Edit, by trame.Peer) error {
 
 // Follow signs what the edit inserted with its author, where it was not:
 // text whose deletion is undone keeps the signature of who wrote it first.
+// It also dates the comments the edit made.
 func (n *note) Follow(doc *ot.Tree, e ot.Edit, _ []ot.Edit, by trame.Peer) ot.Edit {
 	var edited ot.Delta
 	for _, c := range e {
@@ -140,11 +182,17 @@ func (n *note) Follow(doc *ot.Tree, e ot.Edit, _ []ot.Edit, by trame.Peer) ot.Ed
 			at += l
 		}
 	}
-	if sign == nil {
-		return nil
+	var more ot.Edit
+	if sign != nil {
+		more = append(more, ot.Change{Op: ot.OpTxt, ID: Body, Text: sign})
 	}
-	more := ot.Edit{{Op: ot.OpTxt, ID: Body, Text: sign}}
-	if doc.Apply(more) != nil {
+	date := quote(n.now().Unix())
+	for _, c := range e {
+		if c.Op == ot.OpNew && c.Type == Msg && doc.Node(c.ID) != nil {
+			more = append(more, ot.Change{Op: ot.OpSet, ID: c.ID, Attrs: ot.Values{"at": date}})
+		}
+	}
+	if len(more) == 0 || doc.Apply(more) != nil {
 		return nil
 	}
 	return more
@@ -152,10 +200,20 @@ func (n *note) Follow(doc *ot.Tree, e ot.Edit, _ []ot.Edit, by trame.Peer) ot.Ed
 
 func (n *note) Encode(doc *ot.Tree) ([]byte, error) {
 	data, err := n.File.Encode(doc)
-	if err == nil && n.onLinks != nil {
+	if err != nil {
+		return nil, err
+	}
+	if n.onLinks != nil {
 		n.report(doc)
 	}
-	return data, err
+	if n.onSave != nil {
+		n.mu.Lock()
+		editors := slices.Sorted(maps.Keys(n.editors))
+		n.editors = nil
+		n.mu.Unlock()
+		n.onSave(n.key, data, editors)
+	}
+	return data, nil
 }
 
 // report tells the host the links added since the last save. When a

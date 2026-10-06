@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Comments and authorship, kept beside the file when the host's store is a
+  `trame.MetaStore`: threads are `thread` nodes holding `msg` nodes, the
+  passage of a thread carries the attribute `c.<thread>`. The server dates
+  messages and only their author edits or deletes them. When the file was
+  changed by someone else, passages are found again by their words.
+- `Options.OnSave` is given each version of a note with those who edited it.
+
 ## 0.8.0 — 2026-10-05
 
 - On trame 0.3.0. The characters of a note carry `by`, the ID of who wrote
