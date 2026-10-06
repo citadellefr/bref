@@ -31,6 +31,21 @@ class LinkLabel {
   final IconData? icon;
 }
 
+/// A saved state of a note, as the host keeps it.
+@immutable
+class NoteVersion {
+  const NoteVersion({required this.id, required this.at, this.authors = const [], this.size = 0});
+
+  final String id;
+  final DateTime at;
+
+  /// The names of those who edited the note since the version before.
+  final List<String> authors;
+
+  /// In bytes.
+  final int size;
+}
+
 /// What the app hosting the editor provides: who and what can be mentioned,
 /// where pictures go, what links stand for and how they open. Each member
 /// has a default, which a host overrides with what it has.
@@ -57,6 +72,13 @@ abstract class BrefHost {
   Future<LinkLabel?> describe(Uri uri) async => null;
 
   void open(Uri uri) {}
+
+  /// The saved versions of the note, the latest first; none when the host
+  /// keeps none.
+  Future<List<NoteVersion>> versions() async => const [];
+
+  /// The text of the version [id], as the file was.
+  Future<String> version(String id) => throw UnsupportedError('No versions');
 }
 
 const _web = {'http', 'https', 'mailto', 'tel'};

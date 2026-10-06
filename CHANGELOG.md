@@ -12,6 +12,11 @@
   editor, `BrefEditor(comments:, strings:)` marking the passages and opening
   a thread at the caret; Ctrl+Alt+M or the selection menu starts a comment.
   `BrefStrings` holds the words the editor says.
+- Dart: `BrefFollow` makes the view follow the caret of a peer until this
+  person clicks, types or scrolls. `BrefHost.versions` and `version` give
+  the history of a note to `HistoryPane`, which shows what restoring a
+  version would change and restores it as one edit (`DocSession.restoreText`).
+  Drafts are trame's: `DocSession(drafts:)`.
 - `Options.OnSave` is given each version of a note with those who edited it.
 
 ## 0.8.0 — 2026-10-05

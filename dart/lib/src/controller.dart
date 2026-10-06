@@ -130,3 +130,21 @@ class BrefComments extends ChangeNotifier {
     super.dispose();
   }
 }
+
+/// Whose caret the editor follows, as fresque follows a viewport: the view
+/// scrolls to keep it in sight, until its owner leaves or this person takes
+/// the lead by clicking, typing or scrolling.
+class BrefFollow extends ChangeNotifier {
+  int? _sid;
+
+  /// The connection of the person followed, [DocPeer.sid].
+  int? get sid => _sid;
+
+  void follow(int? sid) {
+    if (sid == _sid) return;
+    _sid = sid;
+    notifyListeners();
+  }
+
+  void stop() => follow(null);
+}

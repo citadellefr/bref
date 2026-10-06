@@ -23,6 +23,12 @@ class BrefStrings {
   String get commentedTextGone => 'The commented text was deleted.';
   String get unknownAuthor => 'Someone';
   String get authorship => 'Who wrote what';
+  String get history => 'History';
+  String get noVersions => 'No earlier versions';
+  String get restore => 'Restore this version';
+  String get noChanges => 'Same as the note now';
+  String get unreadable => 'The version could not be read';
+  String get retry => 'Retry';
   String replies(int n) => n == 1 ? '1 reply' : '$n replies';
   String date(DateTime at) {
     String two(int n) => n.toString().padLeft(2, '0');

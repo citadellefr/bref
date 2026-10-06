@@ -39,6 +39,7 @@ class BrefEditor extends StatefulWidget {
     this.autofocus = false,
     this.preview = true,
     this.comments,
+    this.follow,
     this.strings = const BrefStrings(),
   });
 
@@ -48,6 +49,9 @@ class BrefEditor extends StatefulWidget {
   /// one opens its thread. Without it the note has none; give it only when
   /// the server keeps them.
   final BrefComments? comments;
+
+  /// Whose caret the view follows, if anyone's.
+  final BrefFollow? follow;
   final BrefStrings strings;
 
   /// What links stand for and how they open; without it, they do not.
@@ -157,6 +161,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
     _session.presence.addListener(_peersMoved);
     _focus.addListener(_focusChanged);
     widget.comments?.addListener(_passagesChanged);
+    widget.follow?.addListener(_followChanged);
   }
 
   @override
@@ -203,6 +208,10 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       widget.comments?.addListener(_passagesChanged);
       _passagesChanged();
     }
+    if (oldWidget.follow != widget.follow) {
+      oldWidget.follow?.removeListener(_followChanged);
+      widget.follow?.addListener(_followChanged);
+    }
     if (oldWidget.focusNode != widget.focusNode) {
       (oldWidget.focusNode ?? _ownFocus)?.removeListener(_focusChanged);
       _focus.addListener(_focusChanged);
@@ -225,6 +234,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       ..select(null);
     _focus.removeListener(_focusChanged);
     widget.comments?.removeListener(_passagesChanged);
+    widget.follow?.removeListener(_followChanged);
     _ownFocus?.dispose();
     _input?.close();
     _menu.remove();
@@ -345,6 +355,21 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       ..changed();
   }
 
+  void _followChanged() => _followPeer(_text.length);
+
+  /// Scrolls to the caret of the person followed, and stops once they left.
+  void _followPeer(int length) {
+    final follow = widget.follow;
+    final sid = follow?.sid;
+    if (sid == null) return;
+    final peer = _session.peers.where((p) => p.sid == sid).firstOrNull;
+    if (peer == null) {
+      follow!.stop();
+    } else if (peer.selection case final s? when s.node == noteBody) {
+      _reveal(math.min(s.extent, length));
+    }
+  }
+
   /// Starts a comment about the selection, or the word at the caret.
   void comment() {
     final comments = widget.comments;
@@ -369,6 +394,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
 
   void _peersMoved() {
     final length = _text.length;
+    _followPeer(length);
     _marks
       ..peers = [
         for (final peer in _session.peers)
@@ -717,6 +743,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
 
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
     if (e is KeyUpEvent) return KeyEventResult.ignored;
+    widget.follow?.stop();
     if (_marks.composing.isValid && !_marks.composing.isCollapsed) return KeyEventResult.ignored;
     final keys = HardwareKeyboard.instance;
     final shift = keys.isShiftPressed;
@@ -987,6 +1014,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
   // pointers
 
   void _pointerDown(PointerDownEvent e) {
+    widget.follow?.stop();
     _menu.remove();
     if (e.kind == PointerDeviceKind.mouse &&
         e.buttons == kPrimaryMouseButton &&
@@ -1165,6 +1193,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
                 axisDirection: AxisDirection.down,
                 viewportBuilder: (context, offset) => Listener(
                   onPointerDown: _pointerDown,
+                  onPointerSignal: (_) => widget.follow?.stop(),
                   onPointerHover: _hover,
                   onPointerMove: _pointerMove,
                   onPointerUp: _pointerUp,
