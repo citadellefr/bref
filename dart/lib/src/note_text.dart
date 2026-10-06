@@ -1,5 +1,8 @@
 import 'package:trame/trame.dart';
 
+/// The node of a note's text in its document.
+const noteBody = 'body';
+
 /// Lines [removed] from [index] on, replaced by [inserted] others.
 typedef LineSplice = ({int index, int removed, int inserted});
 

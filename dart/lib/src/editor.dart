@@ -18,8 +18,7 @@ import 'note_text.dart';
 import 'render.dart';
 import 'theme.dart';
 
-/// The node of a note's text in its document.
-const noteBody = 'body';
+export 'note_text.dart' show noteBody;
 
 /// The editor of a note: its Markdown as it reads, the syntax of the lines
 /// being edited shown as it is written, with the carets and selections of
