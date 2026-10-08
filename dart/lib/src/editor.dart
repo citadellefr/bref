@@ -16,6 +16,7 @@ import 'mentions.dart';
 import 'note_syntax.dart';
 import 'note_text.dart';
 import 'render.dart';
+import 'strings.dart';
 import 'theme.dart';
 
 /// The node of a note's text in its document.
@@ -37,9 +38,11 @@ class BrefEditor extends StatefulWidget {
     this.focusNode,
     this.autofocus = false,
     this.preview = true,
+    this.strings = const BrefStrings(),
   });
 
   final DocSession session;
+  final BrefStrings strings;
 
   /// What links stand for and how they open; without it, they do not.
   final BrefHost? host;
@@ -115,12 +118,25 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
   var _cursor = SystemMouseCursors.text;
 
   /// The mention being typed: its trigger and where it starts, the text
-  /// typed after it, and what the host proposes for that text.
+  /// typed after it, the keyword that text starts with and what is
+  /// written after it, and what the host proposes.
   ({String trigger, int start})? _mention;
   String? _query;
-  List<Mention> _found = const [];
+  Command? _command;
+  var _typed = '';
+  List<Proposal> _found = const [];
   var _chosen = 0;
   var _searches = 0;
+  var _searching = false;
+  var _searchFailed = false;
+
+  /// Where the keyword is that Escape closed the menu of: typing after it
+  /// does not open it again.
+  int? _dismissed;
+
+  /// The question a keyword is answering, which nobody edits the note
+  /// from here meanwhile.
+  _Asking? _asking;
   final _mentionMenu = OverlayPortalController();
 
   HostCache? _cache;
@@ -134,7 +150,11 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
 
   String get _flow => _session.document[noteBody]?.text?.text ?? '\n';
 
-  bool get _editable => _session.loaded && !_session.readOnly;
+  bool get _editable => _session.loaded && !_session.readOnly && _asking == null;
+
+  /// Whether an answer is on its way into the note, which is not ready to
+  /// leave its editor meanwhile.
+  bool get answering => _asking != null;
 
   RenderNote? get _render => _viewport.currentContext?.findRenderObject() as RenderNote?;
 
@@ -192,6 +212,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       _focus.addListener(_focusChanged);
     }
     if (oldWidget.host != widget.host) {
+      _stopAsking();
       _endMention();
       _makeCache();
       _layout?.cache = _cache;
@@ -203,6 +224,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
   @override
   void dispose() {
     unawaited(_changes?.cancel());
+    _asking?.stop();
     _session
       ..removeListener(_sessionChanged)
       ..presence.removeListener(_peersMoved)
@@ -236,6 +258,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
   }
 
   void _reload() {
+    _stopAsking();
     _endMention();
     _text.reset(_flow);
     _syntax.reset();
@@ -249,6 +272,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
     var base = _marks.base, extent = _marks.extent;
     var windowStart = _windowStart, windowEnd = _windowEnd;
     var mention = _mention;
+    final asking = _asking;
     for (final c in edit.changes) {
       if (c.id != noteBody) continue;
       if (c.kind != ChangeKind.text) {
@@ -267,6 +291,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       windowStart = delta.transformPosition(windowStart, thisFirst: true);
       windowEnd = delta.transformPosition(windowEnd, thisFirst: false);
       if (mention != null) mention = (trigger: mention.trigger, start: delta.transformPosition(mention.start, thisFirst: true));
+      if (asking != null) asking.end = delta.transformPosition(asking.end, thisFirst: false);
       for (final u in _uploads) {
         u.at = delta.transformPosition(u.at, thisFirst: true);
       }
@@ -356,7 +381,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
 
   void _type(String text) {
     if (text == '\n' && _found.isNotEmpty) {
-      _pickMention(_found[_chosen]);
+      _found[_chosen].take();
       return;
     }
     if (text == '\n') {
@@ -410,64 +435,129 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
   // mentions
 
   /// Starts a mention when what was just typed ends a trigger, typed at the
-  /// start of a word.
+  /// start of a word, or follows a keyword left on the line earlier.
   void _startMention() {
-    final triggers = widget.host?.mentions.keys ?? const <String>[];
+    final host = widget.host;
+    if (host == null || _marks.base != _marks.extent) return;
+    final triggers = {...host.mentions.keys, if (host.commands.isNotEmpty) _at};
     final at = _marks.extent;
     final lineStart = _text.lineStart(_text.lineAt(at));
+    bool starts(int start) => start == lineStart || !_wordCharacter.hasMatch(_text.substring(start - 1, start));
     for (final trigger in triggers) {
       final start = at - trigger.length;
-      if (_marks.base != at || start < lineStart || _text.substring(start, at) != trigger) continue;
-      if (start > lineStart && _wordCharacter.hasMatch(_text.substring(start - 1, start))) continue;
+      if (start < lineStart || _text.substring(start, at) != trigger || !starts(start)) continue;
+      _dismissed = null;
       _mention = (trigger: trigger, start: start);
       _followMention();
       return;
     }
+    final start = _text.substring(lineStart, at).lastIndexOf(_at) + lineStart;
+    if (start < lineStart || start == _dismissed || !starts(start)) return;
+    if (commandIn(host.commands, _text.substring(start + _at.length, at)) == null) return;
+    _mention = (trigger: _at, start: start);
+    _followMention();
   }
+
+  /// What starts a keyword of the host.
+  static const _at = '@';
+
+  /// The longest a search goes before its trigger is something left
+  /// behind, and the longest a question is.
+  static const _maxSearch = 60, _maxQuestion = 2000;
 
   static final _wordCharacter = RegExp(r'[\p{L}\p{N}]', unicode: true);
 
   /// Asks the host what to propose for the text typed after the trigger,
-  /// and ends the mention when the caret leaves it.
+  /// and ends the mention when the caret leaves it. A keyword written
+  /// there is searched in; one that answers takes the rest of the line as
+  /// its question.
   void _followMention() {
     final m = _mention;
-    if (m == null) return;
+    final host = widget.host;
+    if (m == null || host == null || _asking != null) return;
     final from = m.start + m.trigger.length;
     final at = _marks.extent;
-    if (_marks.base != at || at < from || at - from > 60 || _text.substring(m.start, from) != m.trigger) {
+    if (_marks.base != at || at < from || _text.substring(m.start, from) != m.trigger) {
       _endMention();
       return;
     }
-    final query = _text.substring(from, at);
-    if (query.contains('\n') || query.startsWith(' ')) {
+    final typed = _text.substring(from, at);
+    final command = m.trigger == _at ? commandIn(host.commands, typed) : null;
+    final longest = command?.answer == null ? _maxSearch : _maxQuestion;
+    if (typed.contains('\n') || typed.startsWith(' ') || typed.length > longest) {
       _endMention();
       return;
     }
-    if (query == _query) return;
-    _query = query;
+    if (command != null && command.answer != null) {
+      _query = null;
+      _searches++;
+      final question = _question(m.start, command);
+      setState(() {
+        _command = command;
+        _typed = question;
+        _searching = _searchFailed = false;
+        _chosen = 0;
+        _found = [
+          if (question.isNotEmpty)
+            Proposal(
+              widget.strings.ask,
+              () => _ask(command),
+              detail: widget.strings.askHint,
+              icon: const Icon(Icons.keyboard_return, size: 20),
+            ),
+        ];
+      });
+      _mentionMenu.show();
+      return;
+    }
+    if (typed == _query) return;
+    _query = typed;
     final search = ++_searches;
-    final source = widget.host?.mentions[m.trigger];
-    if (source == null) return;
-    source(query).then(
-      (found) => _proposed(search, found),
-      onError: (Object _) => _proposed(search, const []),
+    final keywords = [
+      if (m.trigger == _at && command == null)
+        for (final c in commandsStarting(host.commands, typed))
+          Proposal('$_at${c.keyword}', () => _writeKeyword(c), icon: Icon(c.icon ?? Icons.alternate_email, size: 20)),
+    ];
+    final rest = command == null ? typed : typed.substring(typed.indexOf(' ') + 1).trimLeft();
+    final source = command == null ? host.mentions[m.trigger] : command.search;
+    setState(() {
+      if (command != _command) _found = const [];
+      _command = command;
+      _typed = command == null ? '' : rest;
+      _searching = command != null;
+      _searchFailed = false;
+    });
+    if (command != null) _mentionMenu.show();
+    (source?.call(rest) ?? Future.value(const <Mention>[])).then(
+      (found) => _proposed(search, [
+        ...keywords,
+        for (final f in found) Proposal(f.text, () => _pickMention(f), detail: f.detail, icon: f.icon),
+      ]),
+      onError: (Object _) => _proposed(search, keywords, failed: true),
     );
   }
 
-  void _proposed(int search, List<Mention> found) {
+  void _proposed(int search, List<Proposal> found, {bool failed = false}) {
     if (search != _searches || !mounted) return;
     setState(() {
       _found = found.take(8).toList();
       _chosen = 0;
+      _searching = false;
+      _searchFailed = failed;
     });
-    _found.isEmpty ? _mentionMenu.hide() : _mentionMenu.show();
+    _found.isEmpty && _command == null && !failed ? _mentionMenu.hide() : _mentionMenu.show();
   }
 
+  /// Ends the mention being typed; one whose answer is on its way stays
+  /// until [_stopAsking].
   void _endMention() {
-    if (_mention == null) return;
+    if (_mention == null || _asking != null) return;
     _mention = null;
     _query = null;
+    _command = null;
+    _typed = '';
     _found = const [];
+    _searching = _searchFailed = false;
     _searches++;
     _mentionMenu.hide();
   }
@@ -483,12 +573,70 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
     _replace(mention.start, end, next == ' ' ? linkMarkdown(m.text, m.uri) : '${linkMarkdown(m.text, m.uri)} ');
   }
 
+  /// Completes the keyword being typed, which what is typed next is for.
+  void _writeKeyword(Command command) {
+    final mention = _mention;
+    if (mention == null) return;
+    final written = '$_at${command.keyword} ';
+    if (!_edit(mention.start, _marks.extent, written)) return;
+    // the edit pushed the start of the mention past what it wrote there
+    _mention = mention;
+    _select(mention.start + written.length);
+  }
+
+  /// What is written after the keyword at [start], up to the end of its
+  /// line.
+  String _question(int start, Command command) =>
+      _text.substring(start + _at.length + command.keyword.length, _text.lineEnd(_text.lineAt(start))).trim();
+
+  /// Asks [command] the question written after it, and holds the note
+  /// until the answer has replaced both.
+  void _ask(Command command) {
+    final mention = _mention;
+    if (mention == null) return;
+    final end = _text.lineEnd(_text.lineAt(mention.start));
+    final asking = _asking = _Asking(end);
+    _found = const [];
+    asking.answer =
+        command.answer!(
+          _question(mention.start, command),
+          before: _text.substring(0, mention.start),
+          after: _text.substring(end, _text.length),
+        ).listen(
+          (said) => said.done ? _answered(said.text) : setState(() => asking.steps.add(said.text)),
+          onError: (Object _) => _stopAsking(),
+          onDone: _stopAsking,
+        );
+    _sessionChanged();
+  }
+
+  void _answered(String text) {
+    final start = _mention?.start;
+    final end = _asking?.end;
+    _stopAsking();
+    if (start != null && end != null) _replace(start, end, text);
+  }
+
+  /// Gives up on the answer on its way, and gives the note back.
+  void _stopAsking() {
+    final asking = _asking;
+    if (asking == null) return;
+    _asking = null;
+    asking.stop();
+    _endMention();
+    _sessionChanged();
+  }
+
   void _chooseMention(int by) => setState(() => _chosen = (_chosen + by) % _found.length);
 
   Widget _mentionMenuBuilder(BuildContext context) {
     final render = _render;
     final m = _mention;
-    if (render == null || !render.hasSize || m == null || _found.isEmpty) return const SizedBox.shrink();
+    final command = _command;
+    if (render == null || !render.hasSize || m == null || _found.isEmpty && command == null && !_searchFailed) {
+      return const SizedBox.shrink();
+    }
+    final strings = widget.strings;
     final overlay = Overlay.of(context).context.findRenderObject()! as RenderBox;
     final caret = render.caretRect(m.start);
     Offset local(Offset p) => overlay.globalToLocal(render.localToGlobal(p));
@@ -496,7 +644,19 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       anchor: Rect.fromPoints(local(caret.topLeft), local(caret.bottomRight)),
       found: _found,
       chosen: _chosen,
-      onPick: _pickMention,
+      strings: strings,
+      command: command,
+      typed: _typed,
+      busy: _searching || _asking != null,
+      note: _searchFailed
+          ? strings.searchFailed
+          : command?.answer != null
+          ? strings.writeQuestion
+          : _searching
+          ? null
+          : strings.noResult,
+      steps: _asking?.steps,
+      onCancel: _stopAsking,
     );
   }
 
@@ -651,6 +811,10 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
     final shift = keys.isShiftPressed;
     final command = _apple ? keys.isMetaPressed : keys.isControlPressed;
     final word = _apple ? keys.isAltPressed : keys.isControlPressed;
+    if (_asking != null && e.logicalKey == LogicalKeyboardKey.escape) {
+      _stopAsking();
+      return KeyEventResult.handled;
+    }
     if (_mention != null) {
       final picking = _found.isNotEmpty;
       switch (e.logicalKey) {
@@ -661,9 +825,10 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
           _chooseMention(-1);
           return KeyEventResult.handled;
         case LogicalKeyboardKey.enter || LogicalKeyboardKey.numpadEnter || LogicalKeyboardKey.tab when picking:
-          _pickMention(_found[_chosen]);
+          _found[_chosen].take();
           return KeyEventResult.handled;
         case LogicalKeyboardKey.escape:
+          _dismissed = _mention?.start;
           _endMention();
           return KeyEventResult.handled;
       }
@@ -1126,6 +1291,18 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       },
     );
   }
+}
+
+/// A question being answered: where it ends in the note, the answer on its
+/// way and what it said it was doing so far.
+class _Asking {
+  _Asking(this.end);
+
+  int end;
+  StreamSubscription<Answer>? answer;
+  final steps = <String>[];
+
+  void stop() => unawaited(answer?.cancel());
 }
 
 class _Upload {

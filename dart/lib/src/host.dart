@@ -21,6 +21,38 @@ class Mention {
   final Widget? icon;
 }
 
+/// What a keyword that answers says on its way: what it is doing, then —
+/// once, last — the text that takes the place of the question.
+@immutable
+class Answer {
+  const Answer.step(this.text) : done = false;
+  const Answer.done(this.text) : done = true;
+
+  final String text;
+  final bool done;
+}
+
+/// Answers a question written in the note, which [before] and [after] are
+/// the text around. Giving up on the stream gives up on the answer.
+typedef Answerer = Stream<Answer> Function(String question, {required String before, required String after});
+
+/// A keyword of the host, written after an `@`: `@tasks` searches what to
+/// mention, `@assistant` answers what is written after it on the line.
+@immutable
+class Command {
+  const Command(this.keyword, {this.icon, this.search, this.answer});
+
+  /// As it is proposed and written: one word, typed on any keyboard.
+  final String keyword;
+  final IconData? icon;
+
+  /// What the keyword proposes for the text typed after it, empty at first.
+  final MentionSource? search;
+
+  /// Set on a keyword that writes instead of finding.
+  final Answerer? answer;
+}
+
 /// How a link is shown in place of its text, as the host knows it now: the
 /// name a person goes by, that of a file.
 @immutable
@@ -39,6 +71,10 @@ abstract class BrefHost {
 
   /// What typing each trigger, such as `@` or `[[`, proposes.
   Map<String, MentionSource> get mentions => const {};
+
+  /// The keywords `@` starts, proposed beside what it mentions. A source
+  /// or an answer that fails throws, after telling the person why.
+  List<Command> get commands => const [];
 
   /// The schemes of the URIs the host makes, such as `user` or `file`:
   /// links lead to those, to relative ones and to those of the web, never
