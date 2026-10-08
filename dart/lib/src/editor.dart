@@ -1233,7 +1233,10 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
           child: Stack(
             fit: StackFit.expand,
             children: [
-              editor,
+              // among the text fields of the page: a click here is otherwise
+              // a click outside for the one being left, which takes the focus
+              // back as the editor asks for it
+              TextFieldTapRegion(child: editor),
               ValueListenableBuilder(
                 valueListenable: _touch,
                 builder: (context, touch, _) => touch

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Dart: a click in the editor takes the focus from a text field of the same
+  page; the field being left used to take it back.
 - Dart: `localNote` is the session of a note the app alone holds, with no
   hub behind it — a message being written, a form — and `noteText` reads its
   Markdown. `BrefEditorState.insert` writes where the caret is. `DocSession`
