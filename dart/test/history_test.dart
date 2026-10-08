@@ -2,7 +2,6 @@ import 'package:bref/bref.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trame/testing.dart';
-import 'package:trame/trame.dart';
 
 class _Host extends BrefHost {
   _Host(this.stored);

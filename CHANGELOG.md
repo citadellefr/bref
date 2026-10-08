@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Dart: `localNote` is the session of a note the app alone holds, with no
+  hub behind it — a message being written, a form — and `noteText` reads its
+  Markdown. `BrefEditorState.insert` writes where the caret is. `DocSession`
+  is exported. Also released as 0.8.1, on 0.8.0.
 - Comments and authorship, kept beside the file when the host's store is a
   `trame.MetaStore`: threads are `thread` nodes holding `msg` nodes, the
   passage of a thread carries the attribute `c.<thread>`. The server dates

@@ -612,6 +612,9 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
     );
   }
 
+  /// Writes [text] where the caret is, in place of what is selected.
+  void insert(String text) => _replace(_marks.start, _marks.end, text);
+
   // pictures
 
   /// Gives a picture to the host, and writes it on a line of its own where
