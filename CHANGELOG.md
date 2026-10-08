@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.1 — 2026-10-08
+
+- Dart: `localNote` is the session of a note the app alone holds, with no
+  hub behind it — a message being written, a form — and `noteText` reads its
+  Markdown. `BrefEditorState.insert` writes where the caret is. `DocSession`
+  is exported.
+
 ## 0.8.0 — 2026-10-05
 
 - On trame 0.3.0. The characters of a note carry `by`, the ID of who wrote
