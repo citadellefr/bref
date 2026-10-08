@@ -470,6 +470,108 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('a keyword written after an @ searches what the host mentions under it', (tester) async {
+    final host = _Host();
+    await pumpEditor(tester, 'See ', host: host);
+    final keyboard = Keyboard(tester);
+    await key(tester, LogicalKeyboardKey.end);
+    await keyboard.type('@');
+    await tester.pump();
+    expect(find.text('@tasks'), findsOneWidget);
+    expect(find.text('@assistant'), findsOneWidget);
+    expect(find.text('@Alice'), findsOneWidget);
+
+    await keyboard.type('t');
+    await tester.pump();
+    expect(find.text('@assistant'), findsNothing);
+    await key(tester, LogicalKeyboardKey.enter);
+    await settle(tester);
+    expect(hub.text, 'See @tasks ');
+    expect(find.text('Search in tasks…'), findsOneWidget);
+    expect(find.text('@Buy bread'), findsOneWidget);
+    expect(find.text('@Call Bob'), findsOneWidget);
+
+    await keyboard.type('zz');
+    await tester.pump();
+    expect(find.text('No result'), findsOneWidget);
+    await keyboard.backspace();
+    await keyboard.backspace();
+    await keyboard.type('bob');
+    await tester.pump();
+    expect(find.text('@Buy bread'), findsNothing);
+    await key(tester, LogicalKeyboardKey.enter);
+    await settle(tester);
+    expect(hub.text, 'See [@Call Bob](todo:2) ');
+    expect(find.text('@Call Bob'), findsNothing);
+
+    // typed as a keyboard with accents writes it
+    await keyboard.type('@');
+    await keyboard.type('tâsks ');
+    await tester.pump();
+    expect(find.text('@Buy bread'), findsOneWidget);
+    host.failing = true;
+    await keyboard.type('b');
+    await tester.pump();
+    expect(find.text('The search failed'), findsOneWidget);
+    await finish(tester);
+  });
+
+  testWidgets('a keyword that answers takes the line as its question, and its answer takes its place', (tester) async {
+    final host = _Host();
+    await pumpEditor(tester, 'Before\n\nAfter', host: host);
+    final keyboard = Keyboard(tester);
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    await keyboard.type('@');
+    await keyboard.type('assistant ');
+    await tester.pump();
+    expect(find.text('Write your question, then Enter'), findsOneWidget);
+    await key(tester, LogicalKeyboardKey.enter);
+    await settle(tester);
+    expect(hub.text, 'Before\n@assistant \n\nAfter');
+
+    await key(tester, LogicalKeyboardKey.arrowUp);
+    await key(tester, LogicalKeyboardKey.end);
+    await keyboard.type('s');
+    await keyboard.type('um it up');
+    await tester.pump();
+    expect(find.text('Ask'), findsOneWidget);
+    await key(tester, LogicalKeyboardKey.enter);
+    await tester.pump();
+    expect(host.asked, [('sum it up', 'Before\n', '\n\nAfter')]);
+    expect(find.text('Thinking…'), findsOneWidget);
+    expect(tester.state<BrefEditorState>(find.byType(BrefEditor)).answering, isTrue);
+
+    // the note is held meanwhile, but for the others
+    await key(tester, LogicalKeyboardKey.backspace);
+    await settle(tester);
+    expect(hub.text, 'Before\n@assistant sum it up\n\nAfter');
+    theirs.edit(Edit([Change.text('body', Delta()..insert('# '))]));
+    await settle(tester);
+    host.answers.add(const Answer.step('Reads the note'));
+    await tester.pump();
+    expect(find.text('Reads the note'), findsOneWidget);
+    host.answers.add(const Answer.done('It is short.'));
+    await tester.pump();
+    await settle(tester);
+    expect(hub.text, '# Before\nIt is short.\n\nAfter');
+    expect(marks(tester).extent, 9 + 12);
+    expect(find.text('Reads the note'), findsNothing);
+
+    // giving up leaves the question as written
+    await keyboard.type(' @');
+    await keyboard.type('assistant why');
+    await tester.pump();
+    await key(tester, LogicalKeyboardKey.enter);
+    await tester.pump();
+    await key(tester, LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(host.answers.hasListener, isFalse);
+    await keyboard.type('?');
+    await settle(tester);
+    expect(hub.text, '# Before\nIt is short. @assistant why?\n\nAfter');
+    await finish(tester);
+  });
+
   testWidgets('lines read as they render show the pictures and labels of the host', (tester) async {
     final host = _Host();
     host.picture = (await tester.runAsync(() => _png(200, 100)))!;
@@ -544,6 +646,33 @@ class _Host extends BrefHost {
     uploads.add((name, type, bytes.length));
     return uploaded.future;
   }
+
+  var failing = false;
+  final asked = <(String, String, String)>[];
+  var answers = StreamController<Answer>();
+
+  @override
+  List<Command> get commands => [
+    Command(
+      'tasks',
+      icon: Icons.task_alt,
+      search: (query) async {
+        if (failing) throw StateError('down');
+        return [
+          for (final (i, title) in ['Buy bread', 'Call Bob'].indexed)
+            if (title.toLowerCase().contains(query)) Mention('@$title', Uri.parse('todo:${i + 1}'), detail: 'Today'),
+        ];
+      },
+    ),
+    Command(
+      'assistant',
+      answer: (question, {required before, required after}) {
+        asked.add((question, before, after));
+        unawaited(answers.close());
+        return (answers = StreamController<Answer>()).stream;
+      },
+    ),
+  ];
 
   @override
   Map<String, MentionSource> get mentions => {

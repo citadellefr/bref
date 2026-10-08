@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Dart: `BrefHost.commands` are the keywords `@` starts beside what it
+  mentions. A `Command` with a `search` proposes what to mention for the text
+  typed after it (`@tasks bread`); one with an `answer` takes the rest of the
+  line as a question, says what it is doing, and its answer takes the place
+  of both — the note is held from here meanwhile
+  (`BrefEditorState.answering`), Escape gives up. A search that fails says so
+  in the menu.
 - Dart: a click in the editor takes the focus from a text field of the same
   page; the field being left used to take it back.
 - Dart: `localNote` is the session of a note the app alone holds, with no

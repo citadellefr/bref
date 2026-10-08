@@ -78,8 +78,16 @@ class Host extends BrefHost {
     '@': (query) async => [for (final u in await people(query)) Mention('@${u.name}', Uri.parse('user:${u.id}'))],
   };
 
+  // `@tasks bread` searches what to mention, `@assistant sum this up`
+  // answers in place of the question
   @override
-  Set<String> get schemes => {'user', 'doc'};
+  List<Command> get commands => [
+    Command('tasks', search: (query) async => [for (final t in await tasks(query)) Mention('@${t.title}', Uri.parse('task:${t.id}'))]),
+    Command('assistant', answer: (question, {required before, required after}) => assistant.write(question, before, after)),
+  ];
+
+  @override
+  Set<String> get schemes => {'user', 'task', 'doc'};
 
   @override
   Future<Uri> upload(Uint8List bytes, String name, String type) => drive.put(bytes, name, type);

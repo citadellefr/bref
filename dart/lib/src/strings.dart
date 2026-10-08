@@ -29,6 +29,14 @@ class BrefStrings {
   String get noChanges => 'Same as the note now';
   String get unreadable => 'The version could not be read';
   String get retry => 'Retry';
+  String get ask => 'Ask';
+  String get askHint => 'The answer takes the place of the question';
+  String get writeQuestion => 'Write your question, then Enter';
+  String get thinking => 'Thinking…';
+  String get noResult => 'No result';
+  String get searchFailed => 'The search failed';
+  String searchIn(String keyword) => 'Search in $keyword…';
+  String questionFor(String keyword) => 'Your question for $keyword…';
   String replies(int n) => n == 1 ? '1 reply' : '$n replies';
   String date(DateTime at) {
     String two(int n) => n.toString().padLeft(2, '0');
