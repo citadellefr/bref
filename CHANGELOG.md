@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.4 — 2026-10-10
+
+- Dart: a link is drawn as a link again, not as a chip: `LinkLabel` is a text
+  and an icon, and an address written bare is left as written. The card of
+  `BrefHost.preview` over a link pointed at stays.
+
 ## 0.8.3 — 2026-10-09
 
 - Dart: a link the host describes is drawn as a chip — `LinkLabel.image` puts
