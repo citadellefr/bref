@@ -18,7 +18,7 @@ dependencies:
     git:
       url: https://github.com/citadellefr/trame.git
       path: dart
-      ref: 74918902176a15abf40461b40592b1c465a94196
+      ref: v0.4.0
 
 dev_dependencies:
   flutter_test:
