@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.3 — 2026-10-09
+
+- Dart: a link the host describes is drawn as a chip — `LinkLabel.image` puts
+  a face or the logo of a site before its text, in a circle when `round` —
+  and an address written bare is asked about like any other link. A label
+  with no text keeps the text as written.
+  `BrefHost.preview` is the card shown over a link while it is pointed at;
+  on a touch screen a tap shows it, and the card is what opens the link.
+
 ## 0.8.2 — 2026-10-09
 
 - Dart: `BrefHost.commands` are the keywords `@` starts beside what it

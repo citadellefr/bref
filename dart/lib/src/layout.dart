@@ -18,7 +18,8 @@ typedef _Ornament = ({SwapKind kind, int column, String text});
 
 /// A line laid out, as written or in preview.
 class LineView {
-  LineView._(this.painter, this._toSource, this._ornaments, {required this.preview, this.asked = const []});
+  LineView._(this.painter, this._toSource, this._ornaments,
+      {required this.preview, this.asked = const [], this.chips = const []});
 
   final TextPainter painter;
   final bool preview;
@@ -30,6 +31,10 @@ class LineView {
 
   /// The links whose pictures or labels the line asked the host for.
   final List<String> asked;
+
+  /// The labels drawn as chips, each from one offset of the text shown to
+  /// another.
+  final List<(int, int)> chips;
 
   /// The column of the line offset [d] of the text shown stands for.
   int column(int d) => _toSource?[d] ?? d;
@@ -369,6 +374,7 @@ class NoteLayout extends ChangeNotifier {
     final ornaments = <_Ornament>[];
     final placeholders = <PlaceholderDimensions>[];
     final asked = <String>[];
+    final chips = <(int, int)>[];
     var piece = 0;
     int marksAt(int c) {
       while (piece < s.ends.length && s.ends[piece] <= c) {
@@ -408,15 +414,34 @@ class NoteLayout extends ChangeNotifier {
           final label = cache.label(swap.text);
           if (label == null) continue;
           written(col, swap.start);
-          final style = _style(marksAt(swap.start), s.heading);
-          final icon = label.icon;
-          final glyph = icon == null ? '' : '${String.fromCharCode(icon.codePoint)}\u2009';
-          if (icon != null) {
-            final family = icon.fontPackage == null ? icon.fontFamily : 'packages/${icon.fontPackage}/${icon.fontFamily}';
-            children.add(TextSpan(text: glyph, style: style.copyWith(fontFamily: family)));
+          final from = toSource.length;
+          void room(Size size, SwapKind kind) {
+            children.add(const WidgetSpan(child: SizedBox.shrink(), alignment: PlaceholderAlignment.middle));
+            placeholders.add(PlaceholderDimensions(size: size, alignment: PlaceholderAlignment.middle));
+            ornaments.add((kind: kind, column: swap.start, text: swap.text));
+            toSource.add(swap.start);
           }
-          children.add(TextSpan(text: label.text, style: style));
-          toSource.addAll(List.filled(glyph.length + label.text.length, swap.start));
+
+          final edge = Size(_fontSize * 0.3, 1);
+          room(edge, SwapKind.hide);
+          // a chip reads as a link, whatever the address it stands for is drawn as
+          final style = _style(marksAt(swap.start) & ~Mark.url | Mark.link, s.heading);
+          final icon = label.icon;
+          var lead = '';
+          if (label.image != null) {
+            room(Size.square(_fontSize * 1.1), SwapKind.label);
+            lead = '\u2009';
+            children.add(TextSpan(text: lead, style: style));
+          } else if (icon != null) {
+            lead = '${String.fromCharCode(icon.codePoint)}\u2009';
+            final family = icon.fontPackage == null ? icon.fontFamily : 'packages/${icon.fontPackage}/${icon.fontFamily}';
+            children.add(TextSpan(text: lead, style: style.copyWith(fontFamily: family)));
+          }
+          final text = label.text.isEmpty ? line.substring(swap.start, swap.end) : label.text;
+          children.add(TextSpan(text: text, style: style));
+          toSource.addAll(List.filled(lead.length + text.length, swap.start));
+          room(edge, SwapKind.hide);
+          chips.add((from, toSource.length));
         }
         col = swap.end;
         continue;
@@ -446,6 +471,7 @@ class NoteLayout extends ChangeNotifier {
       ornaments,
       preview: true,
       asked: asked,
+      chips: chips,
     );
   }
 

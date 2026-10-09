@@ -1,6 +1,6 @@
 name: bref
 description: Collaborative Markdown notes in Flutter, edited together in real time against the Go server of Bref.
-version: 0.8.2
+version: 0.8.3
 publish_to: none
 repository: https://github.com/citadellefr/bref
 issue_tracker: https://github.com/citadellefr/bref/issues
