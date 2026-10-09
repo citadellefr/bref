@@ -31,10 +31,6 @@ abstract class LineView {
   /// What to draw over the line, in its coordinates.
   List<Ornament> get ornaments => const [];
 
-  /// The labels drawn as chips, each from one offset of the text shown to
-  /// another.
-  List<(int, int)> get chips => const [];
-
   /// The column of the line offset [d] of the text shown stands for.
   int column(int d) => toSource?[d] ?? d;
 
@@ -73,8 +69,7 @@ abstract class LineView {
 
 /// A line of text in a single paragraph.
 class TextView extends LineView {
-  TextView(this.painter, Int32List? toSource, this._ornaments,
-      {required super.preview, this.asked = const [], this.chips = const []})
+  TextView(this.painter, Int32List? toSource, this._ornaments, {required super.preview, this.asked = const []})
       : super(toSource: toSource);
 
   final TextPainter painter;
@@ -82,9 +77,6 @@ class TextView extends LineView {
 
   @override
   final List<String> asked;
-
-  @override
-  final List<(int, int)> chips;
 
   @override
   double get height => painter.height;
@@ -159,7 +151,6 @@ class GridRowView extends LineView {
     required this.header,
     required this.border,
     required this.fill,
-    this.chips = const [],
   }) : super(preview: true, toSource: toSource);
 
   /// A row that takes no room: the delimiter under the header.
@@ -171,7 +162,6 @@ class GridRowView extends LineView {
         header = false,
         border = const Color(0x00000000),
         fill = const Color(0x00000000),
-        chips = const [],
         super(preview: true, toSource: toSource);
 
   final TableGrid grid;
@@ -187,9 +177,6 @@ class GridRowView extends LineView {
   final bool header;
   final Color border;
   final Color fill;
-
-  @override
-  final List<(int, int)> chips;
 
   Offset _origin(int cell) => Offset(grid.left(cell) + TableGrid.padding, TableGrid.rowPadding);
 

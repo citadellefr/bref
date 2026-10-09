@@ -20,7 +20,6 @@ class _Content {
   final ornaments = <PendingOrnament>[];
   final placeholders = <PlaceholderDimensions>[];
   final asked = <String>[];
-  final chips = <(int, int)>[];
 }
 
 /// The lines of a note laid out one under the other, in a column of
@@ -341,7 +340,6 @@ class NoteLayout extends ChangeNotifier {
       c.ornaments,
       preview: true,
       asked: c.asked,
-      chips: c.chips,
     );
   }
 
@@ -389,34 +387,15 @@ class NoteLayout extends ChangeNotifier {
           final label = cache.label(swap.text);
           if (label == null) continue;
           written(col, swap.start);
-          final from = c.toSource.length;
-          void room(Size size, SwapKind kind) {
-            c.children.add(const WidgetSpan(child: SizedBox.shrink(), alignment: PlaceholderAlignment.middle));
-            c.placeholders.add(PlaceholderDimensions(size: size, alignment: PlaceholderAlignment.middle));
-            c.ornaments.add((kind: kind, column: swap.start, text: swap.text));
-            c.toSource.add(swap.start);
-          }
-
-          final edge = Size(_fontSize * 0.3, 1);
-          room(edge, SwapKind.hide);
-          // a chip reads as a link, whatever the address it stands for is drawn as
-          final style = _style(marksAt(swap.start) & ~Mark.url | Mark.link, s.heading);
+          final style = _style(marksAt(swap.start), s.heading);
           final icon = label.icon;
-          var lead = '';
-          if (label.image != null) {
-            room(Size.square(_fontSize * 1.1), SwapKind.label);
-            lead = ' ';
-            c.children.add(TextSpan(text: lead, style: style));
-          } else if (icon != null) {
-            lead = '${String.fromCharCode(icon.codePoint)} ';
+          final glyph = icon == null ? '' : '${String.fromCharCode(icon.codePoint)} ';
+          if (icon != null) {
             final family = icon.fontPackage == null ? icon.fontFamily : 'packages/${icon.fontPackage}/${icon.fontFamily}';
-            c.children.add(TextSpan(text: lead, style: style.copyWith(fontFamily: family)));
+            c.children.add(TextSpan(text: glyph, style: style.copyWith(fontFamily: family)));
           }
-          final text = label.text.isEmpty ? line.substring(swap.start, swap.end) : label.text;
-          c.children.add(TextSpan(text: text, style: style));
-          c.toSource.addAll(List.filled(lead.length + text.length, swap.start));
-          room(edge, SwapKind.hide);
-          c.chips.add((from, c.toSource.length));
+          c.children.add(TextSpan(text: label.text, style: style));
+          c.toSource.addAll(List.filled(glyph.length + label.text.length, swap.start));
         }
         col = swap.end;
         continue;
@@ -449,14 +428,12 @@ class NoteLayout extends ChangeNotifier {
     if (t.delimiter) return GridRowView.hidden(grid, Int32List.fromList([0, line.length]));
     final extra = t.header ? Mark.strong : 0;
     final painters = <TextPainter>[], starts = <int>[], lengths = <int>[], toSource = <int>[];
-    final chips = <(int, int)>[];
     var height = _lineHeight;
     for (var k = 0; k < grid.widths.length; k++) {
       final cell = k < t.cells.length ? t.cells[k] : (start: line.length, end: line.length);
       final c = _content(line, s, cell.start, cell.end, pictures: false, extra: extra);
       final painter = _cellPainter(c, _style(extra, 0), grid.widths[k] - 2 * TableGrid.padding, _textAlign(t.align, k));
       painters.add(painter);
-      chips.addAll([for (final chip in c.chips) (toSource.length + chip.$1, toSource.length + chip.$2)]);
       starts.add(toSource.length);
       lengths.add(c.toSource.length - 1);
       toSource.addAll(c.toSource);
@@ -472,7 +449,6 @@ class NoteLayout extends ChangeNotifier {
       header: t.header,
       border: _theme.markup,
       fill: _theme.codeBackground,
-      chips: chips,
     );
   }
 

@@ -5,7 +5,6 @@ import 'package:bref/bref.dart';
 import 'package:bref/src/handles.dart';
 import 'package:bref/src/line_view.dart';
 import 'package:bref/src/render.dart';
-import 'package:bref/src/syntax.dart' show SwapKind;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -582,23 +581,7 @@ void main() {
     final render = note(tester);
     final layout = tester.widget<NoteViewport>(find.byType(NoteViewport)).layout;
     expect(render.caretRect(layout.text.lineStart(2)).top - render.caretRect(layout.text.lineStart(1)).top, greaterThan(100));
-    final view = layout.view(1) as TextView;
-    expect(view.painter.plainText, endsWith(' \uFFFC${String.fromCharCode(Icons.person.codePoint)}\u2009Alice Martin\uFFFC \uFFFC${String.fromCharCode(Icons.person.codePoint)}\u2009@B\uFFFC'));
-    expect(view.chips, hasLength(2));
-    await finish(tester);
-  });
-
-  testWidgets('an address the host describes is a chip with its picture, as written while edited', (tester) async {
-    final host = _Host();
-    host.picture = (await tester.runAsync(() => _png(16, 16)))!;
-    await pumpEditor(tester, 'first\nsee https://x.fr now', host: host);
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
-    await tester.pump();
-    final layout = tester.widget<NoteViewport>(find.byType(NoteViewport)).layout;
-    final view = layout.view(1) as TextView;
-    expect(view.painter.plainText, 'see \uFFFC\uFFFC\u2009The X site\uFFFC now');
-    expect(view.ornaments.where((o) => o.kind == SwapKind.label), hasLength(1));
-    expect((layout.view(0) as TextView).chips, isEmpty);
+    expect((layout.view(1) as TextView).painter.plainText, endsWith(' ${String.fromCharCode(Icons.person.codePoint)}\u2009Alice Martin @B'));
     await finish(tester);
   });
 
@@ -681,12 +664,7 @@ class _Host extends BrefHost {
 
   @override
   Future<LinkLabel?> describe(Uri uri) async =>
-      switch (uri.toString()) {
-        'user:1' => const LinkLabel('Alice Martin', icon: Icons.person),
-        'https://x.fr' => LinkLabel('The X site', image: MemoryImage(picture!)),
-        'user:2' => const LinkLabel('', icon: Icons.person),
-        _ => null,
-      };
+      uri.toString() == 'user:1' ? const LinkLabel('Alice Martin', icon: Icons.person) : null;
 
   @override
   Widget? preview(Uri uri) => uri.scheme == 'user' ? Text('card of $uri') : null;
