@@ -245,6 +245,9 @@ class RenderNote extends RenderBox {
         _range(canvas, i, y, start, end, from, to, Paint()..color = theme.peer(peer.sid).withValues(alpha: 0.2));
       }
       _range(canvas, i, y, start, end, s.start, s.end, selection);
+      for (final chip in view.chips) {
+        _chip(canvas, view.boxes(chip.$1, chip.$2), y, theme.accent);
+      }
       view.paint(canvas, Offset(0, y));
       for (final o in view.ornaments) {
         _ornament(canvas, o, o.rect.shift(Offset(0, y)), y, h, theme, callout);
@@ -276,6 +279,24 @@ class RenderNote extends RenderBox {
     }
   }
 
+  /// The ground of a label drawn as a chip, one box for each row it runs on.
+  void _chip(Canvas canvas, List<Rect> boxes, double y, Color color) {
+    for (final box in boxes) {
+      final chip = RRect.fromRectAndRadius(
+        Rect.fromLTRB(box.left, box.top + y + 2, box.right, box.bottom + y - 2),
+        const Radius.circular(6),
+      );
+      canvas
+        ..drawRRect(chip, Paint()..color = color.withValues(alpha: 0.1))
+        ..drawRRect(
+          chip.deflate(0.5),
+          Paint()
+            ..color = color.withValues(alpha: 0.3)
+            ..style = PaintingStyle.stroke,
+        );
+    }
+  }
+
   void _underline(Canvas canvas, int i, double y, int start, int end, TextRange range, Color color) {
     if (range.end < start || range.start > end) return;
     final paint = Paint()
@@ -295,6 +316,16 @@ class RenderNote extends RenderBox {
       case SwapKind.picture:
         final info = _layout.cache?.picture(o.text);
         if (info != null) paintImage(canvas: canvas, rect: rect, image: info.image, fit: BoxFit.fill, filterQuality: FilterQuality.medium);
+      case SwapKind.label:
+        final cache = _layout.cache;
+        final info = cache?.face(o.text);
+        if (cache == null || info == null) break;
+        final round = cache.label(o.text)?.round ?? false;
+        canvas
+          ..save()
+          ..clipRRect(RRect.fromRectAndRadius(rect, Radius.circular(rect.width / (round ? 2 : 5))));
+        paintImage(canvas: canvas, rect: rect, image: info.image, fit: BoxFit.cover, filterQuality: FilterQuality.medium);
+        canvas.restore();
       case SwapKind.bar:
         canvas.drawRect(Rect.fromLTWH(rect.left + 1, y, 3, h), Paint()..color = callout == null ? theme.markup : theme.callouts[callout.index]);
       case SwapKind.rule:

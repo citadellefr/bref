@@ -54,13 +54,19 @@ class Command {
 }
 
 /// How a link is shown in place of its text, as the host knows it now: the
-/// name a person goes by, that of a file.
+/// name a person goes by, that of a file, the title of a page. It is drawn
+/// as a chip, [image] or else [icon] before the text.
 @immutable
 class LinkLabel {
-  const LinkLabel(this.text, {this.icon});
+  const LinkLabel(this.text, {this.icon, this.image, this.round = false});
 
+  /// Empty keeps the text as it is written.
   final String text;
   final IconData? icon;
+
+  /// A face, the logo of a site; drawn in a circle when [round].
+  final ImageProvider? image;
+  final bool round;
 }
 
 /// A saved state of a note, as the host keeps it.
@@ -104,8 +110,14 @@ abstract class BrefHost {
   /// pictures are the host's call, as they tell their server who reads.
   ImageProvider? image(Uri uri) => null;
 
-  /// How the link to [uri] is shown, or null to show it as written.
+  /// How the link to [uri] is shown, or null to show it as written. An
+  /// address written bare is asked about like any other link.
   Future<LinkLabel?> describe(Uri uri) async => null;
+
+  /// What is shown over the link to [uri] while it is pointed at, or after
+  /// a tap on a touch screen: a card of what it leads to. Null shows
+  /// nothing, and a tap opens the link.
+  Widget? preview(Uri uri) => null;
 
   void open(Uri uri) {}
 

@@ -211,7 +211,11 @@ void main() {
   test('pictures and the text of links are what the host may show otherwise', () {
     List<Swap> asked(String line) =>
         _line(line).swaps.where((s) => s.kind == SwapKind.picture || s.kind == SwapKind.label).toList();
-    expect(asked('Hi [@A](user:1) <https://x.fr>'), [(start: 4, end: 6, kind: SwapKind.label, text: 'user:1')]);
+    expect(asked('Hi [@A](user:1) <https://x.fr> www.y.fr'), [
+      (start: 4, end: 6, kind: SwapKind.label, text: 'user:1'),
+      (start: 16, end: 30, kind: SwapKind.label, text: 'https://x.fr'),
+      (start: 31, end: 39, kind: SwapKind.label, text: 'http://www.y.fr'),
+    ]);
     expect(asked('[[My note|this]] ![[pic.png]]'), [
       (start: 10, end: 14, kind: SwapKind.label, text: 'My%20note'),
       (start: 17, end: 29, kind: SwapKind.picture, text: 'pic.png'),

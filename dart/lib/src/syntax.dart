@@ -91,7 +91,8 @@ enum SwapKind {
   /// description until then.
   picture,
 
-  /// The text of a link to [Swap.text] as the host labels it, once it did.
+  /// The text of a link to [Swap.text] — all of an address written bare —
+  /// as the host labels it, once it did.
   label,
 }
 
@@ -302,7 +303,9 @@ class _LineReader {
       case MdKind.link:
         final address = n.form == LinkForm.bare || n.form == LinkForm.angle;
         flags = address ? Mark.url : Mark.link;
-        if (!address && n.marks.length > 1 && n.dest.isNotEmpty) {
+        if (address && n.start >= lo && n.end <= hi && n.dest.isNotEmpty) {
+          _swap((start: n.start, end: n.end), SwapKind.label, _uri(n));
+        } else if (!address && n.marks.length > 1 && n.dest.isNotEmpty) {
           final text = (start: n.marks[0].end, end: n.marks[1].start);
           if (text.start >= lo && text.end <= hi && text.start < text.end) _swap(text, SwapKind.label, _uri(n));
         }

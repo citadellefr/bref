@@ -15,16 +15,24 @@ class HostCache {
   ImageConfiguration configuration = ImageConfiguration.empty;
 
   final _pictures = <String, _Picture>{};
+  final _faces = <String, _Picture>{};
   final _labels = <String, LinkLabel?>{};
   var _disposed = false;
 
   /// The picture [dest] leads to, once it is loaded.
-  ImageInfo? picture(String dest) {
-    final known = _pictures[dest];
+  ImageInfo? picture(String dest) => _load(_pictures, dest, () {
+        final uri = linkUri(host, dest, wiki: false);
+        return uri == null ? null : host.image(uri);
+      }, () => onChanged(dest));
+
+  /// The picture of the label of [dest], once it is loaded.
+  ImageInfo? face(String dest) => _load(_faces, dest, () => _labels[dest]?.image, onFrame);
+
+  ImageInfo? _load(Map<String, _Picture> kept, String dest, ImageProvider? Function() find, VoidCallback arrived) {
+    final known = kept[dest];
     if (known != null) return known.info;
-    final picture = _pictures[dest] = _Picture();
-    final uri = linkUri(host, dest, wiki: false);
-    final provider = uri == null ? null : host.image(uri);
+    final picture = kept[dest] = _Picture();
+    final provider = find();
     if (provider == null) return null;
     final stream = provider.resolve(configuration);
     var sync = true;
@@ -34,7 +42,7 @@ class HostCache {
         picture.info?.dispose();
         picture.info = info;
         if (sync || _disposed) return;
-        first ? onChanged(dest) : onFrame();
+        first ? arrived() : onFrame();
       },
       onError: (_, _) {},
     );
@@ -65,11 +73,12 @@ class HostCache {
 
   void dispose() {
     _disposed = true;
-    for (final p in _pictures.values) {
+    for (final p in [..._pictures.values, ..._faces.values]) {
       if (p.listener case final listener?) p.stream?.removeListener(listener);
       p.info?.dispose();
     }
     _pictures.clear();
+    _faces.clear();
   }
 }
 

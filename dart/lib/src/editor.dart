@@ -127,6 +127,11 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
 
   var _cursor = SystemMouseCursors.text;
 
+  /// The link pointed at, the wait before its card shows, and the card.
+  Uri? _pointed;
+  Timer? _resting;
+  OverlayEntry? _card;
+
   /// The mention being typed: its trigger and where it starts, the text
   /// typed after it, the keyword that text starts with and what is
   /// written after it, and what the host proposes.
@@ -257,6 +262,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
     _ownFocus?.dispose();
     _input?.close();
     _menu.remove();
+    _unpoint();
     _blink?.cancel();
     _autoScroll?.cancel();
     _layout?.dispose();
@@ -858,6 +864,50 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
   void _hover(PointerHoverEvent e) {
     final cursor = _linkAt(e.localPosition) == null ? SystemMouseCursors.text : SystemMouseCursors.click;
     if (cursor != _cursor) setState(() => _cursor = cursor);
+    final uri = _pointedAt(e.localPosition);
+    if (uri == _pointed) return;
+    _unpoint();
+    _pointed = uri;
+    if (uri == null) return;
+    final at = e.position;
+    _resting = Timer(const Duration(milliseconds: 400), () => _showCard(uri, at, touch: false));
+  }
+
+  /// The link under [local], written or rendered, as the host knows it.
+  Uri? _pointedAt(Offset local) {
+    final host = widget.host;
+    final link = _render?.linkAt(local);
+    return host == null || link == null || link.image ? null : linkUri(host, link.dest, wiki: link.wiki);
+  }
+
+  /// Shows what the host says of [uri] near [at]. Under a pointer the card
+  /// is only read, and leaves with it; under a finger it is what gets
+  /// tapped, and anything else puts it away.
+  bool _showCard(Uri uri, Offset at, {required bool touch}) {
+    final card = mounted ? widget.host?.preview(uri) : null;
+    if (card == null) return false;
+    _unpoint();
+    _pointed = uri;
+    final placed = CustomSingleChildLayout(delegate: _CardPlace(at), child: card);
+    final entry = _card = OverlayEntry(
+      builder: (context) => touch
+          ? Listener(
+              behavior: HitTestBehavior.translucent,
+              onPointerUp: (_) => WidgetsBinding.instance.addPostFrameCallback((_) => _unpoint()),
+              child: placed,
+            )
+          : IgnorePointer(child: placed),
+    );
+    Overlay.of(context).insert(entry);
+    return true;
+  }
+
+  void _unpoint() {
+    _resting?.cancel();
+    _card?.remove();
+    _card?.dispose();
+    _card = null;
+    _pointed = null;
   }
 
   void _moveTo(int to, {required bool extend, bool keepGoal = false}) {
@@ -1195,6 +1245,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
   void _pointerDown(PointerDownEvent e) {
     widget.follow?.stop();
     _menu.remove();
+    _unpoint();
     if (e.kind == PointerDeviceKind.mouse &&
         e.buttons == kPrimaryMouseButton &&
         (_toggleTask(e.localPosition) || _openLink(e.localPosition))) {
@@ -1284,7 +1335,11 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
   void _tapUp(TapUpDetails d) {
     if (d.kind == PointerDeviceKind.mouse) return;
     final render = _render;
-    if (render == null || _toggleTask(d.localPosition) || _openLink(d.localPosition)) return;
+    if (render == null || _toggleTask(d.localPosition)) return;
+    if (_linkAt(d.localPosition) case final uri?) {
+      if (!_showCard(uri, d.globalPosition, touch: true)) widget.host!.open(uri);
+      return;
+    }
     _select(render.offsetAt(d.localPosition));
     _openInput();
     _input?.show();
@@ -1365,6 +1420,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
           onKeyEvent: _onKey,
           child: MouseRegion(
             cursor: _cursor,
+            onExit: (_) => _unpoint(),
             child: Scrollbar(
               controller: _scroll,
               child: Scrollable(
@@ -1372,7 +1428,10 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
                 axisDirection: AxisDirection.down,
                 viewportBuilder: (context, offset) => Listener(
                   onPointerDown: _pointerDown,
-                  onPointerSignal: (_) => widget.follow?.stop(),
+                  onPointerSignal: (_) {
+                    widget.follow?.stop();
+                    _unpoint();
+                  },
                   onPointerHover: _hover,
                   onPointerMove: _pointerMove,
                   onPointerUp: _pointerUp,
@@ -1434,4 +1493,22 @@ class _Upload {
   _Upload(this.at);
 
   int at;
+}
+
+/// Places the card of a link under where it was pointed at, or over it
+/// when there is no room under, and inside the screen.
+class _CardPlace extends SingleChildLayoutDelegate {
+  const _CardPlace(this.target);
+
+  final Offset target;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) => constraints.loosen();
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) =>
+      positionDependentBox(size: size, childSize: childSize, target: target, preferBelow: true, verticalOffset: 14);
+
+  @override
+  bool shouldRelayout(_CardPlace old) => old.target != target;
 }
