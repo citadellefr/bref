@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 — 2026-10-10
 
 - Dart: a block of code named `chart` is drawn as a chart: `type` (`bar`,
   `line`, `area`, `pie`, `scatter`), `title`, `x`, `y` and `stacked`, then a
