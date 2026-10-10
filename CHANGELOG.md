@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Dart: in a browser, Ctrl+V pastes what the browser hands the page, without
+  reading the clipboard: Firefox no longer asks to confirm with its own
+  « Paste » button. The paste of the menu still reads it.
 - Dart: `BrefHost.preview` is the card shown over a link while it is pointed
   at; on a touch screen a tap shows it, and the card is what opens the link.
 - Dart: `BrefHost.commands` are the keywords `@` starts beside what it

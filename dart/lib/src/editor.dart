@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:trame/trame.dart';
 
+import 'clipboard.dart';
 import 'controller.dart';
 import 'editing.dart';
 import 'handles.dart';
@@ -88,6 +89,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
   final _menu = ContextMenuController();
   FocusNode? _ownFocus;
   StreamSubscription<Edit>? _changes;
+  void Function()? _unwatchPaste;
 
   TextInputConnection? _input;
 
@@ -179,6 +181,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
   void initState() {
     super.initState();
     _changes = _session.changes.listen(_changed);
+    _unwatchPaste = watchPaste(_pasted);
     _session.addListener(_sessionChanged);
     _session.presence.addListener(_peersMoved);
     _focus.addListener(_focusChanged);
@@ -251,6 +254,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
   @override
   void dispose() {
     unawaited(_changes?.cancel());
+    _unwatchPaste?.call();
     _asking?.stop();
     _session
       ..removeListener(_sessionChanged)
@@ -522,7 +526,15 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final text = data?.text;
     if (text == null || text.isEmpty || !mounted) return;
-    _replace(_marks.start, _marks.end, text.replaceAll('\r\n', '\n').replaceAll('\r', '\n'));
+    _pasteText(text);
+  }
+
+  void _pasteText(String text) => _replace(_marks.start, _marks.end, text.replaceAll('\r\n', '\n').replaceAll('\r', '\n'));
+
+  bool _pasted(String text) {
+    if (!_editable || !_focus.hasFocus) return false;
+    _pasteText(text);
+    return true;
   }
 
   /// Moves the caret in a table, by cells or rows, adding a row past its end;
@@ -1050,6 +1062,8 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       case LogicalKeyboardKey.keyX when command && _editable:
         unawaited(_copy(cut: true));
       case LogicalKeyboardKey.keyV when command && _editable:
+        // left to the browser, which then tells the page to paste
+        if (_unwatchPaste != null) return KeyEventResult.ignored;
         unawaited(_paste());
       case LogicalKeyboardKey.keyZ when command:
         _travel(back: !shift);
