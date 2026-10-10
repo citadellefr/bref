@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Dart: a block of code named `chart` is drawn as a chart: `type` (`bar`,
+  `line`, `area`, `pie`, `scatter`), `title`, `x`, `y` and `stacked`, then a
+  table whose first column names the rows and each other column is a
+  series. It shows alone, and under its source while the caret is in it; a
+  block with no data stays as written. `BrefTheme.series` are its colors.
 - Dart: math is set as TeX sets it. `$…$` and `$$…$$` in a line show their
   formula on the baseline of the text, in table cells too; a block between
   `$$` shows it alone, centered and narrowed to the note, and under its

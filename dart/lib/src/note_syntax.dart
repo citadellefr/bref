@@ -231,11 +231,18 @@ class NoteSyntax {
     final found = _nodeAt(i);
     final n = found?.node;
     if (n == null || n.marks.isEmpty) return s;
-    if (n.kind == MdKind.mathBlock) {
-      if (n.marks.length < 2 || !identical(n, t.node)) return s;
-      return s.inMath((first: text.lineAt(n.start + found!.shift), last: text.lineAt(n.end + found.shift), tex: n.literal));
-    }
-    return _colored(s, t, n, found!.shift, i, line);
+    final kind = _figureKind(n);
+    if (kind == null || n.marks.length < 2 || !identical(n, t.node)) return _colored(s, t, n, found!.shift, i, line);
+    final shift = found!.shift;
+    return s.inFigure((first: text.lineAt(n.start + shift), last: text.lineAt(n.end + shift), kind: kind, source: n.literal));
+  }
+
+  /// What the block [n] is drawn as, when it is closed and a block of the
+  /// note itself: math, or code that says it is a chart.
+  static FigureKind? _figureKind(MdNode n) {
+    if (n.kind == MdKind.mathBlock) return FigureKind.math;
+    if (n.kind == MdKind.codeBlock && n.info.trim().split(RegExp(r'\s')).first.toLowerCase() == 'chart') return FigureKind.chart;
+    return null;
   }
 
   /// The line [s] of the block of code [n], or of front matter, its pieces colored when the language is known.

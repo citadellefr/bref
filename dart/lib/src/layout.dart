@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 
+import 'chart/figure.dart';
+import 'chart/spec.dart';
 import 'host_cache.dart';
 import 'line_view.dart';
 import 'math/font.dart';
@@ -13,6 +15,18 @@ import 'note_syntax.dart';
 import 'note_text.dart';
 import 'syntax.dart';
 import 'theme.dart';
+
+class _FormulaFigure extends Figure {
+  _FormulaFigure(this.formula);
+
+  final Formula formula;
+
+  @override
+  Size get size => Size(formula.width, formula.height + formula.depth);
+
+  @override
+  void paint(Canvas canvas, Offset at) => formula.paint(canvas, at + Offset(0, formula.height));
+}
 
 /// What a stretch of a line reads as.
 class _Content {
@@ -61,8 +75,10 @@ class NoteLayout extends ChangeNotifier {
   final _styles = <int, TextStyle>{};
   TextStyle? _fold;
 
-  /// The formulas laid out, by their source and how they are set.
+  /// The formulas laid out, by their source and how they are set, and the
+  /// charts read, by their source.
   final _formulas = <String, Formula>{};
+  final _charts = <String, ChartSpec?>{};
   var _awaitsFont = false;
   var _disposed = false;
 
@@ -308,8 +324,8 @@ class NoteLayout extends ChangeNotifier {
   LineView _writtenView(int i, {bool preview = false}) {
     final line = text.line(i);
     final s = syntax.line(i);
-    final block = s.math;
-    final below = _preview && !preview && block != null && i == block.last ? _blockFormula(block, line.length) : null;
+    final block = s.figure;
+    final below = _preview && !preview && block != null && i == block.last ? _figureView(block, line.length) : null;
     if (line.isEmpty) return TextView(_painter(TextSpan(text: '', style: _style(0, s.heading))), null, const [], preview: preview);
     var from = 0;
     final span = TextSpan(
@@ -322,10 +338,31 @@ class NoteLayout extends ChangeNotifier {
     return TextView(_painter(span), null, const [], preview: preview, below: below);
   }
 
-  /// The formula of the block of math [m], as the line that shows it.
-  FormulaView? _blockFormula(MathLine m, int length) {
-    final formula = _formula(m.tex, display: true);
-    return formula == null ? null : FormulaView(formula, _width, _lineHeight, length);
+  /// The figure of the block [f], as the line that shows it; null when
+  /// there is none to draw, and the block stays as written.
+  FigureView? _figureView(FigureLine f, int length) {
+    final figure = switch (f.kind) {
+      FigureKind.math => switch (_formula(f.source, display: true)) {
+          final formula? => _FormulaFigure(formula),
+          null => null,
+        },
+      FigureKind.chart => switch (_chart(f.source)) {
+          final spec? => ChartFigure(spec, width: _width, theme: _theme, scaler: _scaler),
+          null => null,
+        },
+    };
+    return figure == null ? null : FigureView(figure, _width, _lineHeight, length);
+  }
+
+  bool _hasFigure(FigureLine f) => switch (f.kind) {
+        FigureKind.math => _formula(f.source, display: true) != null,
+        FigureKind.chart => _chart(f.source) != null,
+      };
+
+  /// The chart [source] describes, read once; null when it describes none.
+  ChartSpec? _chart(String source) {
+    if (_charts.length > 100) _charts.clear();
+    return _charts.putIfAbsent(source, () => ChartSpec.parse(source));
   }
 
   /// [tex] laid out, in the line or as on a line of its own, once the font
@@ -363,10 +400,9 @@ class NoteLayout extends ChangeNotifier {
     final base = _style(0, s.heading);
     final table = s.table;
     if (table != null) return _tableRow(i, s, table, line);
-    final block = s.math;
-    if (block != null) {
-      final shown = _blockFormula(block, line.length);
-      if (shown != null) return i == block.first ? shown : FormulaView.hidden(line.length);
+    final block = s.figure;
+    if (block != null && _hasFigure(block)) {
+      return i == block.first ? _figureView(block, line.length)! : FigureView.hidden(line.length);
     }
     for (final swap in s.swaps) {
       if (swap.kind == SwapKind.rule) {

@@ -39,7 +39,7 @@ void main() {
     await key(tester, LogicalKeyboardKey.arrowDown);
     expect(MathFont.loaded, isNotNull);
     expect(layout.view(0).ornaments.single.kind, SwapKind.formula);
-    expect(layout.view(2), isA<FormulaView>());
+    expect(layout.view(2), isA<FigureView>());
     await finish(tester);
   });
 
@@ -65,7 +65,7 @@ void main() {
     final layout = await pumpNote(tester, text);
     final row = layout.lineHeight(0);
     final shown = layout.view(2);
-    expect(shown, isA<FormulaView>());
+    expect(shown, isA<FigureView>());
     expect(shown.height, greaterThan(row));
     expect([layout.lineHeight(3), layout.lineHeight(4)], [0, 0]);
     final whole = layout.height;
@@ -76,7 +76,7 @@ void main() {
     expect(layout.view(2), isA<TextView>());
     expect(layout.view(3), isA<TextView>());
     final last = layout.view(4) as TextView;
-    expect(last.below!.formula, same((shown as FormulaView).formula));
+    expect(last.below!.figure!.size, (shown as FigureView).figure!.size);
     expect(last.height, greaterThan(shown.height + row * 0.9));
     expect(layout.height, greaterThan(whole + 2 * row));
 
@@ -85,7 +85,7 @@ void main() {
     expect(caret(tester), text.lastIndexOf(r'$$'));
     await key(tester, LogicalKeyboardKey.arrowDown);
     expect(caret(tester), text.lastIndexOf(r'$$') + 3);
-    expect(layout.view(2), isA<FormulaView>());
+    expect(layout.view(2), isA<FigureView>());
     expect(layout.height, whole);
 
     await key(tester, LogicalKeyboardKey.arrowUp);

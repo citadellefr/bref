@@ -15,7 +15,7 @@ default format for notes, and is released under the MIT license.
 
 > Bref is at its beginning: notes are edited together in live preview, the
 > syntax of the lines being edited shown as written, with mentions, links and
-> pictures your app provides, comments, tables and math. Charts and diagrams
+> pictures your app provides, comments, tables, math and charts. Diagrams
 > come next.
 
 ## Principles
@@ -132,6 +132,30 @@ shipped with the package under the GUST Font License
 (`dart/fonts/GUST-FONT-LICENSE.txt`) and read by Bref: its outlines, and the
 `MATH` table that says how tall a fraction stands and how a brace is built.
 The file is read when a note first shows math.
+
+## Charts
+
+A block of code that says `chart` is drawn as one: lines of `key: value`,
+then a table whose first column names the rows and each other column is a
+series. A reader without Bref shows the block, which stays readable.
+
+````
+```chart
+type: bar
+title: Sales
+| Month | Paris | Lyon |
+| --- | --- | --- |
+| January | 12 | 8 |
+| February | 15 | 11.5 |
+```
+````
+
+`type` is `bar` (the default), `line`, `area`, `pie` or `scatter`; `title`,
+`x` and `y` name the chart and its axes, `stacked: true` puts bars and areas
+one over the other. Numbers are read with a point or a comma, and the axes
+write them the same way; a cell that is not a number is a hole. When the
+first column holds numbers, lines and points are placed by them. A block
+with no data to draw stays as written. `BrefTheme.series` are the colors.
 
 ## Markdown
 

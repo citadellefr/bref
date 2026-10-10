@@ -957,7 +957,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
     if (y >= layout.height) return _text.length;
     final to = layout.offsetAt(Offset(x, y));
     if (page || layout.rowAt(to) != layout.rowAt(from)) return to;
-    // What a line shows under its text, the formula of a block of math, is
+    // What a line shows under its text, the figure of the block it ends, is
     // no row of its own: the caret goes past it.
     final line = _text.lineAt(from);
     y = down ? layout.top(line + 1) + by : layout.top(line) - by;

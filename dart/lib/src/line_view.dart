@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/painting.dart';
 
-import 'math/typeset.dart';
+import 'math/typeset.dart' show Formula;
 import 'syntax.dart';
 
 /// What is drawn over a line shown in preview: the box of a task, the bar
@@ -85,14 +85,14 @@ abstract class LineView {
 }
 
 /// A line of text in a single paragraph, with what [below] shows under it:
-/// the formula of the block of math it ends.
+/// the figure of the block it ends.
 class TextView extends LineView {
   TextView(this.painter, Int32List? toSource, this._ornaments, {required super.preview, this.asked = const [], this.below})
       : super(toSource: toSource);
 
   final TextPainter painter;
   final List<PendingOrnament> _ornaments;
-  final FormulaView? below;
+  final FigureView? below;
 
   @override
   final List<String> asked;
@@ -130,7 +130,10 @@ class TextView extends LineView {
   }
 
   @override
-  void dispose() => painter.dispose();
+  void dispose() {
+    painter.dispose();
+    below?.dispose();
+  }
 }
 
 /// The grid a table is drawn on, shared by its rows: [widths] are those of
@@ -287,17 +290,27 @@ class GridRowView extends LineView {
   }
 }
 
-/// A line of a block of math in preview: the one that shows its formula,
+/// What a block shows in place of its source: a formula, a chart.
+abstract class Figure {
+  Size get size;
+
+  /// Draws the figure, its top left corner at [at].
+  void paint(Canvas canvas, Offset at);
+
+  void dispose() {}
+}
+
+/// A line of a block read as a figure, in preview: the one that shows it,
 /// centered in a column of [width] and narrowed to it, or one that takes no
 /// room.
-class FormulaView extends LineView {
-  FormulaView(Formula this.formula, this.width, double least, int length)
-      : _scale = formula.width > width && width > 0 ? width / formula.width : 1,
+class FigureView extends LineView {
+  FigureView(Figure this.figure, this.width, double least, int length)
+      : _scale = figure.size.width > width && width > 0 ? width / figure.size.width : 1,
         _least = least,
         super(preview: true, toSource: Int32List.fromList([0, length]));
 
-  FormulaView.hidden(int length)
-      : formula = null,
+  FigureView.hidden(int length)
+      : figure = null,
         width = 0,
         _scale = 1,
         _least = 0,
@@ -305,48 +318,47 @@ class FormulaView extends LineView {
 
   static const padding = 8.0;
 
-  final Formula? formula;
+  final Figure? figure;
   final double width;
   final double _scale;
   final double _least;
 
   @override
   double get height {
-    final f = formula;
-    return f == null ? 0 : math.max(_least, (f.height + f.depth) * _scale + 2 * padding);
+    final f = figure;
+    return f == null ? 0 : math.max(_least, f.size.height * _scale + 2 * padding);
   }
 
   Rect get _ink {
-    final f = formula!;
-    final w = f.width * _scale, h = (f.height + f.depth) * _scale;
-    return Rect.fromLTWH((width - w) / 2, (height - h) / 2, w, h);
+    final shown = figure!.size * _scale;
+    return Rect.fromLTWH((width - shown.width) / 2, (height - shown.height) / 2, shown.width, shown.height);
   }
 
   @override
   void paint(Canvas canvas, Offset at) {
-    final f = formula;
+    final f = figure;
     if (f == null) return;
     final ink = _ink.shift(at);
     canvas
       ..save()
-      ..translate(ink.left, ink.top + f.height * _scale)
+      ..translate(ink.left, ink.top)
       ..scale(_scale);
     f.paint(canvas, Offset.zero);
     canvas.restore();
   }
 
   @override
-  Rect caret(int d) => formula == null ? Rect.zero : Rect.fromLTWH(d == 0 ? _ink.left : _ink.right, 0, 2, height);
+  Rect caret(int d) => figure == null ? Rect.zero : Rect.fromLTWH(d == 0 ? _ink.left : _ink.right, 0, 2, height);
 
   @override
   int positionAt(Offset local) => local.dx < width / 2 ? 0 : 1;
 
   @override
-  List<Rect> boxes(int a, int b) => formula == null || a >= b ? const [] : [_ink];
+  List<Rect> boxes(int a, int b) => figure == null || a >= b ? const [] : [_ink];
 
   @override
   (int, int) boundary(int d) => (0, 1);
 
   @override
-  void dispose() {}
+  void dispose() => figure?.dispose();
 }

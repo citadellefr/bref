@@ -22,6 +22,16 @@ class BrefTheme {
     required this.tokens,
     required this.callouts,
     this.headings = const [1.8, 1.5, 1.3, 1.15, 1.05, 1.0],
+    this.series = const [
+      Color(0xFF4263EB),
+      Color(0xFFE8590C),
+      Color(0xFF2F9E44),
+      Color(0xFFD6336C),
+      Color(0xFF7048E8),
+      Color(0xFFF08C00),
+      Color(0xFF1098AD),
+      Color(0xFF5C940D),
+    ],
   });
 
   factory BrefTheme.of(BuildContext context) {
@@ -85,6 +95,9 @@ class BrefTheme {
 
   /// The size of headings, from level 1 to 6, relative to the text.
   final List<double> headings;
+
+  /// The colors of the series of a chart, in order.
+  final List<Color> series;
 
   Color peer(int sid) => peers[sid % peers.length];
 
@@ -154,9 +167,10 @@ class BrefTheme {
       listEquals(other.peers, peers) &&
       listEquals(other.tokens, tokens) &&
       listEquals(other.callouts, callouts) &&
-      listEquals(other.headings, headings);
+      listEquals(other.headings, headings) &&
+      listEquals(other.series, series);
 
   @override
   int get hashCode => Object.hash(text, monospace, markup, accent, muted, codeBackground, highlight, selection, caret,
-      Object.hashAll(peers), Object.hashAll(tokens), Object.hashAll(callouts), Object.hashAll(headings));
+      Object.hashAll(peers), Object.hashAll(tokens), Object.hashAll(callouts), Object.hashAll(headings), Object.hashAll(series));
 }

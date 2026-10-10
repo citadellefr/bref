@@ -108,13 +108,17 @@ typedef Swap = ({int start, int end, SwapKind kind, String text});
 /// The delimiter row under the header has none.
 typedef TableLine = ({int first, int last, List<Align> align, List<Span> cells, bool header, bool delimiter});
 
-/// A line of a block of math, closed: [first] to [last] are its lines, the
-/// dollars included, and [tex] the source of its formula.
-typedef MathLine = ({int first, int last, String tex});
+/// What a block shows in place of its source.
+enum FigureKind { math, chart }
+
+/// A line of a block that reads as a figure, a formula or a chart: [first]
+/// to [last] are its lines, its fences included, and [source] what is
+/// written between them.
+typedef FigureLine = ({int first, int last, FigureKind kind, String source});
 
 /// A line's pieces: [ends] are where each one ends, [marks] what it is.
 final class LineSyntax {
-  const LineSyntax(this.ends, this.marks, {this.heading = 0, this.block = false, this.callout, this.table, this.math, this.swaps = const []});
+  const LineSyntax(this.ends, this.marks, {this.heading = 0, this.block = false, this.callout, this.table, this.figure, this.swaps = const []});
 
   final List<int> ends;
   final List<int> marks;
@@ -132,15 +136,15 @@ final class LineSyntax {
   /// The table the line is a row of, when it shows as a grid.
   final TableLine? table;
 
-  /// The block of math the line belongs to, when it shows as a formula.
-  final MathLine? math;
+  /// The block the line belongs to, when it shows as a figure.
+  final FigureLine? figure;
 
   /// What the preview shows otherwise, in order.
   final List<Swap> swaps;
 
-  /// This line as one of the block of math [math].
-  LineSyntax inMath(MathLine math) =>
-      LineSyntax(ends, marks, heading: heading, block: block, callout: callout, table: table, math: math, swaps: swaps);
+  /// This line as one of the block [figure] is drawn for.
+  LineSyntax inFigure(FigureLine figure) =>
+      LineSyntax(ends, marks, heading: heading, block: block, callout: callout, table: table, figure: figure, swaps: swaps);
 
   /// This line of [length] with [runs] of code marked on top of what it is,
   /// the code starting at column [from].
