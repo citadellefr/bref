@@ -4,7 +4,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 import 'layout.dart';
-import 'line_view.dart' show Ornament;
+import 'line_view.dart' show FormulaView, Ornament;
 import 'note_syntax.dart';
 import 'syntax.dart';
 import 'theme.dart';
@@ -234,7 +234,7 @@ class RenderNote extends RenderBox {
       final callout = _layout.syntax.line(i).callout;
       if (callout != null) {
         canvas.drawRect(Rect.fromLTWH(-8, y, width + 16, h), Paint()..color = theme.callouts[callout.index].withValues(alpha: 0.12));
-      } else if (_layout.syntax.inBlock(i)) {
+      } else if (_layout.syntax.inBlock(i) && view is! FormulaView) {
         canvas.drawRect(Rect.fromLTWH(-8, y, width + 16, h), block);
       }
       for (final p in s.passages) {
@@ -292,6 +292,9 @@ class RenderNote extends RenderBox {
   void _ornament(Canvas canvas, Ornament o, Rect rect, double y, double h, BrefTheme theme, CalloutKind? callout) {
     final kind = o.kind;
     switch (kind) {
+      case SwapKind.formula || SwapKind.display:
+        final formula = o.formula;
+        formula?.paint(canvas, Offset(rect.left, rect.top + formula.height));
       case SwapKind.picture:
         final info = _layout.cache?.picture(o.text);
         if (info != null) paintImage(canvas: canvas, rect: rect, image: info.image, fit: BoxFit.fill, filterQuality: FilterQuality.medium);

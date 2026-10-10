@@ -93,6 +93,11 @@ enum SwapKind {
 
   /// The text of a link to [Swap.text] as the host labels it, once it did.
   label,
+
+  /// The formula [Swap.text] is the source of, set in the line, or as on a
+  /// line of its own.
+  formula,
+  display,
 }
 
 /// A piece of a line, in its columns, the preview shows otherwise.
@@ -103,9 +108,13 @@ typedef Swap = ({int start, int end, SwapKind kind, String text});
 /// The delimiter row under the header has none.
 typedef TableLine = ({int first, int last, List<Align> align, List<Span> cells, bool header, bool delimiter});
 
+/// A line of a block of math, closed: [first] to [last] are its lines, the
+/// dollars included, and [tex] the source of its formula.
+typedef MathLine = ({int first, int last, String tex});
+
 /// A line's pieces: [ends] are where each one ends, [marks] what it is.
 final class LineSyntax {
-  const LineSyntax(this.ends, this.marks, {this.heading = 0, this.block = false, this.callout, this.table, this.swaps = const []});
+  const LineSyntax(this.ends, this.marks, {this.heading = 0, this.block = false, this.callout, this.table, this.math, this.swaps = const []});
 
   final List<int> ends;
   final List<int> marks;
@@ -123,8 +132,15 @@ final class LineSyntax {
   /// The table the line is a row of, when it shows as a grid.
   final TableLine? table;
 
+  /// The block of math the line belongs to, when it shows as a formula.
+  final MathLine? math;
+
   /// What the preview shows otherwise, in order.
   final List<Swap> swaps;
+
+  /// This line as one of the block of math [math].
+  LineSyntax inMath(MathLine math) =>
+      LineSyntax(ends, marks, heading: heading, block: block, callout: callout, table: table, math: math, swaps: swaps);
 
   /// This line of [length] with [runs] of code marked on top of what it is,
   /// the code starting at column [from].
@@ -314,6 +330,7 @@ class _LineReader {
       case MdKind.math:
         flags = Mark.math;
         markFlags = Mark.math | Mark.markup;
+        if (n.start >= lo && n.end <= hi) _swap((start: n.start, end: n.end), n.display ? SwapKind.display : SwapKind.formula, n.literal);
       case MdKind.entity:
         if (n.start >= lo && n.end <= hi) _swap((start: n.start, end: n.end), SwapKind.text, n.literal);
       default:

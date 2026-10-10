@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Dart: math is set as TeX sets it. `$…$` and `$$…$$` in a line show their
+  formula on the baseline of the text, in table cells too; a block between
+  `$$` shows it alone, centered and narrowed to the note, and under its
+  source while the caret is in it. Bref reads the TeX itself (fractions,
+  roots, scripts and limits, `\left…\right` and `\big`, accents, braces and
+  arrows that stretch, matrices, `aligned`, `cases`, alphabets, text,
+  colors) and lays it out with the glyphs and the `MATH` table of Latin
+  Modern Math, shipped as an asset of the package (GUST Font License) and
+  read when a note first shows math. What it does not know is shown as
+  written, in red. Blocks of math held in a quote or a list stay as written.
 - Dart: in a browser, Ctrl+V pastes what the browser hands the page, without
   reading the clipboard: Firefox no longer asks to confirm with its own
   « Paste » button. The paste of the menu still reads it.

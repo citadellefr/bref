@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -5,6 +6,8 @@ import 'package:flutter/widgets.dart';
 
 import 'host_cache.dart';
 import 'line_view.dart';
+import 'math/font.dart';
+import 'math/typeset.dart';
 import 'md/node.dart' as md show Align;
 import 'note_syntax.dart';
 import 'note_text.dart';
@@ -57,6 +60,18 @@ class NoteLayout extends ChangeNotifier {
 
   final _styles = <int, TextStyle>{};
   TextStyle? _fold;
+
+  /// The formulas laid out, by their source and how they are set.
+  final _formulas = <String, Formula>{};
+  var _awaitsFont = false;
+  var _disposed = false;
+
+  /// How big math is beside the text: its letters are smaller than those
+  /// of the fonts text is read in.
+  static const _mathScale = 1.15;
+
+  /// Formulas longer than this are shown as written.
+  static const _longestFormula = 5000;
   var _lineHeight = 24.0;
   var _charWidth = 8.0;
   var _fontSize = 16.0;
@@ -88,6 +103,7 @@ class NoteLayout extends ChangeNotifier {
   set preview(bool value) {
     if (value == _preview) return;
     _preview = value;
+    _reset();
     notifyListeners();
   }
 
@@ -122,6 +138,7 @@ class NoteLayout extends ChangeNotifier {
 
   void _restyle() {
     _styles.clear();
+    _formulas.clear();
     _fold = null;
     _measureFont();
     _reset();
@@ -291,6 +308,8 @@ class NoteLayout extends ChangeNotifier {
   LineView _writtenView(int i, {bool preview = false}) {
     final line = text.line(i);
     final s = syntax.line(i);
+    final block = s.math;
+    final below = _preview && !preview && block != null && i == block.last ? _blockFormula(block, line.length) : null;
     if (line.isEmpty) return TextView(_painter(TextSpan(text: '', style: _style(0, s.heading))), null, const [], preview: preview);
     var from = 0;
     final span = TextSpan(
@@ -300,7 +319,40 @@ class NoteLayout extends ChangeNotifier {
           TextSpan(text: line.substring(from, from = s.ends[k]), style: _style(s.marks[k], s.heading)),
       ],
     );
-    return TextView(_painter(span), null, const [], preview: preview);
+    return TextView(_painter(span), null, const [], preview: preview, below: below);
+  }
+
+  /// The formula of the block of math [m], as the line that shows it.
+  FormulaView? _blockFormula(MathLine m, int length) {
+    final formula = _formula(m.tex, display: true);
+    return formula == null ? null : FormulaView(formula, _width, _lineHeight, length);
+  }
+
+  /// [tex] laid out, in the line or as on a line of its own, once the font
+  /// of math is read; null until then, and for what is too long to be one.
+  Formula? _formula(String tex, {required bool display, int heading = 0}) {
+    final font = MathFont.loaded;
+    if (font == null) {
+      if (!_awaitsFont) {
+        _awaitsFont = true;
+        unawaited(MathFont.load().then((_) {
+          if (_disposed) return;
+          _reset();
+          notifyListeners();
+        }));
+      }
+      return null;
+    }
+    if (tex.length > _longestFormula) return null;
+    if (_formulas.length > 500) _formulas.clear();
+    return _formulas['${display ? 'D' : 'T'}$heading $tex'] ??= typeset(
+      tex,
+      font,
+      size: _fontSize * _mathScale * (heading > 0 ? _theme.headings[heading - 1] : 1),
+      display: display,
+      text: _theme.text,
+      error: _theme.callouts[CalloutKind.danger.index],
+    );
   }
 
   /// The line as it reads: its syntax hidden, its bullets, boxes, bars and
@@ -311,6 +363,11 @@ class NoteLayout extends ChangeNotifier {
     final base = _style(0, s.heading);
     final table = s.table;
     if (table != null) return _tableRow(i, s, table, line);
+    final block = s.math;
+    if (block != null) {
+      final shown = _blockFormula(block, line.length);
+      if (shown != null) return i == block.first ? shown : FormulaView.hidden(line.length);
+    }
     for (final swap in s.swaps) {
       if (swap.kind == SwapKind.rule) {
         return TextView(
@@ -318,7 +375,7 @@ class NoteLayout extends ChangeNotifier {
             PlaceholderDimensions(size: Size(math.max(_width - 1, 1), _lineHeight), alignment: PlaceholderAlignment.middle),
           ]),
           Int32List.fromList([0, line.length]),
-          [(kind: SwapKind.rule, column: swap.start, text: '')],
+          [(kind: SwapKind.rule, column: swap.start, text: '', formula: null)],
           preview: true,
         );
       }
@@ -371,6 +428,23 @@ class NoteLayout extends ChangeNotifier {
     var col = from;
     for (final swap in s.swaps) {
       if (swap.start < col || swap.end > to) continue;
+      if (swap.kind == SwapKind.formula || swap.kind == SwapKind.display) {
+        final formula = _formula(swap.text, display: swap.kind == SwapKind.display, heading: s.heading);
+        if (formula == null || formula.width <= 0) continue;
+        written(col, swap.start);
+        const align = PlaceholderAlignment.baseline;
+        c.children.add(const WidgetSpan(child: SizedBox.shrink(), alignment: align, baseline: TextBaseline.alphabetic));
+        c.placeholders.add(PlaceholderDimensions(
+          size: Size(formula.width, formula.height + formula.depth),
+          alignment: align,
+          baseline: TextBaseline.alphabetic,
+          baselineOffset: formula.height,
+        ));
+        c.ornaments.add((kind: swap.kind, column: swap.start, text: swap.text, formula: formula));
+        c.toSource.add(swap.start);
+        col = swap.end;
+        continue;
+      }
       if (swap.kind == SwapKind.picture || swap.kind == SwapKind.label) {
         final cache = _cache;
         if (cache == null || swap.kind == SwapKind.picture && !pictures) continue;
@@ -381,7 +455,7 @@ class NoteLayout extends ChangeNotifier {
           written(col, swap.start);
           c.children.add(const WidgetSpan(child: SizedBox.shrink(), alignment: PlaceholderAlignment.bottom));
           c.placeholders.add(PlaceholderDimensions(size: size, alignment: PlaceholderAlignment.bottom));
-          c.ornaments.add((kind: SwapKind.picture, column: swap.start, text: swap.text));
+          c.ornaments.add((kind: SwapKind.picture, column: swap.start, text: swap.text, formula: null));
           c.toSource.add(swap.start);
         } else {
           final label = cache.label(swap.text);
@@ -411,7 +485,7 @@ class NoteLayout extends ChangeNotifier {
           final size = swap.kind == SwapKind.bar ? Size(_fontSize * 0.9, _fontSize) : Size(_fontSize * 1.2, _fontSize);
           c.children.add(const WidgetSpan(child: SizedBox.shrink(), alignment: PlaceholderAlignment.middle));
           c.placeholders.add(PlaceholderDimensions(size: size, alignment: PlaceholderAlignment.middle));
-          c.ornaments.add((kind: swap.kind, column: swap.start, text: ''));
+          c.ornaments.add((kind: swap.kind, column: swap.start, text: '', formula: null));
           c.toSource.add(swap.start);
         default:
       }
@@ -428,12 +502,15 @@ class NoteLayout extends ChangeNotifier {
     if (t.delimiter) return GridRowView.hidden(grid, Int32List.fromList([0, line.length]));
     final extra = t.header ? Mark.strong : 0;
     final painters = <TextPainter>[], starts = <int>[], lengths = <int>[], toSource = <int>[];
+    final ornaments = <List<PendingOrnament>>[], asked = <String>[];
     var height = _lineHeight;
     for (var k = 0; k < grid.widths.length; k++) {
       final cell = k < t.cells.length ? t.cells[k] : (start: line.length, end: line.length);
       final c = _content(line, s, cell.start, cell.end, pictures: false, extra: extra);
       final painter = _cellPainter(c, _style(extra, 0), grid.widths[k] - 2 * TableGrid.padding, _textAlign(t.align, k));
       painters.add(painter);
+      ornaments.add(c.ornaments);
+      asked.addAll(c.asked);
       starts.add(toSource.length);
       lengths.add(c.toSource.length - 1);
       toSource.addAll(c.toSource);
@@ -449,6 +526,8 @@ class NoteLayout extends ChangeNotifier {
       header: t.header,
       border: _theme.markup,
       fill: _theme.codeBackground,
+      asked: asked,
+      ornaments: ornaments,
     );
   }
 
@@ -459,6 +538,7 @@ class NoteLayout extends ChangeNotifier {
       textAlign: align,
       textScaler: _scaler,
     );
+    if (c.placeholders.isNotEmpty) p.setPlaceholderDimensions(c.placeholders);
     return p..layout(minWidth: math.max(width, 1), maxWidth: math.max(width, 1));
   }
 
@@ -485,8 +565,9 @@ class NoteLayout extends ChangeNotifier {
       for (var k = 0; k < columns && k < cells.length; k++) {
         if (cells[k].start == cells[k].end) continue;
         final c = _content(line, s, cells[k].start, cells[k].end, pictures: false, extra: extra);
-        final p = TextPainter(text: TextSpan(style: _style(extra, 0), children: c.children), textDirection: TextDirection.ltr, textScaler: _scaler)
-          ..layout();
+        final p = TextPainter(text: TextSpan(style: _style(extra, 0), children: c.children), textDirection: TextDirection.ltr, textScaler: _scaler);
+        if (c.placeholders.isNotEmpty) p.setPlaceholderDimensions(c.placeholders);
+        p.layout();
         wanted[k] = math.max(wanted[k], p.width);
         p.dispose();
       }
@@ -596,6 +677,7 @@ class NoteLayout extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     for (final v in _views) {
       v?.dispose();
     }

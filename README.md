@@ -15,7 +15,8 @@ default format for notes, and is released under the MIT license.
 
 > Bref is at its beginning: notes are edited together in live preview, the
 > syntax of the lines being edited shown as written, with mentions, links and
-> pictures your app provides. Comments, math, charts and diagrams come next.
+> pictures your app provides, comments, tables and math. Charts and diagrams
+> come next.
 
 ## Principles
 
@@ -114,6 +115,23 @@ clipboard or drops to `BrefEditorState.insertPicture`, which uploads them
 and writes them where the caret was; keyboards that insert pictures go the
 same way. `file:` is best avoided as a scheme of the host: Dart reads
 `file:9` as `file:///9`.
+
+## Math
+
+`$x^2$` in a line and `$$` around lines of their own are set as TeX sets
+them, by Bref itself: fractions, roots, scripts and limits, delimiters that
+grow (`\left`, `\right`, `\big`), accents, braces and arrows that stretch,
+matrices, `aligned` and `cases`, the alphabets (`\mathbb`, `\mathcal`,
+`\mathfrak`, `\mathbf`…), text, colors. A block shows its formula alone, and
+under its source while the caret is in it; a command Bref does not know is
+shown as written, in red, and the rest of the formula is set around it.
+
+The glyphs and their measures are those of
+[Latin Modern Math](https://www.gust.org.pl/projects/e-foundry/lm-math),
+shipped with the package under the GUST Font License
+(`dart/fonts/GUST-FONT-LICENSE.txt`) and read by Bref: its outlines, and the
+`MATH` table that says how tall a fraction stands and how a brace is built.
+The file is read when a note first shows math.
 
 ## Markdown
 

@@ -227,21 +227,27 @@ class NoteSyntax {
     final s = readLine(t.node, line, text.lineStart(i) - text.lineStart(t.line) + t.base,
         callout: callout, header: callout != null && i == t.line,
         table: t.node.kind == MdKind.table ? (t.line, t.last) : null);
-    return s.block ? _colored(s, t, i, line) : s;
-  }
-
-  /// The line [s] of a block of code, or of front matter, its pieces colored when the language is known.
-  LineSyntax _colored(LineSyntax s, _Top t, int i, String line) {
+    if (!s.block) return s;
     final found = _nodeAt(i);
     final n = found?.node;
-    if (n == null || n.kind != MdKind.codeBlock && n.kind != MdKind.frontMatter || n.marks.isEmpty) return s;
+    if (n == null || n.marks.isEmpty) return s;
+    if (n.kind == MdKind.mathBlock) {
+      if (n.marks.length < 2 || !identical(n, t.node)) return s;
+      return s.inMath((first: text.lineAt(n.start + found!.shift), last: text.lineAt(n.end + found.shift), tex: n.literal));
+    }
+    return _colored(s, t, n, found!.shift, i, line);
+  }
+
+  /// The line [s] of the block of code [n], or of front matter, its pieces colored when the language is known.
+  LineSyntax _colored(LineSyntax s, _Top t, MdNode n, int shift, int i, String line) {
+    if (n.kind != MdKind.codeBlock && n.kind != MdKind.frontMatter) return s;
     final language = n.kind == MdKind.frontMatter ? 'yaml' : languageOf(n.info);
     if (language == null) return s;
     final code = t.code[n] ??= () {
       final lines = n.literal.split('\n');
       return _Code(lines, highlight(language, n.literal));
     }();
-    final k = i - text.lineAt(n.start + found!.shift) - 1;
+    final k = i - text.lineAt(n.start + shift) - 1;
     if (k < 0 || k >= code.lines.length - 1 || !line.endsWith(code.lines[k])) return s;
     return s.coded(line.length, line.length - code.lines[k].length, code.runs[k]);
   }

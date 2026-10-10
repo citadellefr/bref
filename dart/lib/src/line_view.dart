@@ -1,15 +1,32 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/painting.dart';
 
+import 'math/typeset.dart';
 import 'syntax.dart';
 
 /// What is drawn over a line shown in preview: the box of a task, the bar
-/// of a quote, a rule, a picture; [column] is where its syntax starts in the
-/// line, [text] what a picture leads to.
-typedef Ornament = ({SwapKind kind, int column, String text, Rect rect});
+/// of a quote, a rule, a picture, a formula; [column] is where its syntax
+/// starts in the line, [text] what a picture leads to.
+typedef Ornament = ({SwapKind kind, int column, String text, Formula? formula, Rect rect});
 
-typedef PendingOrnament = ({SwapKind kind, int column, String text});
+typedef PendingOrnament = ({SwapKind kind, int column, String text, Formula? formula});
+
+List<Ornament> _placed(List<PendingOrnament> ornaments, TextPainter painter, [Offset origin = Offset.zero]) {
+  if (ornaments.isEmpty) return const [];
+  final boxes = painter.inlinePlaceholderBoxes ?? const [];
+  return [
+    for (var k = 0; k < ornaments.length && k < boxes.length; k++)
+      (
+        kind: ornaments[k].kind,
+        column: ornaments[k].column,
+        text: ornaments[k].text,
+        formula: ornaments[k].formula,
+        rect: boxes[k].toRect().shift(origin),
+      ),
+  ];
+}
 
 /// A line laid out, as written or in preview. Its text is in offsets of what
 /// is shown, which [column] and [display] map to and from the columns of the
@@ -67,32 +84,30 @@ abstract class LineView {
   void dispose();
 }
 
-/// A line of text in a single paragraph.
+/// A line of text in a single paragraph, with what [below] shows under it:
+/// the formula of the block of math it ends.
 class TextView extends LineView {
-  TextView(this.painter, Int32List? toSource, this._ornaments, {required super.preview, this.asked = const []})
+  TextView(this.painter, Int32List? toSource, this._ornaments, {required super.preview, this.asked = const [], this.below})
       : super(toSource: toSource);
 
   final TextPainter painter;
   final List<PendingOrnament> _ornaments;
+  final FormulaView? below;
 
   @override
   final List<String> asked;
 
   @override
-  double get height => painter.height;
+  double get height => painter.height + (below?.height ?? 0);
 
   @override
-  List<Ornament> get ornaments {
-    if (_ornaments.isEmpty) return const [];
-    final boxes = painter.inlinePlaceholderBoxes ?? const [];
-    return [
-      for (var k = 0; k < _ornaments.length && k < boxes.length; k++)
-        (kind: _ornaments[k].kind, column: _ornaments[k].column, text: _ornaments[k].text, rect: boxes[k].toRect()),
-    ];
+  List<Ornament> get ornaments => _placed(_ornaments, painter);
+
+  @override
+  void paint(Canvas canvas, Offset at) {
+    painter.paint(canvas, at);
+    below?.paint(canvas, at + Offset(0, painter.height));
   }
-
-  @override
-  void paint(Canvas canvas, Offset at) => painter.paint(canvas, at);
 
   @override
   Rect caret(int d) {
@@ -151,6 +166,8 @@ class GridRowView extends LineView {
     required this.header,
     required this.border,
     required this.fill,
+    this.asked = const [],
+    this._ornaments = const [],
   }) : super(preview: true, toSource: toSource);
 
   /// A row that takes no room: the delimiter under the header.
@@ -162,6 +179,8 @@ class GridRowView extends LineView {
         header = false,
         border = const Color(0x00000000),
         fill = const Color(0x00000000),
+        asked = const [],
+        _ornaments = const [],
         super(preview: true, toSource: toSource);
 
   final TableGrid grid;
@@ -177,6 +196,17 @@ class GridRowView extends LineView {
   final bool header;
   final Color border;
   final Color fill;
+
+  /// What is drawn over each cell.
+  final List<List<PendingOrnament>> _ornaments;
+
+  @override
+  final List<String> asked;
+
+  @override
+  List<Ornament> get ornaments => [
+        for (var k = 0; k < _ornaments.length; k++) ..._placed(_ornaments[k], painters[k], _origin(k)),
+      ];
 
   Offset _origin(int cell) => Offset(grid.left(cell) + TableGrid.padding, TableGrid.rowPadding);
 
@@ -255,4 +285,68 @@ class GridRowView extends LineView {
       p.dispose();
     }
   }
+}
+
+/// A line of a block of math in preview: the one that shows its formula,
+/// centered in a column of [width] and narrowed to it, or one that takes no
+/// room.
+class FormulaView extends LineView {
+  FormulaView(Formula this.formula, this.width, double least, int length)
+      : _scale = formula.width > width && width > 0 ? width / formula.width : 1,
+        _least = least,
+        super(preview: true, toSource: Int32List.fromList([0, length]));
+
+  FormulaView.hidden(int length)
+      : formula = null,
+        width = 0,
+        _scale = 1,
+        _least = 0,
+        super(preview: true, toSource: Int32List.fromList([0, length]));
+
+  static const padding = 8.0;
+
+  final Formula? formula;
+  final double width;
+  final double _scale;
+  final double _least;
+
+  @override
+  double get height {
+    final f = formula;
+    return f == null ? 0 : math.max(_least, (f.height + f.depth) * _scale + 2 * padding);
+  }
+
+  Rect get _ink {
+    final f = formula!;
+    final w = f.width * _scale, h = (f.height + f.depth) * _scale;
+    return Rect.fromLTWH((width - w) / 2, (height - h) / 2, w, h);
+  }
+
+  @override
+  void paint(Canvas canvas, Offset at) {
+    final f = formula;
+    if (f == null) return;
+    final ink = _ink.shift(at);
+    canvas
+      ..save()
+      ..translate(ink.left, ink.top + f.height * _scale)
+      ..scale(_scale);
+    f.paint(canvas, Offset.zero);
+    canvas.restore();
+  }
+
+  @override
+  Rect caret(int d) => formula == null ? Rect.zero : Rect.fromLTWH(d == 0 ? _ink.left : _ink.right, 0, 2, height);
+
+  @override
+  int positionAt(Offset local) => local.dx < width / 2 ? 0 : 1;
+
+  @override
+  List<Rect> boxes(int a, int b) => formula == null || a >= b ? const [] : [_ink];
+
+  @override
+  (int, int) boundary(int d) => (0, 1);
+
+  @override
+  void dispose() {}
 }
