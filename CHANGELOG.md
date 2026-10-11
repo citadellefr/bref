@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 — 2026-10-11
 
 - Dart: typing `/` proposes the blocks the editor writes — headings, lists,
   quote, divider, table, code, callouts, formulas, the five charts, link,
