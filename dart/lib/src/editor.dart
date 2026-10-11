@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:trame/trame.dart';
 
+import 'blocks.dart';
 import 'clipboard.dart';
 import 'controller.dart';
 import 'editing.dart';
@@ -39,6 +40,7 @@ class BrefEditor extends StatefulWidget {
     this.focusNode,
     this.autofocus = false,
     this.preview = true,
+    this.blocks,
     this.comments,
     this.follow,
     this.strings = const BrefStrings(),
@@ -72,6 +74,10 @@ class BrefEditor extends StatefulWidget {
   /// Whether the note reads as it renders, the syntax hidden but on the
   /// lines being edited; else all of it is shown as written.
   final bool preview;
+
+  /// What typing a `/` proposes to write: all of [blocks] when null,
+  /// nothing when empty.
+  final List<Block>? blocks;
 
   @override
   State<BrefEditor> createState() => BrefEditorState();
@@ -564,12 +570,14 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
   /// Starts a mention when what was just typed ends a trigger, typed at the
   /// start of a word, or follows a keyword left on the line earlier.
   void _startMention() {
+    if (_marks.base != _marks.extent) return;
     final host = widget.host;
-    if (host == null || _marks.base != _marks.extent) return;
-    final triggers = {...host.mentions.keys, if (host.commands.isNotEmpty) _at};
     final at = _marks.extent;
-    final lineStart = _text.lineStart(_text.lineAt(at));
+    final line = _text.lineAt(at);
+    final lineStart = _text.lineStart(line);
     bool starts(int start) => start == lineStart || !_wordCharacter.hasMatch(_text.substring(start - 1, start));
+    bool apart(int start) => start == lineStart || _text.substring(start - 1, start).trim().isEmpty;
+    final triggers = {...?host?.mentions.keys, if (host != null && host.commands.isNotEmpty) _at};
     for (final trigger in triggers) {
       final start = at - trigger.length;
       if (start < lineStart || _text.substring(start, at) != trigger || !starts(start)) continue;
@@ -578,12 +586,22 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       _followMention();
       return;
     }
+    final slash = at - _slash.length;
+    if (slash >= lineStart && _text.substring(slash, at) == _slash && apart(slash) && !_syntax.line(line).block) {
+      _mention = (trigger: _slash, start: slash);
+      _followMention();
+      return;
+    }
+    if (host == null) return;
     final start = _text.substring(lineStart, at).lastIndexOf(_at) + lineStart;
     if (start < lineStart || start == _dismissed || !starts(start)) return;
     if (commandIn(host.commands, _text.substring(start + _at.length, at)) == null) return;
     _mention = (trigger: _at, start: start);
     _followMention();
   }
+
+  /// What starts a block of the editor.
+  static const _slash = '/';
 
   /// What starts a keyword of the host.
   static const _at = '@';
@@ -600,8 +618,7 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
   /// its question.
   void _followMention() {
     final m = _mention;
-    final host = widget.host;
-    if (m == null || host == null || _asking != null) return;
+    if (m == null || _asking != null) return;
     final from = m.start + m.trigger.length;
     final at = _marks.extent;
     if (_marks.base != at || at < from || _text.substring(m.start, from) != m.trigger) {
@@ -609,6 +626,12 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
       return;
     }
     final typed = _text.substring(from, at);
+    if (m.trigger == _slash) {
+      _proposeBlocks(typed);
+      return;
+    }
+    final host = widget.host;
+    if (host == null) return;
     final command = m.trigger == _at ? commandIn(host.commands, typed) : null;
     final longest = command?.answer == null ? _maxSearch : _maxQuestion;
     if (typed.contains('\n') || typed.startsWith(' ') || typed.length > longest) {
@@ -698,6 +721,48 @@ class BrefEditorState extends State<BrefEditor> implements DeltaTextInputClient 
     _endMention();
     final next = end < _text.length ? _text.substring(end, end + 1) : '';
     _replace(mention.start, end, next == ' ' ? linkMarkdown(m.text, m.uri) : '${linkMarkdown(m.text, m.uri)} ');
+  }
+
+  /// Proposes the blocks [typed] after a `/` names, and leaves the `/` as
+  /// text once it names none.
+  void _proposeBlocks(String typed) {
+    if (typed == _query) return;
+    final named = typed.contains('\n') ? const <Block>[] : blocksNamed(widget.blocks ?? blocks(widget.strings), typed);
+    if (named.isEmpty) {
+      _endMention();
+      return;
+    }
+    setState(() {
+      _query = typed;
+      _chosen = 0;
+      _found = [for (final b in named) Proposal(b.name, () => _writeBlock(b), icon: Icon(b.icon, size: 20))];
+    });
+    _mentionMenu.show();
+  }
+
+  /// Writes [block] in place of the `/` and the text after it, apart from
+  /// what is around when it needs lines of its own.
+  void _writeBlock(Block block) {
+    final mention = _mention;
+    if (mention == null || !_editable) return;
+    final end = _marks.extent;
+    _endMention();
+    final line = _text.lineAt(mention.start);
+    bool blank(int i) => i < 0 || i >= _text.lineCount || _text.line(i).trim().isEmpty;
+    final alone = _text.substring(_text.lineStart(line), mention.start).trim().isEmpty;
+    final last = _text.substring(end, _text.lineEnd(line)).trim().isEmpty;
+    final (lead, tail) = switch (block.placement) {
+      Placement.inline => ('', ''),
+      Placement.line => (alone ? '' : '\n', ''),
+      Placement.apart => (
+        !alone ? '\n\n' : blank(line - 1) ? '' : '\n',
+        !last ? '\n\n' : blank(line + 1) ? '' : '\n',
+      ),
+    };
+    final before = lead + block.before;
+    if (!_edit(mention.start, end, before + block.selected + block.after + tail)) return;
+    final from = mention.start + before.length;
+    _select(from, extent: from + block.selected.length);
   }
 
   /// Completes the keyword being typed, which what is typed next is for.

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:bref/bref.dart';
+import 'package:bref/src/blocks.dart';
 import 'package:bref/src/handles.dart';
 import 'package:bref/src/line_view.dart';
 import 'package:bref/src/render.dart';
@@ -570,6 +571,92 @@ void main() {
     await settle(tester);
     expect(hub.text, '# Before\nIt is short. @assistant why?\n\nAfter');
     await finish(tester);
+  });
+
+  testWidgets('a / proposes the blocks its text names, and writes the one chosen', (tester) async {
+    await pumpEditor(tester, '');
+    final keyboard = Keyboard(tester);
+    await keyboard.type('/');
+    await tester.pump();
+    expect(find.text('Heading 1'), findsOneWidget);
+    expect(find.text('Table'), findsOneWidget);
+    await keyboard.type('tab');
+    await tester.pump();
+    expect(find.text('Heading 1'), findsNothing);
+    await key(tester, LogicalKeyboardKey.enter);
+    await settle(tester);
+    expect(hub.text, '| Column 1 | Column 2 |\n| --- | --- |\n|  |  |');
+    expect((marks(tester).start, marks(tester).end), (2, 10));
+    expect(find.text('Table'), findsNothing);
+    await finish(tester);
+  });
+
+  testWidgets('a block is written apart from the text around it, a line starts where it is asked', (tester) async {
+    await pumpEditor(tester, 'Sales\nNext');
+    final keyboard = Keyboard(tester);
+    await key(tester, LogicalKeyboardKey.end);
+    await keyboard.type(' ');
+    await keyboard.type('/');
+    await keyboard.type('pie ch');
+    await tester.pump();
+    expect(find.text('Pie chart'), findsOneWidget);
+    expect(find.text('Bar chart'), findsNothing);
+    await key(tester, LogicalKeyboardKey.enter);
+    await settle(tester);
+    const chart = '```chart\ntype: pie\ntitle: Title\n| Category | Series 1 |\n| --- | --- |\n| A | 3 |\n| B | 4 |\n| C | 6 |\n```';
+    expect(hub.text, 'Sales \n\n$chart\n\nNext');
+    expect((marks(tester).start, marks(tester).end), (34, 39));
+
+    await key(tester, LogicalKeyboardKey.end, control: true);
+    await keyboard.type(' ');
+    await keyboard.type('/');
+    await keyboard.type('head');
+    await tester.pump();
+    await key(tester, LogicalKeyboardKey.arrowDown);
+    await key(tester, LogicalKeyboardKey.enter);
+    await settle(tester);
+    expect(hub.text, endsWith('```\n\nNext \n## '));
+    await finish(tester);
+  });
+
+  testWidgets('a / inside a word, in code or that names no block stays a /', (tester) async {
+    await pumpEditor(tester, 'and\n```\ncode\n```');
+    final keyboard = Keyboard(tester);
+    await key(tester, LogicalKeyboardKey.end);
+    await keyboard.type('/');
+    await tester.pump();
+    expect(find.text('Table'), findsNothing);
+    await keyboard.type(' ');
+    await keyboard.type('/');
+    await tester.pump();
+    expect(find.text('Table'), findsOneWidget);
+    await keyboard.type('zz');
+    await tester.pump();
+    expect(find.text('Table'), findsNothing);
+    await keyboard.type(' ');
+    await keyboard.type('/');
+    await tester.pump();
+    await key(tester, LogicalKeyboardKey.escape);
+    expect(find.text('Table'), findsNothing);
+    await keyboard.type('\n');
+    await settle(tester);
+    expect(hub.text, startsWith('and/ /zz /\n'));
+
+    await key(tester, LogicalKeyboardKey.end, control: true);
+    await key(tester, LogicalKeyboardKey.arrowUp);
+    await keyboard.type(' ');
+    await keyboard.type('/');
+    await tester.pump();
+    expect(find.text('Table'), findsNothing);
+    await finish(tester);
+  });
+
+  test('blocks are named on any keyboard, by the start of their words', () {
+    const all = [Block('Liste à puces', Icons.list, '- '), Block('Liste numérotée', Icons.list, '1. ')];
+    expect([for (final b in blocksNamed(all, 'LIS')) b.before], ['- ', '1. ']);
+    expect([for (final b in blocksNamed(all, 'numero')) b.before], ['1. ']);
+    expect([for (final b in blocksNamed(all, 'a pu')) b.before], ['- ']);
+    expect(blocksNamed(all, 'uces'), isEmpty);
   });
 
   testWidgets('lines read as they render show the pictures and labels of the host', (tester) async {

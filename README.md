@@ -116,6 +116,16 @@ and writes them where the caret was; keyboards that insert pictures go the
 same way. `file:` is best avoided as a scheme of the host: Dart reads
 `file:9` as `file:///9`.
 
+## Blocks
+
+Typing `/` at the start of a line or after a space proposes what the editor
+writes by itself — headings, lists, a table, a callout, a formula, a chart —
+narrowed by what is typed after it. The one chosen is written as plain
+Markdown, on lines of its own when it needs them, with what is to be typed
+over selected. `BrefEditor.blocks` replaces the list: `blocks(strings)`
+filtered, to leave out the ones marked `figure` where notes are read by
+something that does not draw them, or empty for no menu.
+
 ## Math
 
 `$x^2$` in a line and `$$` around lines of their own are set as TeX sets

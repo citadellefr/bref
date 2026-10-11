@@ -2,6 +2,7 @@
 library;
 
 export 'package:trame/trame.dart' show DocDrafts, DocSession;
+export 'src/blocks.dart' show Block, Placement, blocks;
 export 'src/comments.dart' show CommentMessage, CommentThread, Comments, readThreads;
 export 'src/comments_pane.dart' show CommentsPane;
 export 'src/controller.dart' show BrefComments, BrefFollow;

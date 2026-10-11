@@ -29,14 +29,14 @@ class Proposal {
 Command? commandIn(List<Command> commands, String typed) {
   final space = typed.indexOf(' ');
   if (space < 0) return null;
-  final keyword = _fold(typed.substring(0, space));
-  return commands.where((c) => _fold(c.keyword) == keyword).firstOrNull;
+  final keyword = fold(typed.substring(0, space));
+  return commands.where((c) => fold(c.keyword) == keyword).firstOrNull;
 }
 
 /// The keywords [typed] starts, all of them for a bare `@`.
 Iterable<Command> commandsStarting(List<Command> commands, String typed) {
-  final start = _fold(typed);
-  return commands.where((c) => _fold(c.keyword).startsWith(start));
+  final start = fold(typed);
+  return commands.where((c) => fold(c.keyword).startsWith(start));
 }
 
 const _accents = {
@@ -44,7 +44,8 @@ const _accents = {
   'ô': 'o', 'ö': 'o', 'ù': 'u', 'û': 'u', 'ü': 'u', 'ç': 'c', 'ñ': 'n',
 };
 
-String _fold(String text) => text.toLowerCase().split('').map((c) => _accents[c] ?? c).join();
+/// [text] as any keyboard types it: in lower case, without its accents.
+String fold(String text) => text.toLowerCase().split('').map((c) => _accents[c] ?? c).join();
 
 /// What a trigger being typed proposes, under the line of the caret or over
 /// it when there is no room below. [anchor] is the caret, in the
@@ -97,7 +98,7 @@ class MentionMenu extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         color: theme.colorScheme.surfaceContainer,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 200, maxWidth: 320),
+          constraints: const BoxConstraints(minWidth: 200, maxWidth: 320, maxHeight: 340),
           child: IntrinsicWidth(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -129,31 +130,7 @@ class MentionMenu extends StatelessWidget {
                     child: TextButton(onPressed: onCancel, child: Text(strings.cancel)),
                   ),
                 ] else if (found.isNotEmpty)
-                  for (final (i, p) in found.indexed)
-                    InkWell(
-                      canRequestFocus: false,
-                      onTap: p.take,
-                      child: Container(
-                        color: i == chosen ? theme.colorScheme.primary.withValues(alpha: 0.12) : null,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        child: Row(
-                          children: [
-                            if (p.icon != null) ...[SizedBox.square(dimension: 24, child: p.icon), const SizedBox(width: 10)],
-                            Flexible(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(p.text, maxLines: 1, overflow: TextOverflow.ellipsis),
-                                  if (p.detail case final detail?)
-                                    Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis, style: muted),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )
+                  Flexible(child: _Rows(found: found, chosen: chosen))
                 else if (note case final note?)
                   Padding(padding: const EdgeInsets.all(12), child: Text(note, style: muted)),
               ],
@@ -184,6 +161,76 @@ class MentionMenu extends StatelessWidget {
             ),
           ),
           if (busy) const SizedBox.square(dimension: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+        ],
+      ),
+    );
+  }
+}
+
+/// What there is to choose, scrolled to keep the chosen row in sight.
+class _Rows extends StatefulWidget {
+  const _Rows({required this.found, required this.chosen});
+
+  final List<Proposal> found;
+  final int chosen;
+
+  @override
+  State<_Rows> createState() => _RowsState();
+}
+
+class _RowsState extends State<_Rows> {
+  final _chosen = GlobalKey();
+
+  @override
+  void didUpdateWidget(_Rows old) {
+    super.didUpdateWidget(old);
+    if (old.chosen == widget.chosen) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final row = _chosen.currentContext;
+      if (row == null) return;
+      for (final policy in const [
+        ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+        ScrollPositionAlignmentPolicy.keepVisibleAtStart,
+      ]) {
+        Scrollable.ensureVisible(row, alignmentPolicy: policy);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (i, p) in widget.found.indexed)
+            InkWell(
+              key: i == widget.chosen ? _chosen : null,
+              canRequestFocus: false,
+              onTap: p.take,
+              child: Container(
+                color: i == widget.chosen ? theme.colorScheme.primary.withValues(alpha: 0.12) : null,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    if (p.icon != null) ...[SizedBox.square(dimension: 24, child: p.icon), const SizedBox(width: 10)],
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(p.text, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          if (p.detail case final detail?)
+                            Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis, style: muted),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
         ],
       ),
     );

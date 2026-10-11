@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Dart: typing `/` proposes the blocks the editor writes — headings, lists,
+  quote, divider, table, code, callouts, formulas, the five charts, link,
+  today's date — narrowed by the words typed after it. A block is written
+  as Markdown where the `/` was, apart from the text around when it needs
+  lines of its own, its placeholder selected. `BrefEditor.blocks` gives
+  another list; `BrefStrings` names them. The menu scrolls.
+
 ## 0.9.0 — 2026-10-10
 
 - Dart: a block of code named `chart` is drawn as a chart: `type` (`bar`,
