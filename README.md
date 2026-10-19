@@ -190,3 +190,7 @@ go test -run '^$' -bench Keystroke .
 (cd dart && flutter test)
 (cd dart && BREF_BENCH=1 flutter test test/bench_test.dart)
 ```
+
+To try the client against a local checkout of trame, add an untracked
+`dart/pubspec_overrides.yaml` (ignored by git) with a `dependency_overrides`
+entry for `trame`; the tests of the repository and its CI never rely on it.
