@@ -18,6 +18,8 @@ default format for notes, and is released under the MIT license.
 > pictures your app provides, comments, tables, math and charts. Diagrams
 > come next.
 
+Where things are and how to test fast: [docs/carte.md](docs/carte.md).
+
 ## Principles
 
 - **The file is the note.** A note is its Markdown text and nothing else: a
