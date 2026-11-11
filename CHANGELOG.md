@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.2 — 2026-11-11
+
+- trame 0.5.1: a Dart session that was disposed no longer starts its
+  presence timer again and no longer saves a draft.
+
 ## 0.10.1 — 2026-10-15
 
 - trame 0.5.0: the hub beats with every ping, and the Dart session takes a
